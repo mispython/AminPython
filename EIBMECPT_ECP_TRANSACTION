@@ -297,7 +297,9 @@ if __name__ == "__main__":
     df_cis.to_csv("Data_Warehouse/MIS/XMIS/input_testing_file/ECPCIS.csv", index=False)
     print(df_cis.head(10))
 
-
+ACCTNO	SERIAL	TRANDATE	BENEBANKBIC	BENEACCTNO	AMOUNT	PAYORCORP	PAYDESC	PAYORCORPREF	BENEREF	STATUS	RSONDESC	REPTDATE
+3077509028	2025-06-04060603	04/06/2025	BBEMYKL	14084223041	0	BB FINANCE DIVISION                                                            M		P	NV25050806     A	C	2	15/12/2025
+                                                                                      
     
 
                 
