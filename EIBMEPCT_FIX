@@ -1,0 +1,136 @@
+import pandas as pd
+from datetime import date
+import os
+
+# ================= CONFIG =================
+RECLEN = 1153
+INPUT_FILE = "Data_Warehouse/MIS/XMIS/input_testing_file/DP_PBECP_20250604"
+ENC = "cp500"
+
+TODAY = date.today().isoformat()
+
+OUT_TRN = "Data_Warehouse/MIS/XMIS/input_testing_file/ECPTRN.parquet"
+OUT_CIS = "Data_Warehouse/MIS/XMIS/input_testing_file/ECPCIS.parquet"
+
+# ============== PACKED DECIMAL ==============
+def unpack_pd(b, scale=0):
+    digits = ""
+    for byte in b[:-1]:
+        digits += f"{byte >> 4}{byte & 0x0F}"
+
+    last = b[-1]
+    digits += str(last >> 4)
+
+    sign = last & 0x0F
+    value = int(digits)
+
+    if sign == 0x0D:   # negative
+        value = -value
+
+    return value / (10 ** scale)
+
+# ================= READ FILE =================
+def read_ecp():
+    rows = []
+
+    with open(INPUT_FILE, "rb") as f:
+        while True:
+            rec = f.read(RECLEN)
+            if not rec:
+                break
+
+            try:
+                trany = int(rec[91:95].decode(ENC))
+                tranmm = int(rec[96:98].decode(ENC))
+                trandd = int(rec[99:101].decode(ENC))
+                trandate = date(trany, tranmm, trandd)
+            except Exception:
+                trandate = None
+
+            try:
+                amount = unpack_pd(rec[109:114], 2)
+            except Exception:
+                amount = None
+
+            rows.append({
+                "REPTDATE": TODAY,
+                "ACCTNO": rec[0:11].decode(ENC).strip(),
+                "SERIAL": rec[11:27].decode(ENC).strip(),
+                "TRANDATE": trandate,
+                "AMOUNT": amount,
+                "PAYORCORPREF": rec[128:144].decode(ENC).strip(),
+                "PAYORCORP": rec[144:224].decode(ENC).strip(),
+                "BENEBANKBIC": rec[224:235].decode(ENC).strip(),
+                "BENEREF": rec[256:272].decode(ENC).strip(),
+                "BENENAME": rec[272:392].decode(ENC).strip(),
+                "BENEACCTNO": rec[392:427].decode(ENC).strip(),
+                "BENEID": rec[427:445].decode(ENC).strip(),
+                "BENEIDIND": rec[445:447].decode(ENC).strip(),
+                "BNAD": rec[491:651].decode(ENC).strip(),
+                "PAYDESC": rec[746:886].decode(ENC).strip(),
+                "STATUS": rec[929:931].decode(ENC).strip(),
+                "RSONDESC": rec[931:971].decode(ENC).strip(),
+                "MOBIPHON": rec[1084:1100].decode(ENC).strip(),
+                "EMAILADD": rec[1100:1150].decode(ENC).strip(),
+            })
+
+    return pd.DataFrame(rows)
+
+# ============== WEEKLY APPEND ==============
+def append_weekly(df, parquet_file):
+    if os.path.exists(parquet_file):
+        old = pd.read_parquet(parquet_file)
+        old = old[old["REPTDATE"] != TODAY]
+        df = pd.concat([old, df], ignore_index=True)
+
+    df.to_parquet(
+        parquet_file,
+        engine="pyarrow",
+        compression="snappy"
+    )
+
+# ============== WRITE OUTPUTS ==============
+def write_outputs(df):
+    trn_cols = [
+        "ACCTNO", "SERIAL", "TRANDATE", "BENEBANKBIC", "BENEACCTNO",
+        "AMOUNT", "PAYORCORP", "PAYDESC", "PAYORCORPREF", "BENEREF",
+        "STATUS", "RSONDESC", "REPTDATE"
+    ]
+
+    cis_cols = [
+        "ACCTNO", "SERIAL", "BENENAME", "BNAD", "BENEID", "BENEIDIND",
+        "MOBIPHON", "EMAILADD", "REPTDATE"
+    ]
+
+    df_trn = df[trn_cols]
+    df_cis = df[cis_cols]
+
+    if not df_trn.empty:
+        append_weekly(df_trn, OUT_TRN)
+    else:
+        print("WARNING: TRN dataset empty")
+
+    if not df_cis.empty:
+        append_weekly(df_cis, OUT_CIS)
+    else:
+        print("WARNING: CIS dataset empty")
+
+# ================= MAIN =================
+if __name__ == "__main__":
+    df = read_ecp()
+    write_outputs(df)
+
+    print("DONE")
+    print("Updated files:")
+    print(" -", OUT_TRN)
+    print(" -", OUT_CIS)
+
+    # Optional CSV check
+    pd.read_parquet(OUT_TRN).to_csv(
+        "Data_Warehouse/MIS/XMIS/input_testing_file/ECPTRN.csv",
+        index=False
+    )
+    pd.read_parquet(OUT_CIS).to_csv(
+        "Data_Warehouse/MIS/XMIS/input_testing_file/ECPCIS.csv",
+        index=False
+    )
