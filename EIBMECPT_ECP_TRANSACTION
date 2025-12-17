@@ -1,0 +1,312 @@
+# //EIBMECPT JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB39367
+# /*JOBPARM S=S1M1
+# //**********************************************************************
+# //* ESMR      : 2015-57 (JKA)
+# //* REQUESTER : DING BOON NYEE,RETAIL FINANCIAL SERVICES - 21767930
+# //* DESC      : CREATE ECP TRANSACTION DATASET & FTP TO SAS WAREHOUSE
+# //**********************************************************************
+# //DELETE  EXEC PGM=IEFBR14
+# //DEL01    DD DSN=SAP.PBB.ECPTRN.ETRNFTP,
+# //            DISP=(MOD,DELETE,DELETE),
+# //            SPACE=(CYL,(0))
+# //DEL02    DD DSN=SAP.PBB.ECPCIS.ECISFTP,
+# //            DISP=(MOD,DELETE,DELETE),
+# //            SPACE=(CYL,(0))
+# //*
+# //CREATE  EXEC PGM=IEFBR14
+# //CRT01   DD DSN=SAP.PBB.ECPTRN.ETRNFTP,
+# //           DISP=(NEW,CATLG,DELETE),
+# //           DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+# //           SPACE=(CYL,(500,200),RLSE),UNIT=(SYSDA,5)
+# //CRT02   DD DSN=SAP.PBB.ECPCIS.ECISFTP,
+# //           DISP=(NEW,CATLG,DELETE),
+# //           DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+# //           SPACE=(CYL,(500,200),RLSE),UNIT=(SYSDA,5)
+# //*
+# //EIBMECPT  EXEC SAS609
+# //DPECPT    DD DSN=RBP2.BKUP.B033.DP.PBECP.MTHLYSRC(0),DISP=SHR
+# //PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+# //ECPOUT    DD DSN=SAP.PBB.ECPTRAN,DISP=OLD
+# //SYSIN     DD *
+
+# OPTIONS YEARCUTOFF=1950 NOCENTER;
+
+# DATA REPTDATE;
+#    REPTDATE=TODAY()-1;
+#    SELECT;
+#         WHEN(1<= DAY(REPTDATE)<= 8) DO;
+#            NOWK=1;
+#           END;
+#           WHEN(9<= DAY(REPTDATE)<= 15) DO;
+#             NOWK=2;
+#           END;
+#           WHEN(16<= DAY(REPTDATE)<= 22) DO;
+#             NOWK=3;
+#           END;
+#           OTHERWISE DO;
+#              NOWK=4;
+#           END;
+#    END;
+
+#    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+#    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+#    CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+#    CALL SYMPUT('REPTDT', REPTDATE);
+#    CALL SYMPUT('RDATE', REPTDATE);
+#    CALL SYMPUT('NOWK',PUT(NOWK, Z1.));
+# RUN;
+
+# %LET TRN  = (KEEP=ACCTNO SERIAL TRANDATE BENEBANKBIC BENEACCTNO
+#                   AMOUNT PAYORCORP PAYDESC PAYORCORPREF BENEREF
+#                   STATUS RSONDESC);
+
+# %LET CIS  = (KEEP=ACCTNO SERIAL BENENAME BNAD BENEID BENEIDIND
+#                   MOBIPHON EMAILADD);
+# DATA ECP;
+
+#    INFILE DPECPT;
+#    INPUT @0001 ACCTNO        11.      /* FUNDING ACCOUNT NO.    */
+#          @0012 SERIAL        $16.     /* UNIQUE ID              */
+#          @0092 TRANYY        4.       /* PAYMENT YEAR           */
+#          @0097 TRANMM        2.       /* PAYMENT MONTH          */
+#          @0100 TRANDD        2.       /* PAYMENT DAY            */
+#          @0110 AMOUNT        PD9.2    /* PAYMENT AMOUNT         */
+#          @0129 PAYORCORPREF  $16.     /* PAYOR CORP REF NO.     */
+#          @0145 PAYORCORP     $80.     /* PAYOR CORP NAME        */
+#          @0225 BENEBANKBIC   $11.     /* RCVE BANK / BNFCRY BIC */
+#          @0257 BENEREF       $16.     /* BNFCRY REF NO.         */
+#          @0273 BENENAME      $120.    /* BNFCRY NAME            */
+#          @0393 BENEACCTNO    $35.     /* BNFCRY ACCT NO.        */
+#          @0428 BENEID        $18.     /* BNFCRY ID NO.          */
+#          @0446 BENEIDIND     $2.      /* BNFCRY ID TYPE         */
+#          @0492 BNAD          $160.    /* BNFCRY ADDRESS         */
+#          @0747 PAYDESC       $140.    /* PAYMENT DESC           */
+#          @0930 STATUS        $2.      /* TRAN STATUS            */
+#          @0932 RSONDESC      $40.     /* REASON OF REJECTION    */
+#          @1085 MOBIPHON      $16.     /* MOBILE NUMBER          */
+#          @1101 EMAILADD      $50.     /* EMAIL ADDRESS          */
+#          ;
+#      REPTDATE = &RDATE ;
+#      TRANDATE = MDY(TRANMM,TRANDD,TRANYY);
+#      FORMAT TRANDATE YYMMDD10.;
+
+#      DROP TRANYY TRANMM TRANDD;
+# RUN;
+
+#  %MACRO APPENDWKLY;
+#   %IF %SYSFUNC(EXIST(ECPOUT.ECP&REPTMON&NOWK))
+#   %THEN %DO;
+#    DATA ECPOUT.ECP&REPTMON&NOWK;
+#      SET ECPOUT.ECP&REPTMON&NOWK;
+#      IF REPTDATE EQ "&REPTDT" THEN DELETE;
+#    RUN;
+#      PROC APPEND DATA=ECP
+#                  BASE=ECPOUT.ECP&REPTMON&NOWK;
+#   %END;
+#   %ELSE %DO;
+#     DATA ECPOUT.ECP&REPTMON&NOWK;
+#      SET ECP;
+#    RUN;
+
+#  %END;
+#  %MEND;
+#  %APPENDWKLY;
+
+#  DATA ECP&REPTMON&NOWK&REPTYEAR &CIS;
+#    SET ECPOUT.ECP&REPTMON&NOWK;
+#  RUN;
+
+#  DATA ECPTRAN&REPTMON&NOWK&REPTYEAR &TRN;
+#    SET ECPOUT.ECP&REPTMON&NOWK;
+#  RUN;
+#  *;
+# FILENAME TRANFILE 'SAP.PBB.ECPTRN.ETRNFTP' DISP=OLD;
+# PROC CPORT LIBRARY=WORK FILE=TRANFILE;
+# SELECT ECPTRAN&REPTMON&NOWK&REPTYEAR; RUN;
+
+# FILENAME TRANFILE 'SAP.PBB.ECPCIS.ECISFTP' DISP=OLD;
+# PROC CPORT LIBRARY=WORK FILE=TRANFILE;
+# SELECT ECP&REPTMON&NOWK&REPTYEAR; RUN;
+#  *;
+# //******************************************************************
+# //* FTP HOST DATASETS TO EDW
+# //******************************************************************
+# //RUNSFTP  EXEC COZBATCH
+# //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)
+# //           DD *
+# lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary
+# lzopts linerule=$lr
+# cd /stgsrcsys/host/ftpfiles
+# PUT //SAP.PBB.ECPTRN.ETRNFTP   ETRNFTP
+# PUT //SAP.PBB.ECPCIS.ECISFTP   ECISFTP
+# lzopts mode=text
+# cd /stgsrcsys/host/control
+# put //SAP.DAY.CONTROL          EIBMECPT.TXT
+# EOB
+# /*
+
+
+# KINDLY REFER JOB BELOW 
+
+# VIEW       CHGMAN.XMIS.BNM.PROGRAM(FTP1DDP2) - 02.01       Columns 00001 00072 
+# Command ===>                                                  Scroll ===> CSR  
+# ****** ***************************** Top of Data ******************************
+# 000001 //FTP1DDP2 JOB (0216,0000,90,OPER),'FTP WAREHOURE',                     
+# 000002 //         CLASS=A,REGION=4M,NOTIFY=&SYSUID,                            
+# 000003 //         MSGCLASS=X                                                   
+# 000004 //******************************************************************    
+# 000005 //* SFTP RAW FILES TO EDW SERVER                                        
+# 000006 //******************************************************************    
+# 000007 //*%OPC SCAN                                                            
+# 000008 //RUNSFTP  EXEC COZBATCH                                                
+# 000009 //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)                 
+# 000010 //           DD *                                                       
+# 000011 lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary             
+# 000012 lzopts linerule=$lr                                                     
+# 000013 cd /sasdata/rawdata/deposit                                             
+# 000014 put //RBP2.BKUP.B033.WOA.DATA.ALL(0)     ODWOF_%OYYYY.%OMM.%ODD         
+# 000015 put //RBP2.BKUP.B033.NID.DAILY.SASFILE(0) NID_SASFILE_%OYYYY.%OMM.%ODD  
+# 000016 put //RBP2.BKUP.B033.RNID.TRANCHE.DATA(0) RNID_TRANCHE_%OYYYY.%OMM.%ODD 
+# 000017 put //RBP2.BKUP.B033.DP.PBECP.MTHLYSRC(0) DP_PBECP_%OYYYY.%OMM.%ODD     
+# 000018 put //RBP2.BKUP.B033.UNLOAD.DPESAINT.FB(0)  DPESAINT_%OYYYY.%OMM.%ODD   
+# .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .
+
+
+import pandas as pd
+from datetime import date
+import os
+
+# CONFIG
+RECLEN = 1153
+INPUT_FILE = "Data_Warehouse/MIS/XMIS/input_testing_file/DP_PBECP_20250604"
+ENC = "cp500"
+# TODAY = date.today().isoformat()
+TODAY = date.today()
+print(TODAY)
+OUT_TRN = "Data_Warehouse/MIS/XMIS/input_testing_file/ECPTRN.parquet"
+OUT_CIS = "Data_Warehouse/MIS/XMIS/input_testing_file/ECPCIS.parquet"
+
+# with open(INPUT_FILE, "rb") as f:
+#     b = f.read(10)
+#     print("BYTES", b)
+#     print("LEN", len(b))
+
+# with open(INPUT_FILE, "rb") as f:
+#          print("file open")
+#          while True:
+#              print("file true")
+#              rec = f.read(RECLEN)
+#              if not rec:
+#                 break
+#              text = rec.decode(ENC, errors="replace")
+#              print(text)
+#              break
+
+# PACKED DECIMAL
+def unpack_pd(b, scale=0):
+    s = ""
+    for x in b[:-1]:
+        s +=f"{x >> 4}{x & 0x0F}"
+    s += str(b[-1] >> 4)
+    return int(s) / (10 ** scale)
+
+def read_ecp( ):
+     rows = [ ]
+     with open(INPUT_FILE, "rb") as f:
+         while True:
+             rec = f.read(RECLEN)
+             if not rec:
+                 break
+             try:
+                 trany = int(rec[91:95].decode(ENC))
+                 tranmm = int(rec[96:98].decode(ENC))
+                 trandd = int(rec[99:101].decode(ENC))
+                 trandate = date(trany, tranmm, trandd)
+             except Exception:
+                 trandate = None
+             try:
+                 amount = unpack_pd(rec[109:114], 2)
+             except Exception:
+                 amount = None
+             rows.append({                 
+                 "REPTDATE": TODAY,
+                 "ACCTNO": rec[0:11].decode(ENC).strip(),   
+                 "SERIAL": rec[11:27].decode(ENC).strip(), 
+                 "TRANDATE": trandate,  
+                 "AMOUNT": amount,   
+                 "PAYORCORPREF": rec[129:145].decode(ENC).strip(),   
+                 "PAYORCORP": rec[145:225].decode(ENC).strip(),    
+                 "BENEBANKBIC": rec[225:236].decode(ENC).strip(),  
+                 "BENEREF": rec[257:273].decode(ENC).strip(),    
+                 "BENENAME": rec[273:393].decode(ENC).strip(),   
+                 "BENEACCTNO": rec[393:428].decode(ENC).strip(),   
+                 "BENEID": rec[428:446].decode(ENC).strip(),    
+                 "BENEIDIND": rec[446:448].decode(ENC).strip(), 
+                 "BNAD": rec[492:652].decode(ENC).strip(),  
+                 "PAYDESC": rec[747:887].decode(ENC).strip(), 
+                 "STATUS": rec[930:932].decode(ENC).strip(),     
+                 "RSONDESC": rec[932:972].decode(ENC).strip(),     
+                 "MOBIPHON": rec[1085:1101].decode(ENC).strip(),   
+                 "EMAILADD": rec[1101:1151].decode(ENC).strip(),      
+             })
+     return pd.DataFrame(rows)
+
+def append_weekly(df, parquet_file):
+    if os.path.exists(parquet_file):
+        old = pd.read_parquet(parquet_file)
+        old = old[old["REPTDATE"] != TODAY]
+        df = pd.concat([old, df], ignore_index=True)
+    df.to_parquet(
+        parquet_file,
+        engine="pyarrow",
+        compression="snappy"
+    )
+
+def write_outputs(df):
+    trn_cols = [
+        "ACCTNO", "SERIAL", "TRANDATE", "BENEBANKBIC", "BENEACCTNO", 
+        "AMOUNT", "PAYORCORP", "PAYDESC", "PAYORCORPREF", "BENEREF", 
+        "STATUS", "RSONDESC", "REPTDATE"
+    ]
+    df_trn = df[[c for c in trn_cols if c in df.columns]]
+    cis_cols = [
+        "ACCTNO", "SERIAL", "BENENAME", "BNAD", "BENENID", "BENEIDIND",
+        "MOBIPHON", "EMAILADD", "REPTDATE"
+    ]
+    df_cis = df[[c for c in cis_cols if c in df.columns]]
+    if df_trn.empty:
+        print("WARNING : empty TRN dataset")
+    else:
+        append_weekly(df_trn, OUT_TRN)
+    if df_cis.empty:
+        print("WARNING : empty CIS dataset")
+    else:
+        append_weekly(df_cis, OUT_CIS)
+
+if __name__ == "__main__":
+    df = read_ecp()
+    write_outputs(df)
+    print("DONE OUTPUT AS BELOW")
+    print("Updated files : ")
+    print(" - ", OUT_TRN)
+    df_trn = pd.read_parquet(OUT_TRN)
+    df_trn.to_csv("Data_Warehouse/MIS/XMIS/input_testing_file/ECPTRN.csv", index=False)
+    print(df_trn.head(10))
+    print(" - ", OUT_CIS)
+    df_cis = pd.read_parquet(OUT_CIS)
+    df_cis.to_csv("Data_Warehouse/MIS/XMIS/input_testing_file/ECPCIS.csv", index=False)
+    print(df_cis.head(10))
+
+
+    
+
+                
+
+
+
+
+
+
+
+
+
