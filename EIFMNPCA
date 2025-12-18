@@ -30,6 +30,14 @@
 //            SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
 //            DCB=(LRECL=1000,RECFM=VB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP41),DISP=SHR
+
+
+
+
+
+
+
+
 //**********************************************************************
 //EIFMNP42 EXEC SAS609
 //PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
