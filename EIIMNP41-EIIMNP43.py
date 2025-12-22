@@ -1,32 +1,32 @@
 import pandas as pd
 import numpy as np
 
-# =====================================================
-# Utilities
-# =====================================================
+# ======================================================
+# Helpers
+# ======================================================
 
 def summarize(df, keys):
     return (
         df.groupby(keys, as_index=False)
-          .agg({
-              "BALANCE": "sum",
-              "OBDEFAULT": "sum",
-              "EXPECTEDREC": "sum",
-              "CAPROVISION": "sum"
-          })
+          .agg(
+              BALANCE=("BALANCE", "sum"),
+              OBDEFAULT=("OBDEFAULT", "sum"),
+              EXPECTEDREC=("EXPECTEDREC", "sum"),
+              CAPROVISION=("CAPROVISION", "sum")
+          )
     )
 
-# =====================================================
-# PART 1
-# =====================================================
+# ======================================================
+# Report date logic (macro replacement)
+# ======================================================
 
-def derive_report_period(reptdate):
-    day = reptdate.day
-    if day <= 8:
+def derive_report_vars(reptdate: pd.Timestamp):
+    d = reptdate.day
+    if d <= 8:
         wk = "1"
-    elif day <= 15:
+    elif d <= 15:
         wk = "2"
-    elif day <= 22:
+    elif d <= 22:
         wk = "3"
     else:
         wk = "4"
@@ -37,19 +37,35 @@ def derive_report_period(reptdate):
         "REPTYEAR": reptdate.strftime("%y")
     }
 
+# ======================================================
+# Read recovery rate
+# ======================================================
+
+def read_recrate(text_df):
+    return float(text_df.iloc[0]["REC_RATE"])
+
+# ======================================================
+# Prepare HP + CCRIS
+# ======================================================
+
 def prepare_hp(hp, ccris):
     ccris = (
         ccris.query("FACILITY in ['34331','34332']")
-              .rename(columns={"ACCTNUM": "ACCTNO", "DAYSARR": "DAYARR"})
-              [["ACCTNO", "NOTENO", "DAYARR"]]
-              .sort_values(["ACCTNO", "NOTENO", "DAYARR"], ascending=[True, True, False])
-              .drop_duplicates(["ACCTNO", "NOTENO"])
+             .rename(columns={"ACCTNUM": "ACCTNO", "DAYSARR": "DAYARR"})
+             [["ACCTNO", "NOTENO", "DAYARR"]]
+             .sort_values(["ACCTNO", "NOTENO", "DAYARR"],
+                          ascending=[True, True, False])
+             .drop_duplicates(["ACCTNO", "NOTENO"])
     )
 
     return (
         hp.sort_values(["ACCTNO", "NOTENO"])
           .merge(ccris, on=["ACCTNO", "NOTENO"], how="left")
     )
+
+# ======================================================
+# Bucket accounts
+# ======================================================
 
 def split_buckets(hp):
     base = (
@@ -65,12 +81,19 @@ def split_buckets(hp):
         (hp["USER5"] != "N")
     ]
 
+    m1t2 = hp[
+        base &
+        hp["DAYARR"].between(31, 89) &
+        ~hp["BORSTAT"].isin(list("FIREWZ")) &
+        (hp["USER5"] != "N")
+    ]
+
     m3t5 = hp[
         base &
         ~hp["BORSTAT"].isin(list("FIREWZ")) &
         (
             ((hp["USER5"] == "N") & (hp["DAYARR"] <= 182)) |
-            (hp["DAYARR"].between(90, 182))
+            hp["DAYARR"].between(90, 182)
         )
     ]
 
@@ -84,30 +107,34 @@ def split_buckets(hp):
     repossessed = hp[(hp["BORSTAT"] == "R") & (hp["PAIDIND"] == "M")]
     deficit = hp[(hp["BORSTAT"] == "F") & (hp["PAIDIND"] == "M")]
 
-    return current, m3t5, m6ab, irregular, repossessed, deficit
+    return current, m1t2, m3t5, m6ab, irregular, repossessed, deficit
 
-def build_grp(df, subgroup, rules):
+# ======================================================
+# Build group rows
+# ======================================================
+
+def build_grp(df, subg, rules):
     rows = []
     for _, r in df.iterrows():
-        for cat, rate, recrate, cap in rules:
+        for cat, rate, recrate, capflag in rules:
             ob = r["BALANCE"] * rate / 100
             exp = ob * recrate / 100
             rows.append({
                 "CATEGORY": cat,
                 "GROUPIND": "OTHERS",
-                "SUBGIND": subgroup,
+                "SUBGIND": subg,
                 "RATE": rate,
                 "RECRATE": recrate,
                 "BALANCE": r["BALANCE"],
                 "OBDEFAULT": ob,
                 "EXPECTEDREC": exp,
-                "CAPROVISION": ob - exp if cap else 0
+                "CAPROVISION": ob - exp if capflag else 0
             })
     return pd.DataFrame(rows)
 
-# =====================================================
-# RATE CALCULATIONS
-# =====================================================
+# ======================================================
+# Rate calculations
+# ======================================================
 
 def calc_ratea(m3t5_grp):
     f = m3t5_grp[m3t5_grp["CATEGORY"].isin([
@@ -148,14 +175,15 @@ def calc_ratec(m1t2_grp):
         f["EXPECTEDREC"].sum()
     )
 
-# =====================================================
-# MAIN PIPELINE
-# =====================================================
+# ======================================================
+# Main EIIMNP41
+# ======================================================
 
-def run_eiimnp41(hp, ccris, recrate):
+def run_eiimnp41(hp, ccris, text_df, reptdate):
+    recrate = read_recrate(text_df)
     hp = prepare_hp(hp, ccris)
 
-    current, m3t5, m6ab, irregular, repossessed, deficit = split_buckets(hp)
+    current, m1t2, m3t5, m6ab, irregular, repossessed, deficit = split_buckets(hp)
 
     current_grp = summarize(
         build_grp(current, "CURRENT", [
@@ -198,7 +226,7 @@ def run_eiimnp41(hp, ccris, recrate):
     rateb = calc_rateb(m6ab_grp, recrate)
 
     m1t2_grp = summarize(
-        build_grp(current, "1-2 MTHS", [
+        build_grp(m1t2, "1-2 MTHS", [
             ("CONTINUE PAYING", 92.30, 100, False),
             ("SUCCESSFUL REPOSSESSION", 2.33, recrate, True),
             ("UNSUCCESSFUL REPOSSESSION", 5.37, 0.00, True),
@@ -210,7 +238,6 @@ def run_eiimnp41(hp, ccris, recrate):
     )
 
     ratec, sumrec = calc_ratec(m1t2_grp)
-
     mask = m1t2_grp["CATEGORY"] == "UNSUCCESSFUL REPOSSESSION"
     m1t2_grp.loc[mask, "EXPECTEDREC"] = sumrec
     m1t2_grp.loc[mask, "RECRATE"] = ratec
