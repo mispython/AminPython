@@ -1,0 +1,1490 @@
+//EIBMRBDP JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB22447
+/*JOBPARM S=S1M1
+//*-------------------------------------------------------------------
+//* PROGRAM  : EIBMRBDP
+//* ESMR     : 2010-1642 (AAB)
+//* DESC     : MONTHLY BRANCH DEPOSIT AND BRANCH PERFORMANCE REPORT
+//*            FOR PREPARATION OF BEC PAPER
+//* ESMR     : 2010-2431 (AAB)
+//* DESC     : REASONS FOR RM FD & FCY FD WITHDRAWALS OVER-THE-COUNTER
+//*-------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DD01     DD DSN=SAP.PBB.EIBMRB01,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD02     DD DSN=SAP.PBB.EIBMRB02,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD03     DD DSN=SAP.PBB.EIBMRB03,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD04     DD DSN=SAP.PBB.EIBMRB04,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD05     DD DSN=SAP.PBB.EIBMRB05,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD06     DD DSN=SAP.PBB.EIBMRB06,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD07     DD DSN=SAP.PBB.EIBMRB07,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD08     DD DSN=SAP.PBB.EIBMRB8A,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD09     DD DSN=SAP.PBB.EIBMRB8B,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD10     DD DSN=SAP.PBB.EIBMRB09,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*---------------------------------------------------------------
+//* EIBMRB01 - DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD
+//*---------------------------------------------------------------
+//EIBMRB01 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//MISFD    DD DSN=SAP.PBB.FCYFD,DISP=SHR
+//MIS2FD   DD DSN=SAP.PBB.FCFD,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB01,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=133,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB01),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB02 - MONTHLY SA/CA/FD ACCOUNT OUTSTANDING AMOUNT
+//*---------------------------------------------------------------
+//EIBMRB02 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB02,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=133,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB02),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB03 - LISTING OF NEW CA OPENED FOR THE MONTH
+//*---------------------------------------------------------------
+//EIBMRB03 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//CIS      DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB03,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=150,RECFM=FB,BLKSIZE=15000)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB03),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB04 - LISTING OF NEW FD ACCOUNT OPENED FOR THE MONTH
+//*---------------------------------------------------------------
+//EIBMRB04 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//CIS      DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB04,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=150,RECFM=FB,BLKSIZE=15000)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB04),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB05 - MONTH END REPORT BY BRANCH FOR FCY FD AND FCY CA
+//*---------------------------------------------------------------
+//EIBMRB05 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//MISFD    DD DSN=SAP.PBB.FCFD,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB05,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=133,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB05),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB06 - LISTING OF NEW FCY FD ACCOUNT OPENED FOR THE MONTH
+//*---------------------------------------------------------------
+//EIBMRB06 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//MISFD    DD DSN=SAP.PBB.FCFD,DISP=SHR
+//CIS      DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB06,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=155,RECFM=FB,BLKSIZE=15500)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB06),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB07 - LISTING OF NEW FCY CA ACCOUNT OPENED FOR THE MONTH
+//*---------------------------------------------------------------
+//EIBMRB07 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//IDEPO    DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//MISCA    DD DSN=SAP.PBB.FCYCA,DISP=SHR
+//CIS      DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.EIBMRB07,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
+//         DCB=(LRECL=155,RECFM=FB,BLKSIZE=15500)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIBMRB07),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB08 - MONTHLY FD RECEIPTS WITHDRAWALS BY ACCOUNT BALANCE
+//*---------------------------------------------------------------
+//EIBMRB08  EXEC SAS609
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//MIS       DD DSN=SAP.PBB.DP.SASDATA,DISP=SHR
+//RMWDRAW   DD DSN=SAP.PBB.EIBMRB8A,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(500,80),RLSE),UNIT=SYSDA,
+//          DCB=(LRECL=500,RECFM=FB,BLKSIZE=5000)
+//FCYWDRAW  DD DSN=SAP.PBB.EIBMRB8B,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(500,80),RLSE),UNIT=SYSDA,
+//          DCB=(LRECL=500,RECFM=FB,BLKSIZE=5000)
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIBMRB08),DISP=SHR
+//*---------------------------------------------------------------
+//* EIBMRB09 - MONTHLY FD RECEIPTS WITHDRAWALS BY PRODUCT TYPES
+//*---------------------------------------------------------------
+//EIBMRB09  EXEC SAS609
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//MIS       DD DSN=SAP.PBB.DP.SASDATA,DISP=SHR
+//SASLIST   DD DSN=SAP.PBB.EIBMRB09,
+//          DISP=(NEW,CATLG,DELETE),
+//          SPACE=(CYL,(500,80),RLSE),UNIT=SYSDA,
+//          DCB=(LRECL=500,RECFM=FB,BLKSIZE=5000)
+//SYSIN     DD DSN=SAP.BNM.PROGRAM(EIBMRB09),DISP=SHR
+
+
+
+====================================================== EIBMRB01 ===================================================================================
+
+*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+
+DATA REPTDATE;
+   SET DEPO.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN(8)   CALL SYMPUT('NOWK', PUT('1', $1.));
+      WHEN(15)  CALL SYMPUT('NOWK', PUT('2', $1.));
+      WHEN(22)  CALL SYMPUT('NOWK', PUT('3', $1.));
+      OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTYEAR2',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA FCY;
+   SET MIS2FD.FCYFD&REPTMON&NOWK&REPTYEAR2;
+   KEEP ACCTNO CUSTCODE OPENDT;
+   PROC SORT;
+      BY ACCTNO;
+RUN;
+
+DATA FCYFD;
+   SET MISFD.FCYFD&REPTMON;
+   PROC SORT;
+      BY ACCTNO;
+RUN;
+
+DATA FCYFD;
+   MERGE FCYFD(IN=A) FCY;
+   BY ACCTNO;
+   IF A;
+RUN;
+
+DATA FCYFD;
+   SET FCYFD;
+   WHERE CURCODE NE 'MYR' AND
+         CURBAL GT 0;
+   CURBAL=CURBAL/1000;
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON) THEN DO;
+      IF (YEAR(CLOSEDAT)=YEAR(OPENDT)) & (MONTH(CLOSEDAT)=MONTH(OPENDT))
+         THEN DELETE;
+   END;
+RUN;
+
+PROC TABULATE DATA=FCYFD FORMAT=COMMA16.;
+   CLASS  REPTDATE CURCODE;
+   VAR    CURBAL;
+   FORMAT REPTDATE DDMMYY8.;
+   TABLE
+      REPTDATE='',
+      CURCODE*SUM=''*(CURBAL='')
+      SUM=' '*(CURBAL='TOT AMT O/S RM')
+      ALL='NO OF ACCT'*N=''*F=16.
+      / BOX='DATE' RTS=16;
+      LABEL CURCODE='OUTSTANDING AMOUNT (RM 000)';
+
+      TITLE1 'REPORT ID : EIBMRB01';
+      TITLE2 'DAILY TOTAL OUTSTANDING BALANCE/ACCOUNT ON FCY FD';
+      TITLE3 'AS AT ' "&RDATE";
+RUN;
+
+
+========================================================== EIBMRB02 ===============================================================================
+
+*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+%INC PGM(PBBELF);
+
+PROC FORMAT;
+   VALUE ACCTYPE 1='SAVING ACCOUNT (RM)'
+                 2='CURRENT ACCOUNT (RM)'
+                 3='FIXED DEPOSIT ACCOUNT (RM)';
+   VALUE BIZTYPE 1='PBB'
+                 2='PIBB';
+
+DATA REPTDATE;
+   SET DEPO.REPTDATE;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA SAVING;
+   SET DEPO.SAVING;
+   WHERE PRODUCT NOT IN (297,298,480,481,482,150,151,152,177,181);
+   ATYPE=1;
+   BTYPE=1;
+RUN;
+
+DATA ISAVING;
+   SET IDEPO.SAVING;
+   WHERE PRODUCT NOT IN (298);
+   ATYPE=1;
+   BTYPE=2;
+RUN;
+
+DATA CURRENT;
+   SET DEPO.CURRENT;
+   WHERE CURCODE EQ 'MYR' AND
+         PRODUCT NOT IN (104,105,107,126,127,128,129,130,131,132,133,
+                         134,135,136,139,140,141,142,143,144,145,146,
+                         147,148,149,167,171,172,173,549,550,68,69,79)
+         AND NOT (3590000000<=ACCTNO<=3599999999);
+
+   ATYPE=2;
+   BTYPE=1;
+RUN;
+
+DATA ICURRENT;
+   SET IDEPO.CURRENT;
+   WHERE PRODUCT NOT IN (66,67,149,80) AND
+         CURCODE EQ 'MYR' AND
+         NOT (3790000000<=ACCTNO<=3799999999);
+   ATYPE=2;
+   BTYPE=2;
+RUN;
+
+DATA FD;
+   SET DEPO.FD;
+   WHERE CURCODE EQ 'MYR' AND
+         PRODUCT NOT IN (395);
+   ATYPE=3;
+   BTYPE=1;
+RUN;
+
+DATA IFD;
+   SET IDEPO.FD;
+   WHERE CURCODE EQ 'MYR' AND
+         PRODUCT NOT IN (396);
+   ATYPE=3;
+   BTYPE=2;
+RUN;
+
+DATA DEPOSIT;
+   SET CURRENT ICURRENT SAVING ISAVING FD IFD;
+   WHERE CURBAL GT 0;
+   KEEP BRANCH BRABBR CURBAL ATYPE BTYPE;
+
+   BRABBR=PUT(BRANCH,BRCHCD.);
+   IF OPENDT NOT IN (0,.) THEN
+      OPENDT = INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.);
+   IF CLOSEDT NOT IN (0,.) THEN
+      CLOSEDT = INPUT(SUBSTR(PUT(CLOSEDT,Z11.),1,8),MMDDYY8.);
+
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON) THEN DO;
+      IF (YEAR(CLOSEDT)=YEAR(OPENDT)) & (MONTH(CLOSEDT)=MONTH(OPENDT))
+         THEN DELETE;
+   END;
+RUN;
+
+PROC SUMMARY DATA=DEPOSIT NWAY;
+   CLASS BRANCH BRABBR ATYPE BTYPE;
+   VAR CURBAL;
+   OUTPUT OUT=DEPO
+          SUM=CURBAL;
+RUN;
+
+PROC SORT DATA=DEPO; BY BRANCH;
+DATA TEMP;
+   SET DEPO;BY BRANCH;
+   IF FIRST.BRANCH THEN DO;
+      SA=0; ISA=0; CA=0; ICA=0; FD=0; IFD=0;
+      TSA=0; TCA=0; TFD=0;
+   END;
+   IF ATYPE = 1 THEN DO;
+      TSA+CURBAL;
+      IF BTYPE = 1 THEN
+         SA+CURBAL;
+      ELSE
+         ISA+CURBAL;
+   END;
+   IF ATYPE = 2 THEN DO;
+      TCA+CURBAL;
+      IF BTYPE = 1 THEN
+         CA+CURBAL;
+      ELSE
+         ICA+CURBAL;
+   END;
+   IF ATYPE = 3 THEN DO;
+      TFD+CURBAL;
+      IF BTYPE = 1 THEN
+         FD+CURBAL;
+      ELSE
+         IFD+CURBAL;
+   END;
+   TYPE=1;
+   IF LAST.BRANCH THEN OUTPUT;
+RUN;
+
+PROC SUMMARY DATA=TEMP;
+   CLASS TYPE;
+   VAR SA ISA CA ICA FD IFD TSA TCA TFD;
+   OUTPUT OUT=TOTAL
+          SUM=;
+RUN;
+
+DATA _NULL_;
+  SET TEMP;
+  FORMAT SA ISA TSA CA ICA TCA FD IFD TFD COMMA16.;
+  FILE SASLIST;
+  IF _N_ = 1 THEN DO;
+     PUT @1  'REPORT ID : EIBMRB02';
+     PUT @1  'MONTHLY SAVINGS/CURRENT/FIXED DEPOSIT ACCOUNT OUTSTANDING'
+             ' AMOUNT';
+     PUT @1  'AS AT ' "&RDATE";
+     PUT @1  ' ';
+     PUT @2  'BRANCH'  ';'  'BRANCH'            ';'
+                       ';'  'SAVING(RM) '       ';'             ';'
+                       ';'  'CURRENT(RM)'       ';'             ';'
+                       ';'  'FIXED DEPOSIT(RM)';
+     PUT @2  'CODE'    ';'  'ABBR'              ';'
+             'PBB'     ';'  'PIBB'              ';'  'TOTAL'    ';'
+             'PBB'     ';'  'PIBB'              ';'  'TOTAL'    ';'
+             'PBB'     ';'  'PIBB'              ';'  'TOTAL';
+  END;
+     PUT @2   BRANCH   ';'   BRABBR             ';'
+              SA       ';'   ISA                ';'   TSA       ';'
+              CA       ';'   ICA                ';'   TCA       ';'
+              FD       ';'   IFD                ';'   TFD;
+RUN;
+
+DATA _NULL_;
+  SET TOTAL;
+  FORMAT SA ISA TSA CA ICA TCA FD IFD TFD COMMA16.;
+  FILE SASLIST MOD;
+  IF _N_ = 1 THEN DO;
+     PUT @2   'TOTAL'  ';'                      ';'
+              SA       ';'   ISA                ';'   TSA       ';'
+              CA       ';'   ICA                ';'   TCA       ';'
+              FD       ';'   IFD                ';'   TFD;
+  END;
+RUN;
+
+
+============================================================ EIBMRB03 =============================================================================
+
+*;                                                                      00010001
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;                       00020001
+%INC PGM(PBBELF);                                                       00030001
+                                                                        00040001
+DATA REPTDATE;                                                          00050001
+    SET DEPO.REPTDATE;                                                  00060001
+    CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));                        00070001
+    CALL SYMPUT('REPTMTH',TRIM(LEFT(UPCASE(PUT(REPTDATE,MONNAME9.))))); 00080001
+    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));                    00090001
+    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));                       00100001
+RUN;                                                                    00110001
+                                                                        00120001
+DATA CURRENT;                                                           00130001
+   SET DEPO.CURRENT;                                                    00140001
+   SNAME=PUT('PBB',4.);                                                 00150001
+   IF NOT (3590000000<=ACCTNO<=3599999999);                             00160001
+RUN;                                                                    00170001
+                                                                        00180001
+DATA ICURRENT;                                                          00190001
+   SET IDEPO.CURRENT;                                                   00200001
+   SNAME=PUT('PIBB',4.);                                                00210001
+   IF NOT (3790000000<=ACCTNO<=3799999999);                             00220001
+RUN;                                                                    00230001
+                                                                        00240001
+DATA CISCA;                                                             00250001
+   SET CIS.DEPOSIT;                                                     00260001
+   KEEP ACCTNO CUSTNAME;                                                00270001
+   IF INDORG EQ 'O';                                                    00280001
+   PROC SORT;                                                           00290001
+      BY ACCTNO;                                                        00300001
+RUN;                                                                    00310001
+                                                                        00320001
+DATA ALLCURRENT NOOBS;                                                  00330001
+   SET CURRENT ICURRENT;                                                00340001
+   KEEP SNAME BRANCH BRABBR NAME ACCTNO CURBAL OPENDT CLOSEDT;          00350001
+   WHERE CUSTCODE NOT IN (77,78,95,96) AND                              00360001
+         CURCODE EQ 'MYR' AND                                           00370001
+         PRODUCT NOT IN (400,401,402,403,404,405,406,407,408,409,410,   00380001
+                         79,80);                                        00390001
+                                                                        00400001
+   BRABBR=PUT(BRANCH,BRCHCD.);                                          00410001
+   IF OPENDT NOT IN (0,.) THEN                                          00420001
+      ODATES = INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.);            00430001
+      OPENDT = ODATES;                                                  00440001
+   IF CLOSEDT NOT IN (0,.) THEN                                         00450001
+      CDATES  = INPUT(SUBSTR(PUT(CLOSEDT,Z11.),1,8),MMDDYY8.);          00460001
+      CLOSEDT = CDATES;                                                 00470001
+                                                                        00480001
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON);          00490001
+   IF (YEAR(CLOSEDT) = &REPTYEAR) & (MONTH(CLOSEDT) = &REPTMON) THEN    00500001
+      DELETE;                                                           00510001
+RUN;                                                                    00520001
+                                                                        00530001
+PROC SORT DATA=ALLCURRENT;                                              00540001
+   BY ACCTNO;                                                           00550001
+RUN;                                                                    00560001
+                                                                        00570001
+DATA ALLCURRENT;                                                        00580001
+   MERGE ALLCURRENT(IN=A) CISCA;                                        00590001
+   BY ACCTNO;                                                           00600001
+   IF A;                                                                00610001
+RUN;                                                                    00620001
+                                                                        00630001
+PROC SORT DATA=ALLCURRENT;                                              00640001
+   BY SNAME BRANCH;                                                     00650001
+RUN;                                                                    00660001
+                                                                        00670001
+DATA _NULL_;                                                            00680001
+  SET ALLCURRENT;                                                       00690001
+  FILE SASLIST;                                                         00700001
+  IF _N_ = 1 THEN DO;                                                   00710001
+    PUT @1 ' ';                                                         00720001
+    PUT @1 'REPORT ID : EIBMRB03';                                      00730001
+    PUT @1 'LISTING OF NEW CA OPENED FOR THE MONTH OF ' "&REPTMTH"      00740001
+           ' OF YEAR ' "&REPTYEAR";                                     00750001
+    PUT @1 'AS AT ' "&RDATE";                                           00760001
+    PUT @1 ' ';                                                         00770001
+    PUT @3   ' '                                                        00780001
+        @12  'BRANCH CODE'                                              00790001
+        @27  'BRANCH ABBR'                                              00800001
+        @43  'ACCOUNT NAME'                                             00810001
+        @86  'ACCOUNT NO'                                               00820001
+        @103 'CURRENT BALANCE (RM)'                                     00830001
+        @128 'DATE ACCOUNT OPENED'                                      00840001
+        ;                                                               00850001
+    PUT @3 '------------------------------------------------'           00860001
+           "------------------------------------------------"           00870001
+           "------------------------------------------------";          00880001
+  END;                                                                  00890001
+    PUT @3   SNAME       $9.                                            00900001
+        @18  BRANCH                                                     00910001
+        @31  BRABBR                                                     00920001
+        @43  CUSTNAME                                                   00930001
+        @86  ACCTNO                                                     00940001
+        @109 CURBAL      COMMA14.2                                      00950001
+        @133 OPENDT      DDMMYY8.                                       00960001
+        ;                                                               00970001
+RUN;                                                                    00980001
+
+
+============================================================ EIBMRB04 =============================================================================
+
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE;
+%INC PGM(PBBELF);
+
+DATA REPTDATE;
+    SET DEPO.REPTDATE IDEPO.REPTDATE;
+    CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+    CALL SYMPUT('REPTMTH',TRIM(LEFT(UPCASE(PUT(REPTDATE,MONNAME9.)))));
+    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+RUN;
+
+DATA FD;
+   SET DEPO.FD;
+   SNAME=PUT('PBB',4.);
+RUN;
+
+DATA IFD;
+   SET IDEPO.FD;
+   IF PRODUCT NE 393;
+   SNAME=PUT('PIBB',4.);
+RUN;
+
+DATA CISFD;
+   SET CIS.DEPOSIT;
+   KEEP ACCTNO CUSTNAME;
+   PROC SORT;
+      BY ACCTNO;
+RUN;
+
+DATA ALLFD NOOBS;
+   SET FD IFD;
+   KEEP SNAME BRANCH BRABBR NAME ACCTNO CURBAL OPENDT;
+   WHERE CUSTCODE NOT IN (77,78,95,96) AND
+         CURCODE EQ 'MYR';
+
+   BRABBR=PUT(BRANCH,BRCHCD.);
+   IF OPENDT NOT IN (0,.) THEN
+      ODATES = INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.);
+      OPENDT = ODATES;
+   IF CLOSEDT NOT IN (0,.) THEN
+      CDATES  = INPUT(SUBSTR(PUT(CLOSEDT,Z11.),1,8),MMDDYY8.);
+      CLOSEDT = CDATES;
+
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON);
+   IF (YEAR(CLOSEDT) = &REPTYEAR) & (MONTH(CLOSEDT) = &REPTMON) THEN
+      DELETE;
+RUN;
+
+PROC SORT DATA=ALLFD;
+   BY ACCTNO;
+RUN;
+
+DATA ALLFD;
+   MERGE ALLFD(IN=A) CISFD;
+   BY ACCTNO;
+   IF A;
+RUN;
+
+PROC SORT DATA=ALLFD;
+   BY SNAME BRANCH;
+RUN;
+
+DATA _NULL_;
+  SET ALLFD;
+  FILE SASLIST;
+  IF _N_ = 1 THEN DO;
+    PUT @1 ' ';
+    PUT @1 'REPORT ID : EIBMRB04';
+    PUT @1 'LISTING OF NEW FD OPENED FOR THE MONTH OF ' "&REPTMTH"
+           ' OF YEAR ' "&REPTYEAR";
+    PUT @1 'AS AT ' "&RDATE";
+    PUT @1 ' ';
+    PUT @3   ' '
+        @12  'BRANCH CODE'
+        @27  'BRANCH ABBR'
+        @43  'ACCOUNT NAME'
+        @86  'ACCOUNT NO'
+        @103 'CURRENT BALANCE (RM)'
+        @128 'DATE ACCOUNT OPENED'
+        ;
+    PUT @3 '------------------------------------------------'
+           "------------------------------------------------"
+           "------------------------------------------------";
+  END;
+    PUT @3   SNAME       $9.
+        @18  BRANCH
+        @31  BRABBR
+        @43  CUSTNAME
+        @86  ACCTNO
+        @109 CURBAL      COMMA14.2
+        @133 OPENDT      DDMMYY8.
+       ;
+RUN;
+
+
+============================================================ EIBMRB05 =============================================================================
+
+*;
+OPTIONS NOCENTER NODATE NONUMBER;
+%INC PGM(PBBDPFMT,PBBELF);
+
+PROC FORMAT;
+   VALUE FCYTYPE 1='FCY FD'
+                 2='FCY CA';
+
+DATA REPTDATE;
+   SET DEPO.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN(8)   CALL SYMPUT('NOWK', PUT('1', $1.));
+      WHEN(15)  CALL SYMPUT('NOWK', PUT('2', $1.));
+      WHEN(22)  CALL SYMPUT('NOWK', PUT('3', $1.));
+      OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTYEAR2',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA FCYFD;
+   SET MISFD.FCYFD&REPTMON&NOWK&REPTYEAR2;
+   WHERE PRODUCT IN (350,351,352,353,354,355,356,357,358,359,360,
+                     361,362);
+   CUSTCD = PUT(CUSTCODE,FDCUSTCD.);
+   IF CUSTCD NOT IN (02,03,07,10,12,81,82,83,84);
+   DROP PURPOSE;
+   FTYPE=1;
+RUN;
+
+DATA FCYCA;
+   SET DEPO.CURRENT IDEPO.CURRENT;
+   WHERE CURCODE NE 'MYR' AND
+         PRODUCT IN (400,401,402,403,404,405,406,407,408,409,410,411,
+                     420,421,422,423,424,425,426,427,428,429,430,431,
+                     440,441,442,443,444,450,451,452,453,454,432,433,
+                     434);
+   CUSTCD = PUT(CUSTCODE,DDCUSTCD.);
+   IF CUSTCD NOT IN (02,03,07,10,12,81,82,83,84);
+   DROP PURPOSE;
+   FTYPE=2;
+
+   IF OPENDT NOT IN (0,.) THEN
+      OPENDT = INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.);
+   IF CLOSEDT NOT IN (0,.) THEN
+      CLOSEDT = INPUT(SUBSTR(PUT(CLOSEDT,Z11.),1,8),MMDDYY8.);
+RUN;
+
+DATA FCY;
+   SET FCYFD
+       FCYCA;
+   KEEP BRANCH BRABBR CURBAL FTYPE OPENDT CLOSEDT ACNEW;
+   *WHERE CURBAL GT 0;
+
+   BRABBR=PUT(BRANCH,BRCHCD.);
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON) THEN DO;
+      ACNEW=1;
+   /* IF (YEAR(CLOSEDT)=YEAR(OPENDT)) & (MONTH(CLOSEDT)=MONTH(OPENDT))
+         THEN DELETE; */
+   END;
+   IF OPENIND NOT IN ('B','C','P');
+RUN;
+
+PROC SUMMARY DATA=FCY NWAY;
+   CLASS BRANCH BRABBR FTYPE;
+   VAR CURBAL ACNEW;
+   OUTPUT OUT=FFCY (RENAME=(_FREQ_=FREQ))
+          SUM=;
+RUN;
+
+PROC SORT DATA=FFCY; BY BRANCH;
+DATA TEMP;
+   SET FFCY;BY BRANCH;
+   IF FIRST.BRANCH THEN DO;
+      FD=0; CFD=0; NFD=0; CA=0; CCA=0; NCA=0; TA=0;
+   END;
+   IF FTYPE = 1 THEN DO;
+      FD+CURBAL;
+      CFD+FREQ;
+      NFD+ACNEW;
+   END;
+   ELSE DO;
+      CA+CURBAL;
+      CCA+FREQ;
+      NCA+ACNEW;
+   END;
+   TYPE=1;
+   TA=FD+CA;
+   IF LAST.BRANCH THEN OUTPUT;
+RUN;
+
+PROC SUMMARY DATA=TEMP;
+   CLASS TYPE;
+   VAR FD CFD NFD CA CCA NCA TA;
+   OUTPUT OUT=TOTAL
+          SUM=;
+RUN;
+
+DATA _NULL_;
+  SET TEMP;
+  FORMAT CFD NFD CCA NCA      10.
+         FD CA TA        COMMA20.2;
+  FILE SASLIST;
+  IF _N_ = 1 THEN DO;
+     PUT @1 'REPORT ID : EIBMRB05';
+     PUT @1 'MONTH END REPORT BY BRANCH FOR FCY FD AND FCY CA '
+            '(PBB & PIBB)';
+     PUT @1 'AS AT ' "&RDATE";
+     PUT @1 ' ';
+     PUT @2 'BRANCH CODE' ';'  'BRANCH ABBR' ';'                    ';'
+            'FCY FD'      ';'                ';'                    ';'
+            'FCY CA'      ';'                ';'                    ';';
+
+     PUT @2               ';'                ';'                    ';'
+            'NO OF O/S'   ';'  'NO OF NEW'   ';'                    ';'
+            'NO OF O/S'   ';'  'NO OF NEW'   ';'                    ';';
+
+     PUT @2               ';'                ';'  'CURRENT BALANCE' ';'
+            'ACCOUNT'     ';'  'ACC OPENED'  ';'  'CURRENT BALANCE' ';'
+            'ACCOUNT'     ';'  'ACC OPENED'  ';'  'TOT AMT O/S RM'  ';';
+  END;
+     PUT @2  BRANCH       ';'   BRABBR       ';'  FD                ';'
+             CFD          ';'   NFD          ';'  CA                ';'
+             CCA          ';'   NCA          ';'  TA                ';';
+RUN;
+
+DATA _NULL_;
+  SET TOTAL;
+  FORMAT CFD NFD CCA NCA      10.
+         FD CA TA        COMMA20.2;
+  FILE SASLIST MOD;
+  IF _N_ = 1 THEN DO;
+     PUT @2   'TOTAL'      ';'                ';'  FD              ';'
+              CFD          ';'   NFD          ';'  CA              ';'
+              CCA          ';'   NCA          ';'  TA              ';';
+  END;
+RUN;
+
+
+============================================================== EIBMRB06 ===========================================================================
+
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;
+%INC PGM(PBBELF);
+
+DATA REPTDATE;
+   SET DEPO.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN(8)   CALL SYMPUT('NOWK', PUT('1', $1.));
+      WHEN(15)  CALL SYMPUT('NOWK', PUT('2', $1.));
+      WHEN(22)  CALL SYMPUT('NOWK', PUT('3', $1.));
+      OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
+   END;
+   CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+   CALL SYMPUT('REPTYEAR2', PUT(REPTDATE, YEAR2.));
+   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+   CALL SYMPUT('REPTMTH',TRIM(LEFT(UPCASE(PUT(REPTDATE,MONNAME9.)))));
+RUN;
+
+DATA CISFD;
+   SET CIS.DEPOSIT;
+   KEEP ACCTNO CUSTNAME;
+   PROC SORT;
+      BY ACCTNO;
+RUN;
+
+DATA FCYFD;
+   SET MISFD.FCYFD&REPTMON&NOWK&REPTYEAR2;
+   KEEP BRANCH BRABBR NAME ACCTNO CURBAL OPENDT CURCODE CLOSEDT;
+   WHERE CUSTCODE NOT IN (77,78,95,96);
+
+   BRABBR=PUT(BRANCH,BRCHCD.);
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON);
+   IF (YEAR(CLOSEDT) = &REPTYEAR) & (MONTH(CLOSEDT) = &REPTMON) THEN
+      DELETE;
+RUN;
+
+PROC SORT DATA=FCYFD;
+   BY ACCTNO;
+RUN;
+
+DATA FCYFD;
+   MERGE FCYFD(IN=A) CISFD;
+   BY ACCTNO;
+   IF A;
+RUN;
+
+PROC SORT DATA=FCYFD;
+   BY BRANCH ACCTNO;
+RUN;
+
+DATA _NULL_;
+  SET FCYFD;
+  FILE SASLIST;
+  IF _N_ = 1 THEN DO;
+    PUT @1 ' ';
+    PUT @1 'REPORT ID : EIBMRB06';
+    PUT @1 'LISTING OF NEW FCY FD OPENED FOR THE MONTH OF ' "&REPTMTH"
+           ' OF YEAR ' "&REPTYEAR";
+    PUT @1 'AS AT ' "&RDATE";
+    PUT @1 ' ';
+    PUT @3   'BRANCH CODE'
+        @18  'BRANCH ABBR'
+        @34  'ACCOUNT NAME'
+        @77  'ACCOUNT NO'
+        @92  'CURRENT BALANCE (RM)'
+        @116 'DATE ACCOUNT OPENED'
+        @140 'CURRENCY CODE'
+        ;
+    PUT @3 '--------------------------------------------------'
+           "--------------------------------------------------"
+           "--------------------------------------------------";
+  END;
+    PUT @3   BRANCH      6.
+        @22  BRABBR
+        @34  CUSTNAME
+        @77  ACCTNO
+        @97  CURBAL      COMMA14.2
+        @122 OPENDT      DDMMYY8.
+        @145 CURCODE
+        ;
+RUN;
+
+
+
+=========================================================== EIBMRB07 ==============================================================================
+
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;
+%INC PGM(PBBELF);
+
+DATA REPTDATE;
+    SET DEPO.REPTDATE;
+    CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+    CALL SYMPUT('REPTMTH',TRIM(LEFT(UPCASE(PUT(REPTDATE,MONNAME9.)))));
+    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+RUN;
+
+DATA CISCA;
+   SET CIS.DEPOSIT;
+   KEEP ACCTNO CUSTNAME;
+   PROC SORT;
+      BY ACCTNO;
+RUN;
+
+DATA FCYCA;
+   SET DEPO.CURRENT IDEPO.CURRENT;
+   KEEP BRANCH BRABBR NAME ACCTNO CURBAL OPENDT CURCODE;
+   WHERE CUSTCODE NOT IN (77,78,95,96) AND
+         CURCODE NE 'MYR' AND
+         PRODUCT IN (400,401,402,403,404,405,406,407,408,409,410,411,
+                     420,421,422,423,424,425,426,427,428,429,430,431,
+                     440,441,442,443,444,450,451,452,453,454,432,433
+                     434);
+
+   BRABBR=PUT(BRANCH,BRCHCD.);
+   IF OPENDT NOT IN (0,.) THEN
+      ODATES = INPUT(SUBSTR(PUT(OPENDT,Z11.),1,8),MMDDYY8.);
+      OPENDT = ODATES;
+   IF CLOSEDT NOT IN (0,.) THEN
+      CDATES  = INPUT(SUBSTR(PUT(CLOSEDT,Z11.),1,8),MMDDYY8.);
+      CLOSEDT = CDATES;
+
+   IF (YEAR(OPENDT) = &REPTYEAR) & (MONTH(OPENDT) = &REPTMON);
+   IF (YEAR(CLOSEDT) = &REPTYEAR) & (MONTH(CLOSEDT) = &REPTMON) THEN
+      DELETE;
+RUN;
+
+PROC SORT DATA=FCYCA;
+   BY ACCTNO;
+RUN;
+
+DATA FCYCA;
+   MERGE FCYCA(IN=A) CISCA;
+   BY ACCTNO;
+   IF A;
+RUN;
+
+PROC SORT DATA=FCYCA;
+   BY BRANCH;
+RUN;
+
+DATA _NULL_;
+  SET FCYCA;
+  FILE SASLIST;
+  IF _N_ = 1 THEN DO;
+    PUT @1 ' ';
+    PUT @1 'REPORT ID : EIBMRB07';
+    PUT @1 'LISTING OF NEW FCY CA OPENED FOR THE MONTH OF ' "&REPTMTH"
+           ' OF YEAR ' "&REPTYEAR";
+    PUT @1 'AS AT ' "&RDATE";
+    PUT @1 ' ';
+    PUT @3   'BRANCH CODE'
+        @18  'BRANCH ABBR'
+        @34  'ACCOUNT NAME'
+        @77  'ACCOUNT NO'
+        @92  'CURRENT BALANCE     '
+        @116 'DATE ACCOUNT OPENED'
+        @140 'CURRENCY CODE';
+    PUT @3 '--------------------------------------------------'
+           "--------------------------------------------------"
+           "--------------------------------------------------";
+  END;
+    PUT @3   BRANCH      6.
+        @22  BRABBR
+        @34  CUSTNAME
+        @77  ACCTNO
+        @97  CURBAL      COMMA14.2
+        @122 OPENDT      DDMMYY8.
+        @145 CURCODE     ;
+RUN;
+
+
+============================================================== EIBMRB08 ===========================================================================
+
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;
+%INC PGM(PBBELF);
+
+PROC FORMAT;
+     VALUE FDRNGE
+            LOW - 5000     = '01'
+           5001 - 10000    = '02'
+          10001 - 15000    = '03'
+          15001 - 20000    = '04'
+          20001 - 25000    = '05'
+          25001 - 30000    = '06'
+          30001 - 35000    = '07'
+          35001 - 40000    = '08'
+          40001 - 45000    = '09'
+          45001 - 50000    = '10'
+          50001 - 55000    = '11'
+          55001 - 60000    = '12'
+          60001 - 65000    = '13'
+          65001 - 70000    = '14'
+          70001 - 75000    = '15'
+          75001 - 80000    = '16'
+          80001 - 85000    = '17'
+          85001 - 90000    = '18'
+          90001 - 95000    = '19'
+          95001 - 100000   = '20'
+         100001 - 150000   = '21'
+         150001 - 250000   = '22'
+         250001 - 500000   = '23'
+         500001 - 1000000  = '24'
+        1000001 - 2000000  = '25'
+        2000001 - 3000000  = '26'
+        3000001 - 4000000  = '27'
+        4000001 - 5000000  = '28'
+        5000001 - 10000000 = '29'
+       10000001 - HIGH     = '30';
+
+     VALUE $FDVALUE
+         '01'   = ' 5K & BELOW    '
+         '02'   = ' >  5K TO 10K  '
+         '03'   = ' > 10K TO 15K  '
+         '04'   = ' > 15K TO 20K  '
+         '05'   = ' > 20K TO 25K  '
+         '06'   = ' > 25K TO 30K  '
+         '07'   = ' > 30K TO 35K  '
+         '08'   = ' > 35K TO 40K  '
+         '09'   = ' > 40K TO 45K  '
+         '10'   = ' > 45K TO 50K  '
+         '11'   = ' > 50K TO 55K  '
+         '12'   = ' > 55K TO 60K  '
+         '13'   = ' > 60K TO 65K  '
+         '14'   = ' > 65K TO 70K  '
+         '15'   = ' > 70K TO 75K  '
+         '16'   = ' > 75K TO 80K  '
+         '17'   = ' > 80K TO 85K  '
+         '18'   = ' > 85K TO 90K  '
+         '19'   = ' > 90K TO 95K  '
+         '20'   = ' > 95K TO 100K '
+         '21'   = ' > 100K TO 150K'
+         '22'   = ' > 150K TO 250K'
+         '23'   = ' > 250K TO 500K'
+         '24'   = ' > 500K TO 1M  '
+         '25'   = ' > 1M TO 2M    '
+         '26'   = ' > 2M TO 3M    '
+         '27'   = ' > 3M TO 4M    '
+         '28'   = ' > 4M TO 5M    '
+         '29'   = ' > 5M TO 10M   '
+         '30'   = ' > 10M         ';
+RUN;
+
+DATA REPTDATE;
+   SET DEPOSIT.REPTDATE;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('RPTDATE',PUT(REPTDATE,8.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA WDRAW;
+   SET MIS.FDWDRW&REPTMON;
+   TYPE    = 1;
+   BRABBR  = PUT(BRANCH,BRCHCD.);
+   FDVAL   = PUT(CURBAL,FDRNGE.);
+RUN;
+
+PROC SORT DATA=WDRAW;BY TRANAMT;
+%MACRO RMGROUP;
+DATA WDRAW1 WDRAW2 WDRAW3 WDRAW4;
+   SET WDRAW;
+   IF CURCODE EQ 'MYR' THEN DO;
+    IF PRODCD NOT IN (394,393);
+      IF ACCTTYPE='C' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW1;
+         ELSE
+            OUTPUT WDRAW3;
+      END;
+      ELSE IF ACCTTYPE='I' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW2;
+         ELSE
+            OUTPUT WDRAW4;
+      END;
+   END;
+RUN;
+%MEND;
+
+%MACRO FCYGROUP;
+DATA WDRAW1 WDRAW2 WDRAW3 WDRAW4;
+   SET WDRAW;
+   IF CURCODE NE 'MYR' THEN DO;
+      IF ACCTTYPE='C' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW1;
+         ELSE
+            OUTPUT WDRAW3;
+      END;
+      ELSE IF ACCTTYPE='I' THEN DO;
+         IF CUSTCODE IN (77,78,95,96) THEN
+            OUTPUT WDRAW2;
+         ELSE
+            OUTPUT WDRAW4;
+      END;
+   END;
+RUN;
+%MEND;
+
+*+--------------------------------------------------------------+
+ |  RM & FCY FIXED DEPOSIT BREAKDOWN BY REASON CODE             |
+ +--------------------------------------------------------------+;
+%MACRO RCODE;
+   IF FIRST.FDVAL THEN DO;
+      C1=0; C2=0; C3=0; C4=0; C5=0; C6=0; C7=0; C8=0;  C9=0;
+      C10=0; C11=0; C12=0; C13=0; C14=0; C15=0; A1=0;  A2=0;
+      A3=0; A4=0; A5=0; A6=0; A7=0; A8=0; A9=0; A10=0; A11=0;
+      A12=0; A13=0; A14=0; A15=0; C16=0; A16=0; TC=0; TA=0;
+   END;
+
+   %DO I=1 %TO 16;
+      IF RSONCODE = 'W' || PUT(&I, Z2.) THEN DO;
+         C&I+1;
+         A&I+TRANAMT;
+      END;
+   %END;
+
+   TC+1;
+   TA+TRANAMT;
+   IF LAST.FDVAL THEN OUTPUT;
+%MEND;
+
+%MACRO MAINPROC;
+%DO J=1 %TO 4;
+PROC SORT DATA=WDRAW&J;BY FDVAL;
+DATA FDRAW&J;
+   SET WDRAW&J;BY FDVAL;
+   KEEP FDVAL CURBAL C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 C11 C12 C13 C14 C15
+        A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14 A15 TC TA TYPE
+        C16 A16;
+
+   IF (         CURBAL<=5000 ) THEN DO;
+      %RCODE;
+   END;
+   IF (   5001<=CURBAL<=10000) THEN DO;
+      %RCODE;
+   END;
+   IF (  10001<=CURBAL<=15000) THEN DO;
+      %RCODE;
+   END;
+   IF (  15001<=CURBAL<=20000) THEN DO;
+      %RCODE;
+   END;
+   IF (  20001<=CURBAL<=25000) THEN DO;
+      %RCODE;
+   END;
+   IF (  25001<=CURBAL<=30000) THEN DO;
+      %RCODE;
+   END;
+   IF (  30001<=CURBAL<=35000) THEN DO;
+      %RCODE;
+   END;
+   IF (  35001<=CURBAL<=40000) THEN DO;
+      %RCODE;
+   END;
+   IF (  40001<=CURBAL<=45000) THEN DO;
+      %RCODE;
+   END;
+   IF (  45001<=CURBAL<=50000) THEN DO;
+      %RCODE;
+   END;
+   IF (  50001<=CURBAL<=55000) THEN DO;
+      %RCODE;
+   END;
+   IF (  55001<=CURBAL<=60000) THEN DO;
+      %RCODE;
+   END;
+   IF (  60001<=CURBAL<=65000) THEN DO;
+      %RCODE;
+   END;
+   IF (  65001<=CURBAL<=70000) THEN DO;
+      %RCODE;
+   END;
+   IF (  70001<=CURBAL<=75000) THEN DO;
+      %RCODE;
+   END;
+   IF (  75001<=CURBAL<=80000) THEN DO;
+      %RCODE;
+   END;
+   IF (  80001<=CURBAL<=85000) THEN DO;
+      %RCODE;
+   END;
+   IF (  85001<=CURBAL<=90000) THEN DO;
+      %RCODE;
+   END;
+   IF (  90001<=CURBAL<=95000) THEN DO;
+      %RCODE;
+   END;
+   IF (  95001<=CURBAL<=100000)    THEN DO;
+      %RCODE;
+   END;
+   IF (  100001<=CURBAL<=150000)   THEN DO;
+      %RCODE;
+   END;
+   IF (  150001<=CURBAL<=250000)   THEN DO;
+      %RCODE;
+   END;
+   IF (  250001<=CURBAL<=500000)   THEN DO;
+      %RCODE;
+   END;
+   IF (  500001<=CURBAL<=1000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 1000001<=CURBAL<=2000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 2000001<=CURBAL<=3000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 3000001<=CURBAL<=4000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 4000001<=CURBAL<=5000000)  THEN DO;
+      %RCODE;
+   END;
+   IF ( 5000001<=CURBAL<=10000000) THEN DO;
+      %RCODE;
+   END;
+   IF (CURBAL>10000001) THEN DO;
+      %RCODE;
+   END;
+RUN;
+
+PROC SUMMARY DATA=FDRAW&J;
+   CLASS TYPE;
+   VAR C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 C11 C12 C13 C14 C15 C16 TC TA;
+   OUTPUT OUT=TOTAL&J
+          SUM=RC1 RC2 RC3 RC4 RC5 RC6 RC7 RC8 RC9 RC10 RC11 RC12 RC13
+              RC14 RC15 RC16 GTC GTA;
+RUN;
+%END;
+%MEND;
+
+%MACRO REPORT;
+%DO J=1 %TO 4;
+%IF &J=1 %THEN %DO;
+DATA _NULL_;
+    FILE &OUTPUT MOD;
+     PUT @1 'REPORT ID : EIBDRB08';
+     PUT @1 'TITLE : MONTHLY REPORT ON ' "&RTITLE " 'BY ACCOUNT '
+            'BALANCE';
+     PUT @1 'REPORTING DATE : ' "&RDATE";
+     PUT @1 ' ';
+     PUT @1 '(A) INDIVIDUAL CUSTOMER (CUSTOMER CODE: 77,78,95 AND 96)';
+%END;
+%IF &J=3 %THEN %DO;
+DATA _NULL_;
+    FILE &OUTPUT MOD;
+    PUT @1 ' ';
+    PUT @1 '(B) NON-INDIVIDUAL CUSTOMER';
+%END;
+DATA _NULL_;
+  SET FDRAW&J;
+  FORMAT TA     COMMA16.
+         FDVAL  $FDVALUE.;
+  FILE &OUTPUT MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @1  ' ';
+    PUT @4  "&&HDR&J";
+    PUT @1  ' ';
+    PUT @4  'ACCOUNT BALANCE AS ' ';' 'WITHDRAWAL' ';;'
+            'BREAKDOWN BY REASON CODE';
+    PUT @4  'MONTH-END FOR TOTAL' ';' 'NO. OF  '   ';'  'AMOUNT'  ';'
+            'W01' ';'  'W02' ';'  'W03' ';'  'W04' ';'  'W05'     ';'
+            'W06' ';'  'W07' ';'  'W08' ';'  'W09' ';'  'W10'     ';'
+            'W11' ';'  'W12' ';'  'W13' ';'  'W14' ';'  'W15'     ';'
+            'W16';
+    PUT @4  'RECEIPT (BY RANGE)'  ';' 'RECEIPTS'   ';'  ' (RM)';
+  END;
+    PUT @4   FDVAL ';'  TC    ';'  TA    ';'
+             C1    ';'  C2    ';'  C3    ';'  C4    ';'  C5   ';'
+             C6    ';'  C7    ';'  C8    ';'  C9    ';'  C10  ';'
+             C11   ';'  C12   ';'  C13   ';'  C14   ';'  C15  ';'
+             C16   ;
+RUN;
+
+DATA _NULL_;
+  SET TOTAL&J;
+  FORMAT GTA COMMA16.;
+  FILE &OUTPUT MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @4  'TOTAL'           ';'  GTC   ';'  GTA   ';'
+             RC1   ';'  RC2   ';'  RC3   ';'  RC4   ';'  RC5   ';'
+             RC6   ';'  RC7   ';'  RC8   ';'  RC9   ';'  RC10  ';'
+             RC11  ';'  RC12  ';'  RC13  ';'  RC14  ';'  RC15  ';'
+             RC16   ;
+  END;
+RUN;
+%END;
+%MEND;
+
+OPTIONS NOCENTER NONUMBER NODATE MISSING=0;
+
+%LET HDR1=(I) PBB;
+%LET HDR2=(II) PIBB;
+%LET HDR3=(I) PBB;
+%LET HDR4=(II) PIBB;
+
+*+--------------------------------------------------------------+
+ |  GENERATE REPORT FOR RM FIXED DEPOSIT                        |
+ +--------------------------------------------------------------+;
+DATA _NULL_;
+   CALL SYMPUT('RTITLE',PUT('FD RECEIPTS WITHDRAWALS (PBB&PIBB)',$34.));
+   CALL SYMPUT('OUTPUT',PUT('RMWDRAW',$7.));
+RUN;
+
+%RMGROUP;
+%MAINPROC;
+%REPORT;
+
+*+--------------------------------------------------------------+
+ |   GENERATE REPORT FOR FCY FIXED DEPOSIT                      |
+ +--------------------------------------------------------------+;
+DATA _NULL_;
+   CALL SYMPUT('RTITLE',PUT('FCY FD RECEIPTS WITHDRAWALS',$27.));
+   CALL SYMPUT('OUTPUT',PUT('FCYWDRAW',$8.));
+RUN;
+
+%FCYGROUP;
+%MAINPROC;
+%REPORT;
+
+
+=========================================================== EIBMRB09 ==============================================================================
+
+
+
+*;
+OPTIONS YEARCUTOFF=1950 NOCENTER NODATE NONUMBER;
+%INC PGM(PBBELF);
+
+DATA REPTDATE;
+   SET DEPOSIT.REPTDATE;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTMTH',TRIM(LEFT(UPCASE(PUT(REPTDATE,MONNAME9.)))));
+   CALL SYMPUT('RPTDATE',PUT(REPTDATE,8.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+DATA WDRAW;
+   SET MIS.FDWDRW&REPTMON;
+   TYPE     = 1;
+   BRABBR   = PUT(BRANCH,BRCHCD.);
+RUN;
+
+%MACRO RMGROUP;
+DATA WDRAW1 WDRAW2;
+   SET WDRAW;
+   IF CURCODE EQ 'MYR' THEN DO;
+    IF PRODCD NOT IN (394,393);
+      IF CUSTCODE IN (77,78,95,96) THEN
+         OUTPUT WDRAW1;
+      ELSE
+         OUTPUT WDRAW2;
+   END;
+RUN;
+%MEND;
+
+%MACRO MAINPROC;
+%DO J=1 %TO 2;
+
+PROC SORT DATA=WDRAW&J;BY RSONCODE;
+DATA FDRAW&J;
+   SET WDRAW&J;BY RSONCODE;
+   KEEP RSONCODE C0 C1 C2 C3 C4 C5 C6 C7 C8 C9
+                 A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 TC TA PRODCD TYPE;
+   DO I=1 TO 16;
+      IF RSONCODE = 'W' || PUT(I, Z2.) THEN DO;
+         IF FIRST.RSONCODE THEN DO;
+            C0=0; C1=0; C2=0; C3=0; C4=0; C5=0; C6=0; C7=0;
+            A0=0; A1=0; A2=0; A3=0; A4=0; A5=0; A6=0; A7=0;
+            C8=0; C9=0;
+            A8=0; A9=0;
+         END;
+         IF PRODCD = 300 THEN DO;
+            C0+1;
+            A0+TRANAMT;
+         END;
+         IF PRODCD = 301 THEN DO;
+            C1+1;
+            A1+TRANAMT;
+         END;
+         IF PRODCD = 302 THEN DO;
+            C2+1;
+            A2+TRANAMT;
+         END;
+         IF PRODCD = 303 THEN DO;
+            C3+1;
+            A3+TRANAMT;
+         END;
+         IF PRODCD = 315 THEN DO;
+            C4+1;
+            A4+TRANAMT;
+         END;
+         IF PRODCD = 316 THEN DO;
+            C5+1;
+            A5+TRANAMT;
+         END;
+         IF PRODCD = 311 THEN DO;
+            C6+1;
+            A6+TRANAMT;
+         END;
+         IF PRODCD = 312 THEN DO;
+            C7+1;
+            A7+TRANAMT;
+         END;
+         IF PRODCD = 313 THEN DO;
+            C8+1;
+            A8+TRANAMT;
+         END;
+         IF PRODCD = 314 THEN DO;
+            C9+1;
+            A9+TRANAMT;
+         END;
+       END;
+   END;
+   TC=C0+C1+C2+C3+C4+C5+C6+C7+C8+C9;
+   TA=A0+A1+A2+A3+A4+A5+A6+A7+A8+A9;
+   IF LAST.RSONCODE THEN OUTPUT;
+RUN;
+
+PROC SUMMARY DATA=FDRAW&J;
+   CLASS TYPE;
+   VAR C0 C1 C2 C3 C4 C5 C6 C7 C8 C9
+       A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 TC TA;
+   OUTPUT OUT=TOTAL&J
+          SUM=RC0 RC1 RC2 RC3 RC4 RC5 RC6 RC7 RC8 RC9
+              RA0 RA1 RA2 RA3 RA4 RA5 RA6 RA7 RA8 RA9 GTC GTA;
+RUN;
+
+DATA TOTAL&J;
+   SET TOTAL&J;
+   FORMAT PC0 PC1 PC2 PC3 PC4 PC5 PC6 PC7 PC8 PC9
+          PA0 PA1 PA2 PA3 PA4 PA5 PA6 PA7 PA8 PA9 PGTC PGTA 3.;
+   %DO I=0 %TO 9;
+      PC&I=(RC&I/GTC)*100;   PA&I =(RA&I/GTA)*100;
+      PGTC+PC&I;             PGTA+PA&I;
+   %END;
+RUN;
+
+%END;
+%MEND;
+
+%MACRO REPORT;
+%DO J=1 %TO 2;
+%IF &J=1 %THEN %DO;
+DATA _NULL_;
+    FILE SASLIST;
+    PUT @1 'REPORT ID : EIBMRB09';
+    PUT @1 'TITLE : MONTHLY REPORT ON REASON FOR FD WITHDRAWALS '
+           'BY RECEIPTS';
+    PUT @9 '- BREAKDOWN BY PRODUCT TYPES';
+    PUT @1 'REPORTING DATE : ' "&RDATE";
+    PUT @1 ' ';
+    PUT @1 '(A) INDIVIDUAL CUSTOMER (CUSTOMER CODE: 77,78,95 AND 96)';
+%END;
+%IF &J=2 %THEN %DO;
+DATA _NULL_;
+    FILE SASLIST MOD;
+    PUT @1 ' ';
+    PUT @1 '(B) NON-INDIVIDUAL CUSTOMER';
+%END;
+DATA _NULL_;
+  SET FDRAW&J;
+  FORMAT A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 TA COMMA16.;
+  FILE SASLIST MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @1  ' ';
+    PUT @4  'TYPES OF REASON' ';'
+            'NO. OF RECEIPTS WITHDRAWN FOR THE MONTH OF '
+            "&REPTMTH " "&REPTYEAR" ';;;;;;;;'
+            'TOTAL BY REASONS';
+    PUT @4  ';'
+            'PLUS FD'           ';;'   'FD LIFE'            ';;'
+            'PB GOLDEN 50 PLUS' ';;'   'MGIA-I'             ';;'
+            'ISTISMAR'          ';;'   'TERM DEPOSIT-I'     ';;'
+            'EFD NON STAFF'     ';;'   'EFD STAFF'          ';;'
+            'ETDI NON STAFF'    ';;'   'ETDI STAFF';
+    PUT @4  ';'
+            'PRODUCT CODE: 300' ';;'   'PRODUCT CODE: 301'  ';;'
+            'PRODUCT CODE: 303' ';;'   'PRODUCT CODE: 302'  ';;'
+            'PRODUCT CODE: 315' ';;'   'PRODUCT CODE: 316'  ';;'
+            'PRODUCT CODE: 311' ';;'   'PRODUCT CODE: 312'  ';;'
+            'PRODUCT CODE: 313' ';;'   'PRODUCT CODE: 314';
+    PUT @4  ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM' ';' 'NO.' ';'  'RM' ';'
+            'NO.' ';'  'RM';
+  END;
+    PUT @4   RSONCODE  ';'
+             C0   ';'  A0   ';'  C1   ';'  A1   ';'  C3   ';'
+             A3   ';'  C2   ';'  A2   ';'  C4   ';'  A4   ';'
+             C5   ';'  A5   ';'  C6   ';'  A6   ';'  C7   ';'
+             A7   ';'  C8   ';'  A8   ';'  C9   ';'  A9   ';'
+             TC   ';'  TA;
+RUN;
+
+DATA _NULL_;
+  SET TOTAL&J;
+  FORMAT RA0 RA1 RA2 RA3 RA4 RA5 RA6 RA7 RA8 RA9 GTA COMMA16.;
+  FILE SASLIST MOD;
+  IF _N_ = 1 THEN DO;
+    PUT @4   'TOTAL'   ';'
+             RC0  ';'  RA0  ';'  RC1  ';'  RA1  ';'  RC3  ';'
+             RA3  ';'  RC2  ';'  RA2  ';'  RC4  ';'  RA4  ';'
+             RA5  ';'  RC5  ';'  RA6  ';'  RC6  ';'  RA7  ';'
+             RC7  ';'  RA8  ';'  RC8  ';'  RA9  ';'  RC8  ';'
+             GTC  ';'  GTA;
+    PUT @4   '% COMPOSITION'     ';'
+             PC0  ';'  PA0  ';'  PC1  ';'  PA1  ';'  PC3  ';'
+             PA3  ';'  PC2  ';'  PA2  ';'  PC4  ';'  PA4  ';'
+             PC5  ';'  PA5  ';'  PC6  ';'  PA6  ';'  PC7  ';'
+             PA7  ';'  PC8  ';'  PA8  ';'  PC9  ';'  PA9  ';'
+             PGTC ';'  PGTA;
+  END;
+RUN;
+%END;
+%MEND;
+
+OPTIONS NOCENTER NONUMBER NODATE MISSING=0;
+
+*+--------------------------------------------------------------+
+ |  GENERATE REPORT FOR RM FIXED DEPOSIT                        |
+ +--------------------------------------------------------------+;
+DATA _NULL_;
+   CALL SYMPUT('RTITLE',PUT('FD WITHDRAWALS',$14.));
+   CALL SYMPUT('OUTPUT',PUT('RMWDRAW',$7.));
+RUN;
+
+%RMGROUP;
+%MAINPROC;
+%REPORT;
+
+
+
