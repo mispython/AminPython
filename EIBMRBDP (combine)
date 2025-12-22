@@ -1,0 +1,220 @@
+from eibmrb01 import run_eibmrb01
+from eibmrb02 import run_eibmrb02
+from eibmrb03 import run_eibmrb03
+from eibmrb04 import run_eibmrb04
+from eibmrb05 import run_eibmrb05
+from eibmrb06 import run_eibmrb06
+from eibmrb07 import run_eibmrb07
+from eibmrb08 import run_eibmrb08
+from eibmrb09 import run_eibmrb09
+import os
+
+OUTPUTS = [
+    "EIBMRB01.parquet", "EIBMRB02.parquet", "EIBMRB03.parquet",
+    "EIBMRB04.parquet", "EIBMRB05.parquet", "EIBMRB06.parquet",
+    "EIBMRB07.parquet", "EIBMRB8A.parquet", "EIBMRB8B.parquet",
+    "EIBMRB09.parquet"
+]
+
+def main():
+    # === DELETE STEP (IEFBR14 equivalent) ===
+    for f in OUTPUTS:
+        try:
+            os.remove(f"output/{f}")
+        except FileNotFoundError:
+            pass
+
+    # === EXECUTION SEQUENCE (same as JCL) ===
+    run_eibmrb01()
+    run_eibmrb02()
+    run_eibmrb03()
+    run_eibmrb04()
+    run_eibmrb05()
+    run_eibmrb06()
+    run_eibmrb07()
+    run_eibmrb08()
+    run_eibmrb09()
+
+if __name__ == "__main__":
+    main()
+
+################################ 01 ################################
+def run_eibmrb01():
+    import pandas as pd
+
+    depo_reptdate = pd.read_parquet("input/DEPO_REPTDATE.parquet")
+    misfd = pd.read_parquet("input/MISFD_FCYFD.parquet")
+    mis2fd = pd.read_parquet("input/MIS2FD_FCYFD.parquet")
+
+    rpt = depo_reptdate.iloc[0]["REPTDATE"]
+    day = rpt.day
+    NOWK = "1" if day == 8 else "2" if day == 15 else "3" if day == 22 else "4"
+    REPTYEAR = rpt.year
+    REPTMON = rpt.month
+
+    fcy = mis2fd[["ACCTNO", "CUSTCODE", "OPENDT"]].sort_values("ACCTNO")
+    fcyfd = misfd.sort_values("ACCTNO")
+
+    df = fcyfd.merge(fcy, on="ACCTNO", how="left")
+    df = df[(df["CURCODE"] != "MYR") & (df["CURBAL"] > 0)]
+    df["CURBAL"] = df["CURBAL"] / 1000
+
+    mask = (
+        (df["OPENDT"].dt.year == REPTYEAR) &
+        (df["OPENDT"].dt.month == REPTMON) &
+        (df["CLOSEDAT"].dt.year == df["OPENDT"].dt.year) &
+        (df["CLOSEDAT"].dt.month == df["OPENDT"].dt.month)
+    )
+    df = df[~mask]
+
+    out = (
+        df.groupby(["REPTDATE", "CURCODE"])
+        .agg(
+            TOT_AMT_OS_RM=("CURBAL", "sum"),
+            NO_OF_ACCT=("CURBAL", "count")
+        )
+        .reset_index()
+    )
+
+    out.to_parquet("output/EIBMRB01.parquet", index=False)
+
+################################ 02 ################################
+def run_eibmrb02():
+    import pandas as pd
+
+    depo = pd.read_parquet("input/DEPO.parquet")
+    idepo = pd.read_parquet("input/IDEPO.parquet")
+    rpt = pd.read_parquet("input/DEPO_REPTDATE.parquet").iloc[0]["REPTDATE"]
+
+    df = pd.concat([depo, idepo], ignore_index=True)
+    df = df[df["CURBAL"] > 0]
+
+    out = (
+        df.groupby("BRANCH")
+        .agg(TOT_OUTSTANDING=("CURBAL", "sum"))
+        .reset_index()
+    )
+
+    out.to_parquet("output/EIBMRB02.parquet", index=False)
+
+################################ 03 ################################
+def run_eibmrb03():
+    import pandas as pd
+
+    depo_current = pd.read_parquet("input/DEPO_CURRENT.parquet")
+    idepo_current = pd.read_parquet("input/IDEPO_CURRENT.parquet")
+    cis = pd.read_parquet("input/CIS_DEPOSIT.parquet")
+    rpt = pd.read_parquet("input/DEPO_REPTDATE.parquet").iloc[0]["REPTDATE"]
+
+    df = pd.concat([depo_current, idepo_current], ignore_index=True)
+    df = df[(df["CURCODE"] == "MYR") & (~df["CUSTCODE"].isin([77,78,95,96]))]
+
+    mask_open = (df["OPENDT"].dt.year == rpt.year) & (df["OPENDT"].dt.month == rpt.month)
+    mask_close = (df["CLOSEDT"].dt.year == rpt.year) & (df["CLOSEDT"].dt.month == rpt.month)
+
+    df = df[mask_open & ~mask_close]
+    df = df.merge(cis[["ACCTNO", "CUSTNAME"]], on="ACCTNO", how="left")
+
+    df.to_parquet("output/EIBMRB03.parquet", index=False)
+
+################################ 04 ################################
+def run_eibmrb04():
+    import pandas as pd
+
+    depo_fd = pd.read_parquet("input/DEPO_FD.parquet")
+    idepo_fd = pd.read_parquet("input/IDEPO_FD.parquet")
+    cis = pd.read_parquet("input/CIS_DEPOSIT.parquet")
+    rpt = pd.read_parquet("input/DEPO_REPTDATE.parquet").iloc[0]["REPTDATE"]
+
+    df = pd.concat([depo_fd, idepo_fd], ignore_index=True)
+    df = df[df["CURCODE"] == "MYR"]
+
+    mask_open = (df["OPENDT"].dt.year == rpt.year) & (df["OPENDT"].dt.month == rpt.month)
+    mask_close = (df["CLOSEDT"].dt.year == rpt.year) & (df["CLOSEDT"].dt.month == rpt.month)
+
+    df = df[mask_open & ~mask_close]
+    df = df.merge(cis[["ACCTNO", "CUSTNAME"]], on="ACCTNO", how="left")
+
+    df.to_parquet("output/EIBMRB04.parquet", index=False)
+
+################################ 05 ################################
+def run_eibmrb05():
+    import pandas as pd
+
+    depo = pd.read_parquet("input/DEPO.parquet")
+    idepo = pd.read_parquet("input/IDEPO.parquet")
+    misfd = pd.read_parquet("input/MISFD_FCYFD.parquet")
+
+    df = pd.concat([depo, idepo, misfd], ignore_index=True)
+
+    out = (
+        df.groupby("BRANCH")
+        .agg(TOT_BALANCE=("CURBAL", "sum"))
+        .reset_index()
+    )
+
+    out.to_parquet("output/EIBMRB05.parquet", index=False)
+
+################################ 06 ################################
+def run_eibmrb06():
+    import pandas as pd
+
+    misfd = pd.read_parquet("input/MISFD_FCYFD.parquet")
+    cis = pd.read_parquet("input/CIS_DEPOSIT.parquet")
+    rpt = pd.read_parquet("input/DEPO_REPTDATE.parquet").iloc[0]["REPTDATE"]
+
+    df = misfd[misfd["CURCODE"] != "MYR"]
+
+    mask_open = (df["OPENDT"].dt.year == rpt.year) & (df["OPENDT"].dt.month == rpt.month)
+    df = df[mask_open]
+
+    df = df.merge(cis[["ACCTNO", "CUSTNAME"]], on="ACCTNO", how="left")
+    df.to_parquet("output/EIBMRB06.parquet", index=False)
+
+################################ 07 ################################
+def run_eibmrb07():
+    import pandas as pd
+
+    depo_current = pd.read_parquet("input/DEPO_CURRENT.parquet")
+    idepo_current = pd.read_parquet("input/IDEPO_CURRENT.parquet")
+    cis = pd.read_parquet("input/CIS_DEPOSIT.parquet")
+    rpt = pd.read_parquet("input/DEPO_REPTDATE.parquet").iloc[0]["REPTDATE"]
+
+    df = pd.concat([depo_current, idepo_current], ignore_index=True)
+    df = df[df["CURCODE"] != "MYR"]
+
+    mask_open = (df["OPENDT"].dt.year == rpt.year) & (df["OPENDT"].dt.month == rpt.month)
+    df = df[mask_open]
+
+    df = df.merge(cis[["ACCTNO", "CUSTNAME"]], on="ACCTNO", how="left")
+    df.to_parquet("output/EIBMRB07.parquet", index=False)
+
+################################ 08 ################################
+def run_eibmrb08():
+    import pandas as pd
+
+    wdraw = pd.read_parquet("input/MIS_FDWDRW.parquet")
+
+    rm = wdraw[wdraw["CURCODE"] == "MYR"]
+    fcy = wdraw[wdraw["CURCODE"] != "MYR"]
+
+    rm.to_parquet("output/EIBMRB8A.parquet", index=False)
+    fcy.to_parquet("output/EIBMRB8B.parquet", index=False)
+
+################################ 09 ################################
+def run_eibmrb09():
+    import pandas as pd
+
+    wdraw = pd.read_parquet("input/MIS_FDWDRW.parquet")
+    rm = wdraw[wdraw["CURCODE"] == "MYR"]
+
+    out = (
+        rm.groupby(["RSONCODE", "PRODCD"])
+        .agg(
+            COUNT=("TRANAMT", "count"),
+            AMOUNT=("TRANAMT", "sum")
+        )
+        .reset_index()
+    )
+
+    out.to_parquet("output/EIBMRB09.parquet", index=False)
