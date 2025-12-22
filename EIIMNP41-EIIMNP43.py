@@ -274,6 +274,403 @@ def run_eiimnp41(hp, ccris, recrate):
 
 ====================================================================================================================================================
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# ======================================================
+# 1. REPORT DATE DERIVATION
+# ======================================================
+
+def derive_report_vars(reptdate: pd.Timestamp):
+    day = reptdate.day
+    if day <= 8:
+        wk = "1"
+    elif day <= 15:
+        wk = "2"
+    elif day <= 22:
+        wk = "3"
+    else:
+        wk = "4"
+
+    prevmon = (reptdate.replace(day=1) - pd.Timedelta(days=1))
+    yearend = pd.Timestamp(year=reptdate.year, month=1, day=1) - pd.Timedelta(days=1)
+
+    return {
+        "REPTDATE": reptdate,
+        "REPTDAY": f"{reptdate.day:02d}",
+        "REPTMON": f"{reptdate.month:02d}",
+        "REPTYEAR": reptdate.strftime("%y"),
+        "NOWK": wk,
+        "REPTMON1": f"{prevmon.month:02d}",
+        "REPTYEAR1": prevmon.strftime("%y"),
+        "LMON": f"{yearend.month:02d}",
+        "LYEAR": yearend.strftime("%y"),
+        "DATE": reptdate.strftime("%d/%m/%y")
+    }
+
+# ======================================================
+# 2. PREPARE HP DATA
+# ======================================================
+
+def prepare_hp(hp_df):
+    hp = hp_df.copy()
+    hp = hp[hp["BALANCE"] > 0]
+
+    hp["IND"] = np.where(hp["PRODUCT"].isin([128, 130]), "PIBB", "")
+    hp = hp[hp["IND"] != ""]
+
+    return hp
+
+# ======================================================
+# 3. MERGE CCRIS
+# ======================================================
+
+def merge_ccris(hp, ccris):
+    ccris = (
+        ccris.query("FACILITY in ['34331','34332']")
+             .rename(columns={"ACCTNUM": "ACCTNO", "DAYSARR": "DAYARR"})
+             [["ACCTNO", "NOTENO", "DAYARR"]]
+             .sort_values(["ACCTNO", "NOTENO", "DAYARR"], ascending=[True, True, False])
+             .drop_duplicates(["ACCTNO", "NOTENO"])
+    )
+
+    return (
+        hp.sort_values(["ACCTNO", "NOTENO"])
+          .merge(ccris, on=["ACCTNO", "NOTENO"], how="left")
+    )
+
+# ======================================================
+# 4. CATEGORY ASSIGNMENT
+# ======================================================
+
+def assign_category(df):
+    d = df.copy()
+    d["CATEGORY"] = ""
+
+    cond = d["PAIDIND"] == "M"
+
+    d.loc[
+        (d["DAYARR"] <= 30) &
+        ~d["BORSTAT"].isin(list("FIREWZ")) &
+        (d["USER5"] != "N") & cond,
+        "CATEGORY"
+    ] = "CURRENT"
+
+    d.loc[
+        d["DAYARR"].between(31, 89) &
+        ~d["BORSTAT"].isin(list("FIREWZ")) &
+        (d["USER5"] != "N") & cond,
+        "CATEGORY"
+    ] = "1-2 MTHS"
+
+    d.loc[
+        (~d["BORSTAT"].isin(list("FIREWZ"))) &
+        (((d["USER5"] == "N") & (d["DAYARR"] <= 182)) |
+         (d["DAYARR"].between(90, 182))) & cond,
+        "CATEGORY"
+    ] = "3-5 MTHS"
+
+    d.loc[
+        (~d["BORSTAT"].isin(list("FIREWZ"))) &
+        (((d["USER5"] == "N") & (d["DAYARR"] >= 183)) |
+         (d["DAYARR"] >= 183)) & cond,
+        "CATEGORY"
+    ] = ">=6 MTHS"
+
+    d.loc[(d["BORSTAT"] == "I") & cond, "CATEGORY"] = "IRREGULAR"
+    d.loc[(d["BORSTAT"] == "R") & cond, "CATEGORY"] = "REPOSSESSED"
+    d.loc[(d["BORSTAT"] == "F") & cond, "CATEGORY"] = "DEFICIT"
+
+    return d[d["CATEGORY"] != ""]
+
+# ======================================================
+# 5. APPLY CAP RATE
+# ======================================================
+
+def apply_cap_rate(pibb, icountcap):
+    df = pibb.merge(icountcap, on="CATEGORY", how="left")
+
+    df["CAP"] = (df["BALANCE"] * df["CARATE"]) / 100
+    return df
+
+# ======================================================
+# 6. OPENING VS CLOSING BALANCE
+# ======================================================
+
+def compare_open_close(openbal, current):
+    df = openbal.merge(
+        current,
+        on=["ACCTNO", "NOTENO"],
+        how="outer",
+        suffixes=("_OPEN", "")
+    )
+
+    df["STATUS"] = np.select(
+        [
+            df["OPEN_BALANCE"].notna() & df["CAP"].isna(),
+            df["OPEN_BALANCE"].isna() & df["CAP"].notna()
+        ],
+        ["P", "C"],
+        default=""
+    )
+
+    df.loc[df["STATUS"] == "P", "CATEGORY"] = df["CATEGORY1"]
+
+    df["CAP"] = df["CAP"].fillna(0)
+    df["OPEN_BALANCE"] = df["OPEN_BALANCE"].fillna(0)
+
+    df["CHARCAP"] = df["CAP"] - df["OPEN_BALANCE"]
+
+    df["SUSPEND"] = np.where(df["CHARCAP"] > 0, df["CHARCAP"], 0)
+    df["WRBACK"] = np.where(df["CHARCAP"] < 0, -df["CHARCAP"], 0)
+
+    df["NET"] = df["SUSPEND"] - df["WRBACK"]
+    df["WRIOFF_BAL"] = 0
+
+    return df
+
+# ======================================================
+# 7. WRITE-OFF PROCESS (QUARTER ONLY)
+# ======================================================
+
+def apply_writeoff(df, iwoff):
+    df = df.merge(iwoff[["ACCTNO", "WRIOFF_BAL"]], on="ACCTNO", how="left")
+    df["WRITEOFF"] = np.where(df["WRIOFF_BAL"].notna(), "Y", "N")
+    df["WRIOFF_BAL"] = df["WRIOFF_BAL"].fillna(0)
+
+    mask = (df["STATUS"] == "P") & (df["WRITEOFF"] == "Y")
+
+    df.loc[mask, "SUSPEND"] = np.maximum(
+        df.loc[mask, "WRIOFF_BAL"] - df.loc[mask, "OPEN_BALANCE"], 0
+    )
+
+    df.loc[mask, "WRBACK"] = np.maximum(
+        df.loc[mask, "OPEN_BALANCE"] - df.loc[mask, "WRIOFF_BAL"], 0
+    )
+
+    df["NET"] = df["SUSPEND"] - df["WRBACK"]
+    return df
+
+# ======================================================
+# 8. BRANCH SUMMARY (PROC TABULATE EQUIVALENT)
+# ======================================================
+
+def branch_summary(df):
+    return (
+        df.groupby("BRANCH1", as_index=False)
+          .agg(
+              NO=("ACCTNO", "count"),
+              BALANCE=("BALANCE", "sum"),
+              OPEN_BALANCE=("OPEN_BALANCE", "sum"),
+              SUSPEND=("SUSPEND", "sum"),
+              WRBACK=("WRBACK", "sum"),
+              WRIOFF_BAL=("WRIOFF_BAL", "sum"),
+              CAP=("CAP", "sum"),
+              NET=("NET", "sum")
+          )
+    )
+
+# ======================================================
+# 9. MAIN ENTRY
+# ======================================================
+
+def run_eiimnp42(
+    hp,
+    ccris,
+    icountcap,
+    openbal,
+    iwoff=None,
+    reptdate=None
+):
+    rept_vars = derive_report_vars(reptdate)
+
+    hp = prepare_hp(hp)
+    hp = merge_ccris(hp, ccris)
+    pibb = assign_category(hp)
+
+    current = apply_cap_rate(pibb, icountcap)
+    full = compare_open_close(openbal, current)
+
+    if iwoff is not None:
+        full = apply_writeoff(full, iwoff)
+
+    summary = branch_summary(full)
+
+    return {
+        "DETAIL": full,
+        "SUMMARY": summary,
+        "REPTVARS": rept_vars
+    }
+
+
+
+
+
+
+====================================================================================================================================================
+
+
+import pandas as pd
+import numpy as np
+
+# ======================================================
+# 1. REPORT DATE DERIVATION
+# ======================================================
+
+def derive_report_vars(reptdate: pd.Timestamp):
+    day = reptdate.day
+    if day <= 8:
+        wk = "1"
+    elif day <= 15:
+        wk = "2"
+    elif day <= 22:
+        wk = "3"
+    else:
+        wk = "4"
+
+    return {
+        "REPTDAY": f"{reptdate.day:02d}",
+        "REPTMON": f"{reptdate.month:02d}",
+        "REPTYEAR": reptdate.strftime("%y"),
+        "NOWK": wk,
+        "DATE": reptdate.strftime("%d/%m/%y")
+    }
+
+# ======================================================
+# 2. CATEGORY ORDERING (NO)
+# ======================================================
+
+CATEGORY_ORDER = {
+    "CURRENT": 1,
+    "1-2 MTHS": 2,
+    "3-5 MTHS": 3,
+    ">=6 MTHS": 4,
+    "IRREGULAR": 5,
+    "REPOSSESSED": 6,
+    "DEFICIT": 7
+}
+
+def assign_category_no(df):
+    out = df.copy()
+    out["NO"] = out["CATEGORY"].map(CATEGORY_ORDER)
+    return out.sort_values("NO")
+
+# ======================================================
+# 3. TABULATE EQUIVALENT (CATEGORY × BRANCH)
+# ======================================================
+
+def tabulate_by_category(df):
+    """
+    Equivalent to PROC TABULATE:
+    NO * CATEGORY * BRANCH1
+    """
+
+    summary = (
+        df.groupby(
+            ["NO", "CATEGORY", "BRANCH1"],
+            as_index=False
+        )
+        .agg(
+            BALANCE=("BALANCE", "sum"),
+            OPEN_BALANCE=("OPEN_BALANCE", "sum"),
+            SUSPEND=("SUSPEND", "sum"),
+            WRBACK=("WRBACK", "sum"),
+            WRIOFF_BAL=("WRIOFF_BAL", "sum"),
+            CAP=("CAP", "sum"),
+            NET=("NET", "sum")
+        )
+    )
+
+    return summary
+
+# ======================================================
+# 4. SUBTOTALS BY CATEGORY
+# ======================================================
+
+def category_subtotal(df):
+    subtotal = (
+        df.groupby(
+            ["NO", "CATEGORY"],
+            as_index=False
+        )
+        .agg(
+            BALANCE=("BALANCE", "sum"),
+            OPEN_BALANCE=("OPEN_BALANCE", "sum"),
+            SUSPEND=("SUSPEND", "sum"),
+            WRBACK=("WRBACK", "sum"),
+            WRIOFF_BAL=("WRIOFF_BAL", "sum"),
+            CAP=("CAP", "sum"),
+            NET=("NET", "sum")
+        )
+    )
+
+    subtotal["BRANCH1"] = "SUB TOTAL"
+    return subtotal
+
+# ======================================================
+# 5. GRAND TOTAL
+# ======================================================
+
+def grand_total(df):
+    total = df.agg({
+        "BALANCE": "sum",
+        "OPEN_BALANCE": "sum",
+        "SUSPEND": "sum",
+        "WRBACK": "sum",
+        "WRIOFF_BAL": "sum",
+        "CAP": "sum",
+        "NET": "sum"
+    }).to_frame().T
+
+    total["NO"] = 99
+    total["CATEGORY"] = "GRAND TOTAL"
+    total["BRANCH1"] = "GRAND TOTAL"
+    return total
+
+# ======================================================
+# 6. MAIN ENTRY (EIIMNP43)
+# ======================================================
+
+def run_eiimnp43(icap_df, reptdate):
+    """
+    icap_df : DataFrame equivalent to NPL.ICAPOLD&REPTMON&REPTYEAR
+    """
+
+    rept_vars = derive_report_vars(reptdate)
+
+    # Assign ordering
+    df = assign_category_no(icap_df)
+
+    # Detail (CATEGORY × BRANCH)
+    detail = tabulate_by_category(df)
+
+    # Subtotals
+    subtotals = category_subtotal(detail)
+
+    # Grand total
+    gtotal = grand_total(detail)
+
+    # Combine all
+    final = pd.concat(
+        [detail, subtotals, gtotal],
+        ignore_index=True
+    ).sort_values(["NO", "CATEGORY", "BRANCH1"])
+
+    return {
+        "DETAIL": detail,
+        "SUBTOTAL": subtotals,
+        "GRAND_TOTAL": gtotal,
+        "FINAL": final,
+        "REPTVARS": rept_vars
+    }
+
+
+
+
+
+
+
 
 
 
@@ -289,20 +686,93 @@ def run_eiimnp41(hp, ccris, recrate):
 
 
 
+import pandas as pd
+from datetime import datetime
 
+# ======================================================
+# 1. REPORT DATE DERIVATION (same logic as SAS)
+# ======================================================
 
+def derive_report_vars(reptdate: pd.Timestamp):
+    day = reptdate.day
+    if day <= 8:
+        wk = "1"
+    elif day <= 15:
+        wk = "2"
+    elif day <= 22:
+        wk = "3"
+    else:
+        wk = "4"
 
+    return {
+        "REPTDAY": f"{reptdate.day:02d}",
+        "REPTMON": f"{reptdate.month:02d}",
+        "REPTYEAR": reptdate.strftime("%y"),
+        "NOWK": wk
+    }
 
+# ======================================================
+# 2. FIXED-WIDTH FORMATTER (PUT @xxx equivalent)
+# ======================================================
 
-====================================================================================================================================================
+def format_ccris_line(row):
+    """
+    SAS:
+    PUT @001 ACCTNO  10.
+        @012 NOTENO  Z5.
+        @018 BRANCH  Z5.
+        @024 CAP     20.2
+        @045 AANO    $CHAR13.
+    """
 
+    acctno = f"{int(row['ACCTNO']):>10}"
+    noteno = f"{int(row['NOTENO']):05d}"
+    branch = f"{int(row['BRANCH']):05d}"
+    cap = f"{row['CAP']:>20.2f}"
+    aano = f"{str(row['AANO']):<13}"
 
+    return (
+        acctno +
+        noteno +
+        branch +
+        cap +
+        aano
+    )
 
+# ======================================================
+# 3. MAIN EIIMNP44 PROCESS
+# ======================================================
 
+def run_eiimnp44(
+    icap_df: pd.DataFrame,
+    reptdate: pd.Timestamp,
+    output_file: str
+):
+    """
+    icap_df : DataFrame equivalent to NPL.ICAPOLD&REPTMON&REPTYEAR
+    output_file : CCRIS interface file path
+    """
 
+    # Derive macro-like variables (for compatibility)
+    rept_vars = derive_report_vars(reptdate)
 
+    # Ensure required columns exist
+    required_cols = ["ACCTNO", "NOTENO", "BRANCH", "CAP", "AANO"]
+    missing = [c for c in required_cols if c not in icap_df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
 
+    # Write CCRIS file (equivalent to DATA _NULL_ FILE CCRIS)
+    with open(output_file, "w", encoding="ascii") as f:
+        for _, row in icap_df.iterrows():
+            line = format_ccris_line(row)
+            f.write(line + "\n")
 
+    return {
+        "OUTPUT_FILE": output_file,
+        "REPTVARS": rept_vars,
+        "RECORD_COUNT": len(icap_df)
+    }
 
 
 
