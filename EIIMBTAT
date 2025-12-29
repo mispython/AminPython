@@ -94,3 +94,138 @@ PROC REPORT DATA=AVGTENURE NOWD HEADLINE SPLIT='*' PS=2000;
        LINE @003 86*'=';
    ENDCOMP;
 RUN;
+
+
+#!/usr/bin/env python3
+# ============================================================
+# JOB NAME : EIIMBTAT (Python version)
+# DESC     : Average Original Tenure for BAS Primary Rediscounted
+# BANK     : Public Islamic Bank Berhad
+# INPUT    : Binary (pickle)
+# OUTPUT   : Parquet
+# ============================================================
+
+import pandas as pd
+import pickle
+
+# ============================================================
+# 1. LOAD REPORT DATE (FROM LOAN.REPTDATE)
+# ============================================================
+
+def load_binary(path):
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+# Binary inputs (replace with real paths)
+LOAN_REPTDATE_BIN = "PIBB_LOAN_REPTDATE.bin"
+BTRWH_BASE_PATH   = "PIBB_IBTRAD"   # base name only
+
+rept_df = load_binary(LOAN_REPTDATE_BIN)
+
+# Assume single-row dataset (same as SAS)
+REPTDATE = pd.to_datetime(rept_df.iloc[0]["REPTDATE"])
+
+day = REPTDATE.day
+if day == 8:
+    NOWK = "1"
+elif day == 15:
+    NOWK = "2"
+elif day == 22:
+    NOWK = "3"
+else:
+    NOWK = "4"
+
+REPTYEAR = REPTDATE.strftime("%y")
+REPTMON  = REPTDATE.strftime("%m")
+RDATE    = REPTDATE.strftime("%d/%m/%Y")
+
+# ============================================================
+# 2. LOAD IBTRAD DATASET (DYNAMIC NAME)
+# SAS: BTRWH.IBTRAD&REPTMON&NOWK&REPTYEAR
+# ============================================================
+
+ibtrad_bin = f"{BTRWH_BASE_PATH}{REPTMON}{NOWK}{REPTYEAR}.bin"
+ibtrad = load_binary(ibtrad_bin)
+
+# ============================================================
+# 3. FILTER DATA (SAS WHERE CLAUSE)
+# ============================================================
+
+FACILITY_LIST = [
+    "34411", "34412", "34421", "34422",
+    "34440", "34470", "34480", "34490"
+]
+
+LIABCODE_LIST = ["BPI", "BII", "BSI", "BEI"]
+
+ibtrad = ibtrad[
+    (ibtrad["FACILITY"].isin(FACILITY_LIST)) &
+    (ibtrad["LIABCODE"].isin(LIABCODE_LIST)) &
+    (ibtrad["UTRDF"] == "D") &
+    (ibtrad["BALANCE"] > 0)
+].copy()
+
+# ============================================================
+# 4. CALCULATE TENURE & TOTAMT
+# ============================================================
+
+ibtrad["ISSDTE"]  = pd.to_datetime(ibtrad["ISSDTE"])
+ibtrad["MATDATE"] = pd.to_datetime(ibtrad["MATDATE"])
+
+ibtrad["TENURE"] = (ibtrad["MATDATE"] - ibtrad["ISSDTE"]).dt.days + 1
+ibtrad["TOTAMT"] = ibtrad["FCVALUE"] * ibtrad["TENURE"]
+
+ibtrad = ibtrad[
+    ["BRANCH", "ACCTNOX", "TRANSREF",
+     "FCVALUE", "MATDATE", "ISSDTE",
+     "TENURE", "TOTAMT"]
+]
+
+# ============================================================
+# 5. AGGREGATE BY BRANCH (PROC SUMMARY)
+# ============================================================
+
+avgt = (
+    ibtrad
+    .groupby("BRANCH", as_index=False)
+    .agg({
+        "FCVALUE": "sum",
+        "TOTAMT": "sum"
+    })
+)
+
+# ============================================================
+# 6. CALCULATE AVERAGE TENURE
+# ============================================================
+
+avgt["TENURE"] = avgt["TOTAMT"] / avgt["FCVALUE"]
+
+# ============================================================
+# 7. ADD REPORT METADATA
+# ============================================================
+
+avgt["REPORT_ID"]   = "EIIMBTAT"
+avgt["REPORT_DATE"] = RDATE
+avgt["REPTMON"]     = REPTMON
+avgt["NOWK"]        = NOWK
+avgt["REPTYEAR"]    = REPTYEAR
+
+# ============================================================
+# 8. WRITE OUTPUT AS PARQUET
+# ============================================================
+
+OUTPUT_PARQUET = "SAP.EIIMBTAT.AVGTENURE.parquet"
+
+avgt.to_parquet(
+    OUTPUT_PARQUET,
+    engine="pyarrow",
+    compression="snappy",
+    index=False
+)
+
+# ============================================================
+# END OF JOB
+# ============================================================
+
+print("EIIMBTAT job completed successfully (Binary → Parquet).")
+
