@@ -1,0 +1,79 @@
+//EIBNMMFR JOB MISEIS,CLASS=A,MSGCLASS=A,NOTIFY=&SYSUID
+//*
+//**********************************************************************
+//* EXTRACT LIST OF ACCOUNT FROM EIMBNM01 & EIIBNM01 (2021-3161)
+//**********************************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DEL01    DD DISP=(MOD,DELETE,DELETE),SPACE=(CYL,(0)),
+//            DSN=SAP.MTH.MFRS.BNM01.DTLFTP
+//*
+//CREATE   EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.MTH.MFRS.BNM01.DTLFTP,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//            SPACE=(CYL,(200,200),RLSE),UNIT=(SYSDA,5)
+//*
+//EIBNMMFR EXEC SAS609
+//PBB      DD DSN=SAP.PBB.MFRS.DETAILS,DISP=SHR
+//PIBB     DD DSN=SAP.PIBB.MFRS.DETAILS,DISP=SHR
+//SYSIN    DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1950;
+
+DATA REPTDATE;
+   REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+            PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+
+   CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR2.));
+   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+   CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+   CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+   CALL SYMPUT('REPTDATE',REPTDATE);
+RUN;
+
+DATA PBB;
+  SET PBB.ALM_CR
+      PBB.MAST_BR;
+
+  FORMAT REPTDATE DATE9.;
+
+  IF PRODESC IN ('BILLS RETAIL','TOTAL COMMERCIAL RETAILS');
+  REPTDATE = &REPTDATE;
+RUN;
+
+DATA PIBB;
+  SET PIBB.ALM_CR
+      PIBB.MAST_BR;
+
+  FORMAT REPTDATE DATE9.;
+
+  IF PRODESC IN ('BILLS RETAIL','TOTAL COMMERCIAL RETAILS');
+  REPTDATE = &REPTDATE;
+RUN;
+
+DATA CRL;
+   SET PBB PIBB;
+
+   KEEP ACCTNO NOTENO PRODESC REPTDATE;
+RUN;
+
+FILENAME TRANFILE 'SAP.MTH.MFRS.BNM01.DTLFTP' DISP=OLD;
+PROC CPORT LIBRARY=WORK FILE=TRANFILE;
+SELECT CRL; RUN;
+
+//*----------------------------------------------------------------
+//* FTP TO SAS EDW
+//*----------------------------------------------------------------
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary
+lzopts linerule=$lr
+cd /stgsrcsys/host/ftpfiles
+PUT //SAP.MTH.MFRS.BNM01.DTLFTP  BNM01DTL
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd /stgsrcsys/host/control
+PUT //SAP.MONTH.CONTROL TRIGGER_BNM01.txt
+EOB
