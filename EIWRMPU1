@@ -1,0 +1,1212 @@
+//EIWRMPU1 JOB SAS,MISEIS,CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID             JOB09751
+//*********************************************************
+//* GENERATE WEEKLY REPORTS FROM REMITTANCE (MISC ONLY)
+//* ESMR  : 2013-2158 (MFM)
+//*********************************************************
+//* PBB
+//*********************************************************
+//SAS6091  EXEC SAS609
+//MCHP     DD DISP=SHR,DSN=RBP2.REM.PBB.BCDD.MCHP.RPT(0)
+//MCLN     DD DISP=SHR,DSN=RBP2.REM.PBB.BCDD.MCLN.RPT(0)
+//MCOT     DD DISP=SHR,DSN=RBP2.REM.PBB.BCDD.MCOT.RPT(0)
+//MCTF     DD DISP=SHR,DSN=RBP2.REM.PBB.BCDD.MCTF.RPT(0)
+//BRFL     DD DISP=SHR,DSN=SAP.RBP2.B033.PBB.BRANCH
+//LOAN     DD DISP=SHR,DSN=SAP.PBB.MNILN(0)
+//PGM      DD DISP=SHR,DSN=SAP.BNM.PROGRAM
+//BCTXT    DD DSN=SAP.PBB.REMPURP.MC(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=VB,LRECL=1600,BLKSIZE=0),
+//            SPACE=(CYL,(50,50),RLSE),UNIT=(SYSDA,5)
+//SYSIN    DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950;
+
+PROC FORMAT;
+   VALUE $PURPNO
+   'HOSPITALS AND CLINICS'                                            = 1
+   'UTILITIES'                                                        = 2
+   'VENDOR AND SUPPLIERS'                                             = 3
+   'TRADE FINANCE'                                                    = 4
+   'GOVERNMENT AGENCIES'                                              = 5
+   'FEE EXPENSES/INSURANCE PREMIUM (BORNE BY CUSTOMERS)'              = 6
+   'DISBURSEMENT'                                                     = 7
+   'FEE EXPENSE/INSURANCE PREMIUM (BORNE BY CUSTOMERS)'               = 8
+   'DEVELOPER SALE (REDEMPTION)'                                      = 9
+   'DEVELOPER SALE/CONSTRUCTION LOAN (PROGRESSIVE RELEASE)'           = 10
+   'DEVELOPER SALE (FULL RELEASE)'                                    = 11
+   'SUBSALE/AUCTION PURCHASED (REDEMPTION)'                           = 12
+   'SUBSALE (BALANCE OF LOAN RELEASE)'                                = 13
+   'SUBSALE (FULL RELEASE)'                                           = 14
+   'REFINANCING (REDEMPTION)'                                         = 15
+   'REFINANCING (BALANCE OF LOAN RELEASE)'                            = 16
+   'ADDITIONAL LOAN (SECURED BY THE EXISTING PROPERTY)/REINSTATEMENT' = 17
+   'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)'                       = 18
+   'OTHERS - LEGAL FEES'                                              = 19
+   'OTHERS - LIFE INSURANCE PREMIUM (APPLICABLE TO PBB)'              = 20
+   'OTHERS'                                                           = 21
+   OTHER                                                              = 0;
+RUN;
+
+DATA REPTDATE;
+   SET LOAN.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN(8) DO; NOWK='1'; SDAY=1; END;
+      WHEN(15) DO; NOWK='2'; SDAY=9; END;
+      WHEN(22) DO; NOWK='3'; SDAY=16; END;
+      OTHERWISE DO; NOWK='4'; SDAY=23; END;
+   END;
+   CALL SYMPUT('NOWK',PUT(NOWK,$2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(TODAY(),DDMMYY10.));
+RUN;
+
+DATA _NULL_;
+   INFILE MCLN FIRSTOBS=2 OBS=2;
+    INPUT @07 DD $2.
+          @10 MM $3.
+          @19 YY $4.;
+    SDATE = INPUT(COMPRESS(DD||MM||YY),DATE9.);
+    CALL SYMPUT('SDATE', PUT(SDATE, DDMMYY10.));
+RUN;
+
+DATA _NULL_;
+   INFILE MCLN FIRSTOBS=2 OBS=2;
+    INPUT @27 DD $3.
+          @30 MM $3.
+          @39 YY $4.;
+    EDATE = INPUT(COMPRESS(DD||MM||YY),DATE9.);
+    CALL SYMPUT('EDATE', PUT(EDATE, DDMMYY10.));
+RUN;
+
+DATA BRH;
+   INFILE BRFL;
+   INPUT @002  BRCH      3.
+         @006  BRCODE   $3.
+         @012  BRNAME  $30.
+         @050  BRSTAT   $1.
+         ;
+   IF BRSTAT IN ('C') THEN DELETE;
+RUN;
+PROC SORT; BY BRCH; RUN;
+
+DATA REMHP;
+   INFILE MCHP FIRSTOBS=5;
+   INPUT @001 BRCH       4.
+         @006 ISSUDT   $10.
+         @017 CUSTNAME $40.
+         @058 ACCTNO   $11.
+         @070 BNKCHQ   $16.
+         @087 AMN      $13.
+         @103 PURPOSE  $60.
+         ;
+   TYP  = 'HP';
+   CNT  = 1;
+   AMT  = COMPRESS(AMN,',')*1;
+   PURP = PUT(PURPOSE, $PURPNO.);
+   IF PURP IN (0) THEN DELETE;
+RUN;
+
+DATA REMLN;
+   INFILE MCLN FIRSTOBS=5;
+   INPUT @103 CH       $12. @;
+   IF CH = 'DISBURSEMENT' THEN DO;
+     INPUT @001 BRCH       4.
+           @006 ISSUDT   $10.
+           @017 CUSTNAME $40.
+           @058 ACCTNO   $11.
+           @070 BNKCHQ   $16.
+           @087 AMN      $13.
+           @118 PURPOSE  $70.
+           ;
+   END;
+   ELSE DO;
+     INPUT @001 BRCH       4.
+           @006 ISSUDT   $10.
+           @017 CUSTNAME $40.
+           @058 ACCTNO   $11.
+           @070 BNKCHQ   $16.
+           @087 AMN      $13.
+           @103 PURPOSE  $70.
+           ;
+   END;
+   DROP CH;
+   TYP  = 'LN';
+   CNT  = 1;
+   AMT  = COMPRESS(AMN,',')*1;
+   PURP = PUT(PURPOSE, $PURPNO.);
+   IF PURP IN (0) THEN DELETE;
+RUN;
+
+DATA REMOT;
+   INFILE MCOT FIRSTOBS=5;
+   INPUT @001 BRCH       4.
+         @006 ISSUDT   $10.
+         @017 CUSTNAME $40.
+         @058 ACCTNO   $11.
+         @070 BNKCHQ   $16.
+         @087 AMN      $13.
+         @103 PURPOSE  $70.
+         ;
+   TYP  = 'OT';
+   CNT  = 1;
+   AMT  = COMPRESS(AMN,',')*1;
+   PURP = PUT(PURPOSE, $PURPNO.);
+   IF SUBSTR(PURPOSE,1,7) = 'OTHER -' THEN PURP = 21;
+   IF PURP IN (0) THEN DELETE;
+RUN;
+
+DATA REMTF;
+   INFILE MCTF FIRSTOBS=5;
+   INPUT @001 BRCH       4.
+         @006 ISSUDT   $10.
+         @017 CUSTNAME $40.
+         @058 ACCTNO   $11.
+         @070 BNKCHQ   $16.
+         @087 AMN      $13.
+         @103 PURPOSE  $70.
+         ;
+   TYP  = 'TF';
+   CNT  = 1;
+   AMT  = COMPRESS(AMN,',')*1;
+   PURP = PUT(PURPOSE, $PURPNO.);
+   IF PURP IN (0) THEN DELETE;
+RUN;
+
+DATA REMAL;
+   SET REMLN REMHP REMOT REMTF;
+   ARRAY CN{21} CNT1-CNT21;
+   ARRAY AM{21} AMT1-AMT21;
+   DO I=1 TO 21;
+      IF PURP = I THEN DO;
+         CN{I} = CNT;
+         AM{I} = AMT;
+      END;
+   END;
+RUN;
+PROC SORT; BY BRCH; RUN;
+
+PROC SUMMARY DATA=REMAL;
+   BY BRCH;
+   VAR CNT1-CNT21 AMT1-AMT21;
+   OUTPUT OUT=SUBLH(DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+
+PROC SUMMARY DATA=REMAL;
+   WHERE TYP = 'LN';
+   BY BRCH;
+   VAR CNT AMT;
+   OUTPUT OUT=SUMLN(DROP=_FREQ_ _TYPE_) SUM=LNCNT LNAMT;
+RUN;
+
+PROC SUMMARY DATA=REMAL;
+   WHERE TYP = 'HP';
+   BY BRCH;
+   VAR CNT AMT;
+   OUTPUT OUT=SUMHP(DROP=_FREQ_ _TYPE_) SUM=HPCNT HPAMT;
+RUN;
+
+PROC SUMMARY DATA=REMAL;
+   BY BRCH;
+   VAR CNT AMT;
+   OUTPUT OUT=SUMLH(DROP=_FREQ_ _TYPE_) SUM=SUMCNT SUMAMT;
+RUN;
+
+%MACRO PERCENT;
+   FORMAT PCNT1-PCNT21 PAMT1-PAMT21
+          PHPCNT PHPAMT PLNCNT PLNAMT 5.2;
+   %DO I=1 %TO 21;
+      PCNT&I = (CNT&I/SUMCNT) * 100;
+      PAMT&I = (AMT&I/SUMAMT) * 100;
+   %END;
+   PHPCNT = (HPCNT/SUMCNT) * 100;
+   PHPAMT = (HPAMT/SUMAMT) * 100;
+   PLNCNT = (LNCNT/SUMCNT) * 100;
+   PLNAMT = (LNAMT/SUMAMT) * 100;
+%MEND;
+
+DATA RPTAL;
+   MERGE BRH(IN=A) SUBLH SUMLN SUMHP SUMLH;
+   BY BRCH;
+   IF A;
+   FORMAT HPAMT LNAMT SUMAMT 10.2;
+   ARRAY PC{21} PCNT1-PCNT21;
+   ARRAY PA{21} PAMT1-PAMT21;
+   %PERCENT;
+RUN;
+
+PROC SUMMARY DATA=RPTAL;
+   VAR CNT1-CNT21 AMT1-AMT21
+       HPCNT HPAMT LNCNT LNAMT SUMCNT SUMAMT;
+   OUTPUT OUT=TOTLH(DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+
+DATA TOTLH;
+   SET TOTLH;
+   %PERCENT;
+RUN;
+
+OPTIONS MISSING=0;
+DATA _NULL_;
+   SET RPTAL;
+   BRANCH = PUT(BRCH,Z3.);
+   FILE BCTXT;
+   Z = '05'X;
+   IF _N_ = 1 THEN DO;
+      PUT @0001 'P U B L I C   B A N K   B E R H A D';
+      PUT @0001 'SUMMARY REPORT - PURPOSE/REASON OF ISSUING '
+                'BANKER''S CHEQUE (MISC CONTROL)';
+      PUT ;
+      PUT @0001 'DATE OF EXTRACTION : ' "&RDATE";
+      PUT @0001 'FROM : ' "&SDATE";
+      PUT @0001 'TO : ' "&EDATE";
+      PUT ;
+      PUT ;
+      PUT @0001 'NO.'
+          @0005 Z 'BRANCH NAME'
+          @0035 Z 'BRANCH NO.'
+          @0050 Z 'PURPOSE/REASON'
+                Z +(-1)Z +(-1)Z
+          @0110 4*Z
+          @0170 4*Z
+          @0230 4*Z
+          @0290 4*Z
+          @0350 4*Z
+          @0410 4*Z
+          @0470 4*Z
+          @0530 4*Z
+          @0590 4*Z
+          @0650 4*Z
+          @0710 4*Z
+          @0770 4*Z
+          @0830 4*Z
+          @0890 4*Z
+          @0950 4*Z
+          @1010 4*Z
+          @1070 4*Z
+          @1130 4*Z
+          @1190 4*Z
+          @1250 4*Z
+          @1310 4*Z
+          @1370 4*Z
+          @1430 Z 'GRAND TOTAL'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 Z 'HOSPITAL AND CLINICS'
+                Z +(-1)Z +(-1)Z
+          @0110 Z 'UTILITIES'
+                Z +(-1)Z +(-1)Z
+          @0170 Z 'VENDOR AND SUPPLIERS'
+                Z +(-1)Z +(-1)Z
+          @0230 Z 'TRADE FINANCE'
+                Z +(-1)Z +(-1)Z
+          @0290 Z 'GOVERNMENT AGENCIES'
+                Z +(-1)Z +(-1)Z
+          @0350 Z 'HIRE PURCHASE'
+                Z +(-1)Z +(-1)Z  8*Z
+          @0530 Z 'LOANS'
+                Z +(-1)Z +(-1)Z  52*Z
+          @1370 Z 'OTHERS'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 20*Z
+          @0350 Z 'FEE EXPENSE/INSURANCE PREMIUM '
+                  '(BORNE BY CUSTOMERS)'
+                Z +(-1)Z +(-1)Z
+          @0410 Z 'DISBURSEMENT'
+                Z +(-1)Z +(-1)Z
+          @0470 Z 'SUB TOTAL'
+                Z +(-1)Z +(-1)Z
+          @0530 Z 'FEE EXPENSE/INSURANCE PREMIUM '
+                  '(BORNE BY CUSTOMERS)'
+                Z +(-1)Z +(-1)Z
+          @0590 Z 'DISBURSEMENT'
+                Z +(-1)Z +(-1)Z 44*Z
+          @1310 Z 'SUB TOTAL'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 36*Z
+          @0590 Z 'DEVELOPER SALE (REDEMPTION)'
+                Z +(-1)Z +(-1)Z
+          @0650 Z 'DEVELOPER SALE/CONSTRUCTION LOAN '
+                  '(PROGRESSIVE RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0720 Z 'DEVELOPER SALE (FULL RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0770 Z 'SUBSALE/AUCTION PURCHASED (REDEMPTION)'
+                Z +(-1)Z +(-1)Z
+          @0830 Z 'SUBSALE (BALANCE OF LOAN RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0890 Z 'SUBSALE (FULL RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0950 Z 'REFINANCING (REDEMPTION)'
+                Z +(-1)Z +(-1)Z
+          @1010 Z 'REFINANCING (BALANCE OF LOAN RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @1070 Z 'ADDITIONAL LOAN '
+                  '(SECURED BY EXISTING PROPERTY)'
+                  '/REINSTATEMENT'
+                Z +(-1)Z +(-1)Z
+          @1140 Z 'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)'
+                Z +(-1)Z +(-1)Z
+          @1190 Z 'OTHERS'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 36*Z
+          @0590 4*Z
+          @0650 4*Z
+          @0710 4*Z
+          @0770 4*Z
+          @0830 4*Z
+          @0890 4*Z
+          @0950 4*Z
+          @1010 4*Z
+          @1070 4*Z
+          @1130 4*Z
+          @1190 Z 'LEGAL FEES'
+                Z +(-1)Z +(-1)Z
+          @1250 Z 'LIFE INSURANCE PREMIUM'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 Z 'NO.'
+          @0065 Z '%'
+          @0080 Z 'AMOUNT'
+          @0095 Z '%'
+          @0110 Z 'NO.'
+          @0125 Z '%'
+          @0140 Z 'AMOUNT'
+          @0155 Z '%'
+          @0170 Z 'NO.'
+          @0185 Z '%'
+          @0200 Z 'AMOUNT'
+          @0215 Z '%'
+          @0230 Z 'NO.'
+          @0245 Z '%'
+          @0260 Z 'AMOUNT'
+          @0275 Z '%'
+          @0290 Z 'NO.'
+          @0305 Z '%'
+          @0320 Z 'AMOUNT'
+          @0335 Z '%'
+          @0350 Z 'NO.'
+          @0365 Z '%'
+          @0380 Z 'AMOUNT'
+          @0395 Z '%'
+          @0410 Z 'NO.'
+          @0425 Z '%'
+          @0440 Z 'AMOUNT'
+          @0455 Z '%'
+          @0470 Z 'NO.'
+          @0485 Z '%'
+          @0500 Z 'AMOUNT'
+          @0515 Z '%'
+          @0530 Z 'NO.'
+          @0545 Z '%'
+          @0560 Z 'AMOUNT'
+          @0575 Z '%'
+          @0590 Z 'NO.'
+          @0605 Z '%'
+          @0620 Z 'AMOUNT'
+          @0635 Z '%'
+          @0650 Z 'NO.'
+          @0665 Z '%'
+          @0680 Z 'AMOUNT'
+          @0695 Z '%'
+          @0710 Z 'NO.'
+          @0725 Z '%'
+          @0740 Z 'AMOUNT'
+          @0755 Z '%'
+          @0770 Z 'NO.'
+          @0785 Z '%'
+          @0800 Z 'AMOUNT'
+          @0815 Z '%'
+          @0830 Z 'NO.'
+          @0845 Z '%'
+          @0860 Z 'AMOUNT'
+          @0875 Z '%'
+          @0890 Z 'NO.'
+          @0905 Z '%'
+          @0920 Z 'AMOUNT'
+          @0935 Z '%'
+          @0950 Z 'NO.'
+          @0965 Z '%'
+          @0980 Z 'AMOUNT'
+          @0995 Z '%'
+          @1010 Z 'NO.'
+          @1025 Z '%'
+          @1040 Z 'AMOUNT'
+          @1055 Z '%'
+          @1070 Z 'NO.'
+          @1085 Z '%'
+          @1100 Z 'AMOUNT'
+          @1115 Z '%'
+          @1130 Z 'NO.'
+          @1145 Z '%'
+          @1160 Z 'AMOUNT'
+          @1175 Z '%'
+          @1190 Z 'NO.'
+          @1205 Z '%'
+          @1220 Z 'AMOUNT'
+          @1235 Z '%'
+          @1250 Z 'NO.'
+          @1265 Z '%'
+          @1280 Z 'AMOUNT'
+          @1295 Z '%'
+          @1310 Z 'NO.'
+          @1325 Z '%'
+          @1340 Z 'AMOUNT'
+          @1355 Z '%'
+          @1370 Z 'NO.'
+          @1385 Z '%'
+          @1400 Z 'AMOUNT'
+          @1415 Z '%'
+          @1430 Z 'NO.'
+          @1450 Z 'AMOUNT'
+          ;
+   END;
+   PUT @0001 _N_
+       @0005 Z BRNAME
+       @0035 Z BRANCH
+       @0050 Z CNT1
+       @0065 Z PCNT1
+       @0080 Z AMT1
+       @0095 Z PAMT1
+       @0110 Z CNT2
+       @0125 Z PCNT2
+       @0140 Z AMT2
+       @0155 Z PAMT2
+       @0170 Z CNT3
+       @0185 Z PCNT3
+       @0200 Z AMT3
+       @0215 Z PAMT3
+       @0230 Z CNT4
+       @0245 Z PCNT4
+       @0260 Z AMT4
+       @0275 Z PAMT4
+       @0290 Z CNT5
+       @0305 Z PCNT5
+       @0320 Z AMT5
+       @0335 Z PAMT5
+       @0350 Z CNT6
+       @0365 Z PCNT6
+       @0380 Z AMT6
+       @0395 Z PAMT6
+       @0410 Z CNT7
+       @0425 Z PCNT7
+       @0440 Z AMT7
+       @0455 Z PAMT7
+       @0470 Z HPCNT
+       @0485 Z PHPCNT
+       @0500 Z HPAMT
+       @0515 Z PHPAMT
+       @0530 Z CNT8
+       @0545 Z PCNT8
+       @0560 Z AMT8
+       @0575 Z PAMT8
+       @0590 Z CNT9
+       @0605 Z PCNT9
+       @0620 Z AMT9
+       @0635 Z PAMT9
+       @0650 Z CNT10
+       @0665 Z PCNT10
+       @0680 Z AMT10
+       @0695 Z PAMT10
+       @0710 Z CNT11
+       @0725 Z PCNT11
+       @0740 Z AMT11
+       @0755 Z PAMT11
+       @0770 Z CNT12
+       @0785 Z PCNT12
+       @0800 Z AMT12
+       @0815 Z PAMT12
+       @0830 Z CNT13
+       @0845 Z PCNT13
+       @0860 Z AMT13
+       @0875 Z PAMT13
+       @0890 Z CNT14
+       @0905 Z PCNT14
+       @0920 Z AMT14
+       @0935 Z PAMT14
+       @0950 Z CNT15
+       @0965 Z PCNT15
+       @0980 Z AMT15
+       @0995 Z PAMT15
+       @1010 Z CNT16
+       @1025 Z PCNT16
+       @1040 Z AMT16
+       @1055 Z PAMT16
+       @1070 Z CNT17
+       @1085 Z PCNT17
+       @1100 Z AMT17
+       @1115 Z PAMT17
+       @1130 Z CNT18
+       @1145 Z PCNT18
+       @1160 Z AMT18
+       @1175 Z PAMT18
+       @1190 Z CNT19
+       @1205 Z PCNT19
+       @1220 Z AMT19
+       @1235 Z PAMT19
+       @1250 Z CNT20
+       @1265 Z PCNT20
+       @1280 Z AMT20
+       @1295 Z PAMT20
+       @1310 Z LNCNT
+       @1325 Z PLNCNT
+       @1340 Z LNAMT
+       @1355 Z PLNAMT
+       @1370 Z CNT21
+       @1385 Z PCNT21
+       @1400 Z AMT21
+       @1415 Z PAMT21
+       @1430 Z SUMCNT
+       @1450 Z SUMAMT
+       ;
+RUN;
+
+DATA _NULL_;
+   SET TOTLH;
+   FILE BCTXT MOD;
+   Z = '05'X;
+   PUT @0001 'GRAND TOTAL'
+             Z +(-1)Z
+       @0050 Z CNT1
+       @0065 Z PCNT1
+       @0080 Z AMT1
+       @0095 Z PAMT1
+       @0110 Z CNT2
+       @0125 Z PCNT2
+       @0140 Z AMT2
+       @0155 Z PAMT2
+       @0170 Z CNT3
+       @0185 Z PCNT3
+       @0200 Z AMT3
+       @0215 Z PAMT3
+       @0230 Z CNT4
+       @0245 Z PCNT4
+       @0260 Z AMT4
+       @0275 Z PAMT4
+       @0290 Z CNT5
+       @0305 Z PCNT5
+       @0320 Z AMT5
+       @0335 Z PAMT5
+       @0350 Z CNT6
+       @0365 Z PCNT6
+       @0380 Z AMT6
+       @0395 Z PAMT6
+       @0410 Z CNT7
+       @0425 Z PCNT7
+       @0440 Z AMT7
+       @0455 Z PAMT7
+       @0470 Z HPCNT
+       @0485 Z PHPCNT
+       @0500 Z HPAMT
+       @0515 Z PHPAMT
+       @0530 Z CNT8
+       @0545 Z PCNT8
+       @0560 Z AMT8
+       @0575 Z PAMT8
+       @0590 Z CNT9
+       @0605 Z PCNT9
+       @0620 Z AMT9
+       @0635 Z PAMT9
+       @0650 Z CNT10
+       @0665 Z PCNT10
+       @0680 Z AMT10
+       @0695 Z PAMT10
+       @0710 Z CNT11
+       @0725 Z PCNT11
+       @0740 Z AMT11
+       @0755 Z PAMT11
+       @0770 Z CNT12
+       @0785 Z PCNT12
+       @0800 Z AMT12
+       @0815 Z PAMT12
+       @0830 Z CNT13
+       @0845 Z PCNT13
+       @0860 Z AMT13
+       @0875 Z PAMT13
+       @0890 Z CNT14
+       @0905 Z PCNT14
+       @0920 Z AMT14
+       @0935 Z PAMT14
+       @0950 Z CNT15
+       @0965 Z PCNT15
+       @0980 Z AMT15
+       @0995 Z PAMT15
+       @1010 Z CNT16
+       @1025 Z PCNT16
+       @1040 Z AMT16
+       @1055 Z PAMT16
+       @1070 Z CNT17
+       @1085 Z PCNT17
+       @1100 Z AMT17
+       @1115 Z PAMT17
+       @1130 Z CNT18
+       @1145 Z PCNT18
+       @1160 Z AMT18
+       @1175 Z PAMT18
+       @1190 Z CNT19
+       @1205 Z PCNT19
+       @1220 Z AMT19
+       @1235 Z PAMT19
+       @1250 Z CNT20
+       @1265 Z PCNT20
+       @1280 Z AMT20
+       @1295 Z PAMT20
+       @1310 Z LNCNT
+       @1325 Z PLNCNT
+       @1340 Z LNAMT
+       @1355 Z PLNAMT
+       @1370 Z CNT21
+       @1385 Z PCNT21
+       @1400 Z AMT21
+       @1415 Z PAMT21
+       @1430 Z SUMCNT
+       @1450 Z SUMAMT
+       ;
+RUN;
+
+//**********************************************************
+//* PIBB
+//**********************************************************
+//SAS6091  EXEC SAS609
+//MCHP     DD DISP=SHR,DSN=RBP2.REM.PIBB.BCDD.MCHP.RPT(0)
+//MCLN     DD DISP=SHR,DSN=RBP2.REM.PIBB.BCDD.MCLN.RPT(0)
+//BRFL     DD DISP=SHR,DSN=SAP.RBP2.B033.PBB.BRANCH
+//LOAN     DD DISP=SHR,DSN=SAP.PIBB.MNILN(0)
+//PGM      DD DISP=SHR,DSN=SAP.BNM.PROGRAM
+//BCTXT    DD DSN=SAP.PIBB.REMPURP.MC(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=VB,LRECL=1200,BLKSIZE=0),
+//            SPACE=(CYL,(50,50),RLSE),UNIT=(SYSDA,5)
+//SYSIN    DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950;
+
+PROC FORMAT;
+   VALUE $PURPNO
+   'FEE EXPENSES/INSURANCE PREMIUM (BORNE BY CUSTOMERS)'              = 1
+   'DISBURSEMENT'                                                     = 2
+   'FEE EXPENSE/INSURANCE PREMIUM (BORNE BY CUSTOMERS)'               = 3
+   'DEVELOPER SALE (REDEMPTION)'                                      = 4
+   'DEVELOPER SALE/CONSTRUCTION LOAN (PROGRESSIVE RELEASE)'           = 5
+   'DEVELOPER SALE (FULL RELEASE)'                                    = 6
+   'SUBSALE/AUCTION PURCHASED (REDEMPTION)'                           = 7
+   'SUBSALE (BALANCE OF LOAN RELEASE)'                                = 8
+   'SUBSALE (FULL RELEASE)'                                           = 9
+   'REFINANCING (REDEMPTION)'                                         = 10
+   'REFINANCING (BALANCE OF LOAN RELEASE)'                            = 11
+   'ADDITIONAL LOAN (SECURED BY THE EXISTING PROPERTY)/REINSTATEMENT' = 12
+   'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)'                       = 13
+   'OTHERS - LEGAL FEES'                                              = 14
+   'OTHERS - TAKAFUL CONTRIBUTION (APPLICABLE TO PIBB)'               = 15
+   OTHER                                                              = 0;
+RUN;
+
+DATA REPTDATE;
+   SET LOAN.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN(8) DO; NOWK='1'; SDAY=1; END;
+      WHEN(15) DO; NOWK='2'; SDAY=9; END;
+      WHEN(22) DO; NOWK='3'; SDAY=16; END;
+      OTHERWISE DO; NOWK='4'; SDAY=23; END;
+   END;
+   CALL SYMPUT('NOWK',PUT(NOWK,$2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(TODAY(),DDMMYY10.));
+RUN;
+
+DATA _NULL_;
+   INFILE MCLN FIRSTOBS=2 OBS=2;
+    INPUT @07 DD $2.
+          @10 MM $3.
+          @19 YY $4.;
+    SDATE = INPUT(COMPRESS(DD||MM||YY),DATE9.);
+    CALL SYMPUT('SDATE', PUT(SDATE, DDMMYY10.));
+RUN;
+
+DATA _NULL_;
+   INFILE MCLN FIRSTOBS=2 OBS=2;
+    INPUT @27 DD $3.
+          @30 MM $3.
+          @39 YY $4.;
+    EDATE = INPUT(COMPRESS(DD||MM||YY),DATE9.);
+    CALL SYMPUT('EDATE', PUT(EDATE, DDMMYY10.));
+RUN;
+
+DATA BRH;
+   INFILE BRFL;
+   INPUT @002  BRCH      3.
+         @006  BRCODE   $3.
+         @012  BRNAME  $30.
+         @050  BRSTAT   $1.
+         ;
+   IF BRSTAT IN ('C') THEN DELETE;
+RUN;
+PROC SORT; BY BRCH; RUN;
+
+DATA REMHP;
+   INFILE MCHP FIRSTOBS=5;
+   INPUT @001 BRCH       4.
+         @006 ISSUDT   $10.
+         @017 CUSTNAME $40.
+         @058 ACCTNO   $11.
+         @070 BNKCHQ   $16.
+         @087 AMN      $13.
+         @103 PURPOSE  $60.
+         ;
+   TYP  = 'HP';
+   CNT  = 1;
+   AMT  = COMPRESS(AMN,',')*1;
+   PURP = PUT(PURPOSE, $PURPNO.);
+   IF PURP IN (0) THEN DELETE;
+RUN;
+
+DATA REMLN;
+   INFILE MCLN FIRSTOBS=5;
+   INPUT @103 CH       $12. @;
+   IF CH = 'DISBURSEMENT' THEN DO;
+     INPUT @001 BRCH       4.
+           @006 ISSUDT   $10.
+           @017 CUSTNAME $40.
+           @058 ACCTNO   $11.
+           @070 BNKCHQ   $16.
+           @087 AMN      $13.
+           @118 PURPOSE  $70.
+           ;
+   END;
+   ELSE DO;
+     INPUT @001 BRCH       4.
+           @006 ISSUDT   $10.
+           @017 CUSTNAME $40.
+           @058 ACCTNO   $11.
+           @070 BNKCHQ   $16.
+           @087 AMN      $13.
+           @103 PURPOSE  $70.
+           ;
+   END;
+   DROP CH;
+   TYP  = 'LN';
+   CNT  = 1;
+   AMT  = COMPRESS(AMN,',')*1;
+   PURP = PUT(PURPOSE, $PURPNO.);
+   IF PURP IN (0) THEN DELETE;
+RUN;
+
+DATA REMAL;
+   SET REMLN REMHP;
+   ARRAY CN{15} CNT1-CNT15;
+   ARRAY AM{15} AMT1-AMT15;
+   DO I=1 TO 15;
+      IF PURP = I THEN DO;
+         CN{I} = CNT;
+         AM{I} = AMT;
+      END;
+   END;
+RUN;
+PROC SORT; BY BRCH; RUN;
+
+PROC SUMMARY DATA=REMAL;
+   BY BRCH;
+   VAR CNT1-CNT15 AMT1-AMT15;
+   OUTPUT OUT=SUBLH(DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+
+PROC SUMMARY DATA=REMAL;
+   WHERE TYP = 'LN';
+   BY BRCH;
+   VAR CNT AMT;
+   OUTPUT OUT=SUMLN(DROP=_FREQ_ _TYPE_) SUM=LNCNT LNAMT;
+RUN;
+
+PROC SUMMARY DATA=REMAL;
+   WHERE TYP = 'HP';
+   BY BRCH;
+   VAR CNT AMT;
+   OUTPUT OUT=SUMHP(DROP=_FREQ_ _TYPE_) SUM=HPCNT HPAMT;
+RUN;
+
+PROC SUMMARY DATA=REMAL;
+   BY BRCH;
+   VAR CNT AMT;
+   OUTPUT OUT=SUMLH(DROP=_FREQ_ _TYPE_) SUM=SUMCNT SUMAMT;
+RUN;
+
+%MACRO PERCENT;
+   FORMAT PCNT1-PCNT15 PAMT1-PAMT15
+          PHPCNT PHPAMT PLNCNT PLNAMT 5.2;
+   %DO I=1 %TO 15;
+      PCNT&I = (CNT&I/SUMCNT) * 100;
+      PAMT&I = (AMT&I/SUMAMT) * 100;
+   %END;
+   PHPCNT = (HPCNT/SUMCNT) * 100;
+   PHPAMT = (HPAMT/SUMAMT) * 100;
+   PLNCNT = (LNCNT/SUMCNT) * 100;
+   PLNAMT = (LNAMT/SUMAMT) * 100;
+%MEND;
+
+DATA RPTAL;
+   MERGE BRH(IN=A) SUBLH SUMLN SUMHP SUMLH;
+   BY BRCH;
+   IF A;
+   FORMAT HPAMT LNAMT SUMAMT 10.2;
+   ARRAY PC{15} PCNT1-PCNT15;
+   ARRAY PA{15} PAMT1-PAMT15;
+   %PERCENT;
+RUN;
+
+PROC SUMMARY DATA=RPTAL;
+   VAR CNT1-CNT15 AMT1-AMT15
+       HPCNT HPAMT LNCNT LNAMT SUMCNT SUMAMT;
+   OUTPUT OUT=TOTLH(DROP=_FREQ_ _TYPE_) SUM=;
+RUN;
+
+DATA TOTLH;
+   SET TOTLH;
+   %PERCENT;
+RUN;
+
+OPTIONS MISSING=0;
+DATA _NULL_;
+   SET RPTAL;
+   BRANCH = PUT(BRCH,Z3.);
+   FILE BCTXT;
+   Z = '05'X;
+   IF _N_ = 1 THEN DO;
+      PUT @0001 'P U B L I C   I S L A M I C   B A N K   B E R H A D';
+      PUT @0001 'SUMMARY REPORT - PURPOSE/REASON OF ISSUING '
+                'BANKER''S CHEQUE (MISC CONTROL)';
+      PUT ;
+      PUT @0001 'DATE OF EXTRACTION : ' "&RDATE";
+      PUT @0001 'FROM : ' "&SDATE";
+      PUT @0001 'TO : ' "&EDATE";
+      PUT ;
+      PUT ;
+      PUT @0001 'NO.'
+          @0005 Z 'BRANCH NAME'
+          @0035 Z 'BRANCH NO.'
+          @0050 Z 'PURPOSE/REASON'
+                Z +(-1)Z +(-1)Z
+          @0110 4*Z
+          @0170 4*Z
+          @0230 4*Z
+          @0290 4*Z
+          @0350 4*Z
+          @0410 4*Z
+          @0470 4*Z
+          @0530 4*Z
+          @0590 4*Z
+          @0650 4*Z
+          @0710 4*Z
+          @0770 4*Z
+          @0830 4*Z
+          @0890 4*Z
+          @0950 4*Z
+          @1010 4*Z
+          @1070 Z 'GRAND TOTAL'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 Z 'HIRE PURCHASE'
+                Z +(-1)Z +(-1)Z  8*Z
+          @0290 Z 'LOANS'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 Z 'FEE EXPENSE/INSURANCE PREMIUM '
+                  '(BORNE BY CUSTOMERS)'
+                Z +(-1)Z +(-1)Z
+          @0110 Z 'DISBURSEMENT'
+                Z +(-1)Z +(-1)Z
+          @0170 Z 'SUB TOTAL'
+                Z +(-1)Z +(-1)Z
+          @0230 Z 'FEE EXPENSE/INSURANCE PREMIUM '
+                  '(BORNE BY CUSTOMERS)'
+                Z +(-1)Z +(-1)Z
+          @0290 Z 'DISBURSEMENT'
+                Z +(-1)Z +(-1)Z 44*Z
+          @1010 Z 'SUB TOTAL'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 16*Z
+          @0290 Z 'DEVELOPER SALE (REDEMPTION)'
+                Z +(-1)Z +(-1)Z
+          @0350 Z 'DEVELOPER SALE/CONSTRUCTION LOAN '
+                  '(PROGRESSIVE RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0420 Z 'DEVELOPER SALE (FULL RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0470 Z 'SUBSALE/AUCTION PURCHASED (REDEMPTION)'
+                Z +(-1)Z +(-1)Z
+          @0530 Z 'SUBSALE (BALANCE OF LOAN RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0590 Z 'SUBSALE (FULL RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0650 Z 'REFINANCING (REDEMPTION)'
+                Z +(-1)Z +(-1)Z
+          @0710 Z 'REFINANCING (BALANCE OF LOAN RELEASE)'
+                Z +(-1)Z +(-1)Z
+          @0770 Z 'ADDITIONAL LOAN '
+                  '(SECURED BY EXISTING PROPERTY)'
+                  '/REINSTATEMENT'
+                Z +(-1)Z +(-1)Z
+          @0840 Z 'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)'
+                Z +(-1)Z +(-1)Z
+          @0890 Z 'OTHERS'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 16*Z
+          @0290 4*Z
+          @0350 4*Z
+          @0410 4*Z
+          @0470 4*Z
+          @0530 4*Z
+          @0590 4*Z
+          @0650 4*Z
+          @0710 4*Z
+          @0770 4*Z
+          @0830 4*Z
+          @0890 Z 'LEGAL FEES'
+                Z +(-1)Z +(-1)Z
+          @0950 Z 'TAKAFUL CONTRIBUTION'
+          ;
+      PUT @0005 Z
+          @0035 Z
+          @0050 Z 'NO.'
+          @0065 Z '%'
+          @0080 Z 'AMOUNT'
+          @0095 Z '%'
+          @0110 Z 'NO.'
+          @0125 Z '%'
+          @0140 Z 'AMOUNT'
+          @0155 Z '%'
+          @0170 Z 'NO.'
+          @0185 Z '%'
+          @0200 Z 'AMOUNT'
+          @0215 Z '%'
+          @0230 Z 'NO.'
+          @0245 Z '%'
+          @0260 Z 'AMOUNT'
+          @0275 Z '%'
+          @0290 Z 'NO.'
+          @0305 Z '%'
+          @0320 Z 'AMOUNT'
+          @0335 Z '%'
+          @0350 Z 'NO.'
+          @0365 Z '%'
+          @0380 Z 'AMOUNT'
+          @0395 Z '%'
+          @0410 Z 'NO.'
+          @0425 Z '%'
+          @0440 Z 'AMOUNT'
+          @0455 Z '%'
+          @0470 Z 'NO.'
+          @0485 Z '%'
+          @0500 Z 'AMOUNT'
+          @0515 Z '%'
+          @0530 Z 'NO.'
+          @0545 Z '%'
+          @0560 Z 'AMOUNT'
+          @0575 Z '%'
+          @0590 Z 'NO.'
+          @0605 Z '%'
+          @0620 Z 'AMOUNT'
+          @0635 Z '%'
+          @0650 Z 'NO.'
+          @0665 Z '%'
+          @0680 Z 'AMOUNT'
+          @0695 Z '%'
+          @0710 Z 'NO.'
+          @0725 Z '%'
+          @0740 Z 'AMOUNT'
+          @0755 Z '%'
+          @0770 Z 'NO.'
+          @0785 Z '%'
+          @0800 Z 'AMOUNT'
+          @0815 Z '%'
+          @0830 Z 'NO.'
+          @0845 Z '%'
+          @0860 Z 'AMOUNT'
+          @0875 Z '%'
+          @0890 Z 'NO.'
+          @0905 Z '%'
+          @0920 Z 'AMOUNT'
+          @0935 Z '%'
+          @0950 Z 'NO.'
+          @0965 Z '%'
+          @0980 Z 'AMOUNT'
+          @0995 Z '%'
+          @1010 Z 'NO.'
+          @1025 Z '%'
+          @1040 Z 'AMOUNT'
+          @1055 Z '%'
+          @1070 Z 'NO.'
+          @1090 Z 'AMOUNT'
+          ;
+   END;
+   PUT @0001 _N_
+       @0005 Z BRNAME
+       @0035 Z BRANCH
+       @0050 Z CNT1
+       @0065 Z PCNT1
+       @0080 Z AMT1
+       @0095 Z PAMT1
+       @0110 Z CNT2
+       @0125 Z PCNT2
+       @0140 Z AMT2
+       @0155 Z PAMT2
+       @0170 Z HPCNT
+       @0185 Z PHPCNT
+       @0200 Z HPAMT
+       @0215 Z PHPAMT
+       @0230 Z CNT3
+       @0245 Z PCNT3
+       @0260 Z AMT3
+       @0275 Z PAMT3
+       @0290 Z CNT4
+       @0305 Z PCNT4
+       @0320 Z AMT4
+       @0335 Z PAMT4
+       @0350 Z CNT5
+       @0365 Z PCNT5
+       @0380 Z AMT5
+       @0395 Z PAMT5
+       @0410 Z CNT6
+       @0425 Z PCNT6
+       @0440 Z AMT6
+       @0455 Z PAMT6
+       @0470 Z CNT7
+       @0485 Z PCNT7
+       @0500 Z AMT7
+       @0515 Z PAMT7
+       @0530 Z CNT8
+       @0545 Z PCNT8
+       @0560 Z AMT8
+       @0575 Z PAMT8
+       @0590 Z CNT9
+       @0605 Z PCNT9
+       @0620 Z AMT9
+       @0635 Z PAMT9
+       @0650 Z CNT10
+       @0665 Z PCNT10
+       @0680 Z AMT10
+       @0695 Z PAMT10
+       @0710 Z CNT11
+       @0725 Z PCNT11
+       @0740 Z AMT11
+       @0755 Z PAMT11
+       @0770 Z CNT12
+       @0785 Z PCNT12
+       @0800 Z AMT12
+       @0815 Z PAMT12
+       @0830 Z CNT13
+       @0845 Z PCNT13
+       @0860 Z AMT13
+       @0875 Z PAMT13
+       @0890 Z CNT14
+       @0905 Z PCNT14
+       @0920 Z AMT14
+       @0935 Z PAMT14
+       @0950 Z CNT15
+       @0965 Z PCNT15
+       @0980 Z AMT15
+       @0995 Z PAMT15
+       @1010 Z LNCNT
+       @1025 Z PLNCNT
+       @1040 Z LNAMT
+       @1055 Z PLNAMT
+       @1070 Z SUMCNT
+       @1090 Z SUMAMT
+       ;
+RUN;
+
+DATA _NULL_;
+   SET TOTLH;
+   FILE BCTXT MOD;
+   Z = '05'X;
+   PUT @0001 'GRAND TOTAL'
+             Z +(-1)Z
+       @0050 Z CNT1
+       @0065 Z PCNT1
+       @0080 Z AMT1
+       @0095 Z PAMT1
+       @0110 Z CNT2
+       @0125 Z PCNT2
+       @0140 Z AMT2
+       @0155 Z PAMT2
+       @0170 Z HPCNT
+       @0185 Z PHPCNT
+       @0200 Z HPAMT
+       @0215 Z PHPAMT
+       @0230 Z CNT3
+       @0245 Z PCNT3
+       @0260 Z AMT3
+       @0275 Z PAMT3
+       @0290 Z CNT4
+       @0305 Z PCNT4
+       @0320 Z AMT4
+       @0335 Z PAMT4
+       @0350 Z CNT5
+       @0365 Z PCNT5
+       @0380 Z AMT5
+       @0395 Z PAMT5
+       @0410 Z CNT6
+       @0425 Z PCNT6
+       @0440 Z AMT6
+       @0455 Z PAMT6
+       @0470 Z CNT7
+       @0485 Z PCNT7
+       @0500 Z AMT7
+       @0515 Z PAMT7
+       @0530 Z CNT8
+       @0545 Z PCNT8
+       @0560 Z AMT8
+       @0575 Z PAMT8
+       @0590 Z CNT9
+       @0605 Z PCNT9
+       @0620 Z AMT9
+       @0635 Z PAMT9
+       @0650 Z CNT10
+       @0665 Z PCNT10
+       @0680 Z AMT10
+       @0695 Z PAMT10
+       @0710 Z CNT11
+       @0725 Z PCNT11
+       @0740 Z AMT11
+       @0755 Z PAMT11
+       @0770 Z CNT12
+       @0785 Z PCNT12
+       @0800 Z AMT12
+       @0815 Z PAMT12
+       @0830 Z CNT13
+       @0845 Z PCNT13
+       @0860 Z AMT13
+       @0875 Z PAMT13
+       @0890 Z CNT14
+       @0905 Z PCNT14
+       @0920 Z AMT14
+       @0935 Z PAMT14
+       @0950 Z CNT15
+       @0965 Z PCNT15
+       @0980 Z AMT15
+       @0995 Z PAMT15
+       @1010 Z LNCNT
+       @1025 Z PLNCNT
+       @1040 Z LNAMT
+       @1055 Z PLNAMT
+       @1070 Z SUMCNT
+       @1090 Z SUMAMT
+       ;
+RUN;
+
