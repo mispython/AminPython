@@ -23,3 +23,715 @@
 //            SPACE=(CYL,(800,400),),UNIT=(SYSDA,5)
 //SYSIN DD DUMMY
 //*
+
+===================================================================== EIAWOF02 ==========================================================================================
+
+
+
+
+//EIAWOF02 JOB MISEIS,EIFWOFFA,MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
+//         NOTIFY=&SYSUID
+//* **********************************************
+//*   UPLOAD FROM TEXT FILE PROVIDE BY CCD
+//*   (A/C TO BE WRITE OFF)
+//* **********************************************
+//EIAWOF02 EXEC SAS609
+//*WOFF    DD DSN=OPER.RESTORE.PBB.NPL.HP.WOFF01.TXT,DISP=SHR
+//*WOFF    DD DSN=SAP.PBB.WAPPR.TXT,DISP=SHR
+//WOFF     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD *
+OPTIONS YEARCUTOFF=1950 NOCENTER;
+
+  *** UPLOAD FROM TEXT FILE PROVIDE BY CCD ***;
+  *** CHECK THE POSITION OF EACH FIELDS    ***;
+
+DATA NPL.WOFFHP(KEEP=ACCTNO);
+  INFILE WOFF;
+  INPUT @142 ACCTNO    10.
+        @236 COSTCTR    4.
+        ;
+  IF ((3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048)) THEN DELETE;
+  ELSE                          OUTPUT NPL.WOFFHP;
+RUN;
+PROC SORT; BY ACCTNO;
+PROC PRINT;
+
+
+===================================================================== EIAWOF03 ==========================================================================================
+
+//EIAWOF03  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//*
+//*%OPC SCAN
+//*%OPC SETFORM OCDATE=(DD)
+//*%OPC SETFORM OCLASTC=(DD)
+//*
+/* ***********************************************
+/* ORIGINAL FROM EIFMNPLE
+/* ***********************************************
+//EIAWOF03 EXEC SAS609
+//*
+//*%OPC BEGIN ACTION=INCLUDE,
+//*%OPC COMP=(&OCDATE..EQ.(01,02,03,04,05,06,07))
+//*LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//*%OPC END ACTION=INCLUDE
+//*
+//*%OPC BEGIN ACTION=INCLUDE,
+//*%OPC COMP=((&OCDATE..NE.(01)),
+//*%OPC       (&OCDATE..NE.(02)),
+//*%OPC       (&OCDATE..NE.(03)),
+//*%OPC       (&OCDATE..NE.(04)),
+//*%OPC       (&OCDATE..NE.(05)),
+//*%OPC       (&OCDATE..NE.(06)),
+//*%OPC       (&OCDATE..NE.(07)))
+//LOAN     DD DSN=SAP.PBB.MNILN.DAILY(0),DISP=SHR
+//*%OPC END ACTION=INCLUDE
+//*
+//NPL6     DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK04 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP02),DISP=SHR
+
+
+===================================================================== EIAWOF04 ==========================================================================================
+
+//EIAWOF04  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//**********************************************************************
+//* UPDATE LATEST PROGRAM FROM EIFMNP03
+//**********************************************************************
+//LABEL    OUTPUT CLASS=A,
+//         NAME='CIK ROSEDAH',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HP CREDIT CONTROL DEPARTMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//**********************************************************************
+//EIAWOF04 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP03),DISP=SHR
+
+===================================================================== EIAWOF05 ==========================================================================================
+
+
+//EIAWOF05  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//**********************************************************************
+//* UPDATE LATEST PROGRAM FROM EIFMNP06
+//**********************************************************************
+//LABEL    OUTPUT CLASS=A,
+//         NAME='CIK ROSEDAH',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HP CREDIT CONTROL DEPARTMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//**********************************************************************
+//EIAWOF05 EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP06),DISP=SHR
+
+
+===================================================================== EIAWOF06 ==========================================================================================
+
+//EIAWOF06  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//**********************************************************************
+//* UPDATE LATEST PROGRAM FROM EIFMNP07
+//**********************************************************************
+//LABEL    OUTPUT CLASS=A,
+//         NAME='CIK ROSEDAH',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HP CREDIT CONTROL DEPARTMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//**********************************************************************
+//EIAWOF06 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP07),DISP=SHR
+
+===================================================================== EIAWOF07 ==========================================================================================
+
+//EIAWOF07 JOB MISEIS,EIWOFHP2,CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID        JOB10922
+//*
+//*%OPC SCAN
+//*%OPC SETFORM OCDATE=(DD)
+//*%OPC SETFORM OCLASTC=(DD)
+//*
+//* ***********************************************
+//* CHG PREVIOUS MTH DATE (SASLN)
+//*     REPORT TITLE
+//* GENERATE TEXT FILE & LOTUS 123 FOR RESEDAH
+//* (RE RUN EIFMNPLE & EIFMNPL0 IF NOT ON MONTH END)
+//* ***********************************************
+//DELETE   EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PBB.WOFF.HPTXT1,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(0))
+//DEL01    DD DSN=SAP.PBB.WOFF.HPTXT2,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(0))
+//*
+//EIAWOF07 EXEC SAS609
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=SHR
+//SASLN    DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//*
+//*%OPC BEGIN ACTION=INCLUDE,
+//*%OPC COMP=(&OCDATE..EQ.(01,02,03,04,05,06,07))
+//*LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//*%OPC END ACTION=INCLUDE
+//*
+//*%OPC BEGIN ACTION=INCLUDE,
+//*%OPC COMP=((&OCDATE..NE.(01)),
+//*%OPC       (&OCDATE..NE.(02)),
+//*%OPC       (&OCDATE..NE.(03)),
+//*%OPC       (&OCDATE..NE.(04)),
+//*%OPC       (&OCDATE..NE.(05)),
+//*%OPC       (&OCDATE..NE.(06)),
+//*%OPC       (&OCDATE..NE.(07)))
+//LOAN     DD DSN=SAP.PBB.MNILN.DAILY(0),DISP=SHR
+//*%OPC END ACTION=INCLUDE
+//*
+//WOFFACCT DD DSN=SAP.PBB.WOFF.HPTXT1,DISP=(NEW,CATLG,DELETE),
+//         UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//         DCB=(RECFM=FB,LRECL=350,BLKSIZE=0)
+//WOFFACC2 DD DSN=SAP.PBB.WOFF.HPTXT2,DISP=(NEW,CATLG,DELETE),
+//         UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//         DCB=(RECFM=VB,LRECL=350,BLKSIZE=0)
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*%OPC BEGIN ACTION=NOSCAN
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK04 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK05 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SORTWK06 DD UNIT=SYSDA,SPACE=(CYL,(400))
+//SYSIN    DD *
+*--------------------------------------------------------------------*
+*  PRINT IIS & OI CLOSING BALANCE FOR WRITTEN OFF ACCOUNT            *
+*  DATA IN IIS HAS BEEN FILTERED FOR WRITE OFF ACCOUNT ONLY          *
+*  PREVIOUSLY REQUESTED BY RASHIDAH OF CCD
+*--------------------------------------------------------------------*;
+OPTION NOCENTER;
+%INC PGM(PBBLNFMT);
+
+DATA REPTDATE (KEEP=REPTDATE);
+  SET LOAN.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; WK = '4'; WK1 = '3'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  MM1 = MM - 1;
+  IF MM1 = 0 THEN MM1 = 12;
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWKS','4');
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+
+PROC SORT DATA=NPL.IIS OUT=IIS NODUPKEYS;BY ACCTNO;
+PROC SORT DATA=NPL.SP2 OUT=SP NODUPKEYS; BY ACCTNO;
+PROC SORT DATA=NPL.WOFFHP OUT=WOFF; BY ACCTNO;
+DATA NPL;
+   KEEP BRNO BRABBR NAME ACCTNO NOTENO IIS OI TOTIIS BORSTAT
+        SP MARKETVL DAYS BRANCH;
+   MERGE SP IIS WOFF(IN=AA);BY ACCTNO;
+   IF AA;
+   IIS    = ROUND(IIS,.01);
+   OI     = ROUND(OI,.01);
+   SP     = ROUND(SP,.01);
+  * TOTIIS = ROUND(IIS + OI,.01);
+  * TOTAL  = ROUND(TOTIIS + SP,.01);
+   MARKETVL = ROUND(MARKETVL,.01);
+   BRNO = SUBSTR(BRANCH,4,4);
+   BRABBR = SUBSTR(BRANCH,1,3);
+*;
+
+
+PROC SORT DATA=LOAN.LNNOTE OUT=LOAN NODUPKEYS;
+   WHERE LOANTYPE IN &HPD;
+   BY ACCTNO NOTENO; RUN;
+DATA LOAN;
+   KEEP ACCTNO NOTENO FEEAMT3 FEEAMT4 CURBAL MATDATE LOANTYPE INTAMT
+        POSTNTRN ECSRRSRV MATUREDT INTEARN4 POSTAMT OIFEEAMT OTHERAMT
+        DAYS CUSTCODE BALANCE;
+   MERGE NPL(IN=AA) LOAN; BY ACCTNO NOTENO;
+   IF AA;
+   POSTAMT = SUM(FEETOTAL,NFEEAMT5);
+   OTHERAMT = SUM(FEEAMT3,(-1)*POSTAMT);
+  * OIFEEAMT = FEETOT2;
+   OIFEEAMT = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
+   IF ECSRRSRV LE 0 THEN ECSRRSRV = 0;
+   IF MATUREDT NE . THEN DO;
+      MATDATE = PUT(INPUT(SUBSTR(PUT(MATUREDT,Z11.),1,8),MMDDYY8.),
+                MMDDYY10.);
+      MATUREDT = INPUT(SUBSTR(PUT(MATUREDT,Z11.),1,8),MMDDYY8.);
+   END;
+*;
+PROC SORT DATA=SASLN.LOAN&REPTMON1&NOWKS
+           OUT=SASLN(KEEP=ACCTNO NOTENO CURBAL);
+  BY ACCTNO NOTENO;
+DATA SASLN;
+   KEEP ACCTNO NOTENO PREVBAL;
+   MERGE SASLN NPL (IN=AA);
+   BY ACCTNO NOTENO;
+   IF AA;
+   PREVBAL= CURBAL;
+*;
+DATA WOFF;
+   MERGE SASLN LOAN NPL;BY ACCTNO;
+   PAYMENT = CURBAL - PREVBAL;
+   TOTIIS = ROUND(IIS + OIFEEAMT,.01);
+   TOTAL  = ROUND(TOTIIS + SP,.01);
+RUN;
+
+PROC SORT DATA=LOAN.LNNOTE OUT=LNNOTE(KEEP=ACCTNO NOTENO GUAREND);
+ BY ACCTNO DESCENDING NOTENO;RUN;
+
+PROC SORT DATA=LNNOTE NODUPKEY;BY ACCTNO;RUN;
+PROC SORT DATA=WOFF;BY ACCTNO;RUN;
+
+DATA WOFF;
+   MERGE WOFF(IN=A) LNNOTE(IN=B);BY ACCTNO;
+   IF A;
+RUN;
+*;
+PROC SORT DATA=WOFF;BY ACCTNO;
+OPTIONS MISSING=' ';
+
+DATA WOFF;
+   SET WOFF;
+   FILE WOFFACCT;
+   PUT @1   BRANCH   $7.
+       @9   NAME     $24.
+       @34  ACCTNO   10.
+       @45  NOTENO   5.
+       @51  BORSTAT  $1.
+       @53  IIS      16.2
+       @69  OIFEEAMT 16.2
+       @85  TOTIIS   16.2
+       @101 SP       16.2
+       @117 TOTAL    16.2
+       @133 CURBAL   16.2
+       @149 PREVBAL  16.2
+       @165 PAYMENT  16.2
+       @181 ECSRRSRV 16.2
+       @197 POSTAMT  16.2
+       @213 OTHERAMT 16.2
+       @229 MATDATE  $10.
+       @239 LOANTYPE 3.
+       @242 INTAMT   16.2
+       @258 POSTNTRN $1.
+       @262 MARKETVL 16.2
+       @278 INTEARN4 16.2
+       @294 DAYS      6.
+       @301 CUSTCODE  3.
+       @304 BALANCE  16.2
+       @320 GUAREND  $12.
+       ;
+
+DATA WOFF;
+   SET WOFF;
+   FILE WOFFACC2;
+   IF _N_ = 1 THEN DO;
+     PUT @1 'BRNO'     ';'
+            'BRABBR'   ';'
+            'NAME'     ';'
+            'ACCTNO'   ';'
+            'NOTENO'   ';'
+            'BORSTAT'  ';'
+            'IIS'      ';'
+            'OIFEEAMT' ';'
+            'TOTIIS'   ';'
+            'SP'       ';'
+            'TOTAL'    ';'
+            'CURBAL'   ';'
+            'PREVBAL'  ';'
+            'PAYMENT'  ';'
+            'ECSRRSRV' ';'
+            'POSTAMT'  ';'
+            'OTHERAMT' ';'
+            'MATDATE'  ';'
+            'LOANTYPE' ';'
+            'INTAMT'   ';'
+            'POSTNTRN' ';'
+            'MARKETVL' ';'
+            'INTEARN4' ';'
+            'DAYS'     ';'
+            'CUSTCODE' ';'
+            'BALANCE'  ';'
+            'I/C NO./BR NO.' ';';
+   END;
+     PUT @1 BRNO     ';'
+            BRABBR   ';'
+            NAME     ';'
+            ACCTNO   ';'
+            NOTENO   ';'
+            BORSTAT  ';'
+            IIS      ';'
+            OIFEEAMT ';'
+            TOTIIS   ';'
+            SP       ';'
+            TOTAL    ';'
+            CURBAL   ';'
+            PREVBAL  ';'
+            PAYMENT  ';'
+            ECSRRSRV ';'
+            POSTAMT  ';'
+            OTHERAMT ';'
+            MATDATE  ';'
+            LOANTYPE ';'
+            INTAMT   ';'
+            POSTNTRN ';'
+            MARKETVL ';'
+            INTEARN4 ';'
+            DAYS     ';'
+            CUSTCODE ';'
+            BALANCE  ';'
+            GUAREND  ';';
+*;
+PROC PRINT DATA=WOFF;
+VAR BRANCH NAME ACCTNO NOTENO BORSTAT IIS OI TOTIIS SP TOTAL CURBAL
+    PREVBAL PAYMENT FEEAMT3 FEEAMT4 MATDATE LOANTYPE INTAMT POSTNTRN
+    MARKETVL INTEARN4 DAYS BALANCE;
+SUM IIS OI TOTIIS SP TOTAL CURBAL PREVBAL PAYMENT FEEAMT3 FEEAMT4;
+TITLE1 'LISTING OF ACCOUNTS FOR BAD DEBT WRITING-OFF EXERCISE';
+TITLE2 'AS AT ' "&RDATE";
+
+RUN;
+
+//*%OPC END   ACTION=NOSCAN
+
+===================================================================== EIAWOF08 ==========================================================================================
+
+//EIAWOF08 JOB MISEIS,EIFWOFFA,MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,       JOB11490
+//         NOTIFY=&SYSUID
+//* **********************************************
+//*   TO REMOVE A/C THAT CANNOT BE WRITE OFF
+//*   NOTES: SET THE ALIGHMENT TO LEFT
+//*          SET WIDTH TO 30 FOR ALL COLUMN
+//*          SAVE IT TO TEXT FILE AND UPLOAD TO HOST
+//* **********************************************
+//EIAWOF08 EXEC SAS609
+//WOFFC    DD DSN=OPER.RESTORE.PBB.NPL.HP.WOFF02.TXT,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN     DD *
+OPTIONS YEARCUTOFF=1950 NOCENTER;
+
+  *** UPLOAD FROM TEXT FILE PROVIDE BY CCD ***;
+DATA WOFF;
+  INFILE WOFFC FIRSTOBS=01;
+  INPUT @61 WNAME   $30.
+        @91 ACCTNO   10.;
+  IF ACCTNO GT 0;
+RUN;
+PROC SORT; BY ACCTNO;
+PROC PRINT;
+
+PROC SORT DATA=NPL.WOFFHP; BY ACCTNO; RUN;
+DATA NPL.WOFFHP;
+   MERGE NPL.WOFFHP WOFF(IN=A);
+   BY ACCTNO;
+   IF NOT A;
+RUN;
+
+===================================================================== EIAWOF09 ==========================================================================================
+//EIAWOF09 JOB MISEIS,EIFAWN01,CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID
+//*
+//EIAWOF09 EXEC SAS609
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPLA     DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR
+//SYSIN    DD *
+*--------------------------------------------------------------------*
+*  COPY AND RENAME ALL RELATED FIELDS FROM EXISTING NPL              *
+*  IE. IIS, SAQ & SP2 FOR HARDCODING OF WRITTEN ACCTS                *
+*  RUN ONLY ON WRITE OFF ACCOUNTS                                    *
+*--------------------------------------------------------------------*;
+OPTION NOCENTER;
+
+DATA REPTDATE(KEEP=REPTDATE);
+  SET NPLA.REPTDATE;
+  CALL SYMPUT('RDATE',REPTDATE);
+RUN;
+
+PROC SORT DATA=NPLA.IIS OUT=IIS;BY ACCTNO;
+PROC SORT DATA=NPLA.AQ  OUT=AQ; BY ACCTNO;
+PROC SORT DATA=NPLA.SP2 OUT=SP2;BY ACCTNO;
+PROC SORT DATA=NPL.WOFFHP OUT=WFHP;BY ACCTNO;
+DATA NPL.TIIS;
+   KEEP ACCTNO NOTENO WSUSPEND WRECOVER WRECC WOISUSP WOIRECV WOIRECC
+        WDATE;
+   MERGE IIS(IN=B) WFHP(IN=A);BY ACCTNO;
+   IF A AND B;
+   WSUSPEND = SUSPEND;
+   WRECOVER = ROUND(RECOVER,.01);
+   WRECC    = RECC;
+   WOISUSP  = OISUSP;
+   WOIRECV  = OIRECV;
+   WOIRECC  = OIRECC;
+   WDATE    = &RDATE;
+RUN;
+PROC PRINT DATA=NPL.TIIS;
+
+DATA NPL.TAQ;
+   KEEP ACCTNO NOTENO WNEWNPL WACCRINT WRECOVER
+        WDATE;
+   MERGE AQ(IN=B) WFHP(IN=A);
+   BY ACCTNO;
+   IF A AND B;
+   WNEWNPL  = NEWNPL;
+   WACCRINT = ACCRINT;
+   WRECOVER = RECOVER;
+   WDATE    = &RDATE;
+   * IF WOFFINT NE  . THEN WACCRINT = WOFFINT;
+   * IF WOFFREC NE  . THEN WRECOVER = WOFFREC;
+RUN;
+PROC PRINT;
+
+DATA NPL.TSP2;
+   KEEP ACCTNO NOTENO WSPPL WRECOVER WDATE;
+   MERGE SP2(IN=B) WFHP(IN=A);BY ACCTNO;
+   IF A AND B;
+   WSPPL    = SPPL;
+   WRECOVER = RECOVER;
+   WDATE    = &RDATE;
+RUN;
+PROC PRINT;
+*;
+//*
+
+
+===================================================================== EIAWOF10 ==========================================================================================
+
+//EIAWOF10 JOB MISEIS,EIFMNPL,COND=(0,LT),CLASS=A,MSGCLASS=X,           JOB14062
+//         NOTIFY=&SYSUID
+//* *******************************************************
+//* MERGE THE NEW HARDCODE DATA WITH EXISTING HARDCODE DATA
+//* *******************************************************
+//EIAWOF10 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPLA     DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR
+//SASLIST  DD SYSOUT=X
+//SYSIN    DD *
+OPTION NOCENTER;
+ /*********************************************************************/
+ /* SP                                                                */
+ /*********************************************************************/
+DATA NPL.WSP2;
+     SET NPLA.WSP2 NPL.TSP2;
+RUN;
+PROC SORT; BY ACCTNO;
+
+DATA NPL.WIIS;
+     SET NPLA.WIIS NPL.TIIS;
+RUN;
+PROC SORT; BY ACCTNO;
+
+DATA NPL.WAQ;
+     SET NPLA.WAQ NPL.TAQ;
+RUN;
+PROC SORT; BY ACCTNO;
+
+
+===================================================================== EIAWOF11 ==========================================================================================
+
+//EIAWOF11 JOB MISEIS,EIFWOFFA,MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
+//         NOTIFY=&SYSUID
+//* **********************************************
+//*   TO FURTHER PATCH AND HARDCODE
+//*   NOTES: SET THE ALIGHMENT TO LEFT
+//*          SET WIDTH TO 30 FOR ALL COLUMN
+//*          SAVE IT TO TEXT FILE AND UPLOAD TO HOST
+//* **********************************************
+//EIAWOF11 EXEC SAS609
+//WOFF     DD DSN=OPER.RESTORE.PBB.NPL.HP.WOFF03.TXT,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD *
+OPTIONS YEARCUTOFF=1950 NOCENTER;
+
+  *** UPLOAD FROM TEXT FILE PROVIDE BY CCD ***;
+DATA PATCH;
+  INFILE WOFF FIRSTOBS=12;
+  INPUT @006 ACCTNO         10.
+        @292 WSPPL     COMMA13.2    /* (J) */
+        @317 WRECOVER  COMMA13.2    /* (K) */
+        @342 WSPPW     COMMA13.2    /* (L) */
+        ;
+  IF ACCTNO GT 0;
+RUN;
+PROC SORT; BY ACCTNO;
+PROC PRINT;
+
+ ******************************
+ * PATCH ON WSP
+ ******************************;
+PROC SORT DATA=NPL.WSP2; BY ACCTNO; RUN;
+DATA NPL.WSP2;
+   MERGE NPL.WSP2(IN=A) PATCH;
+   BY ACCTNO;
+   IF A;
+RUN;
+
+  *** UPLOAD FROM TEXT FILE PROVIDE BY CCD ***;
+DATA PATCH;
+  INFILE WOFF FIRSTOBS=12;
+  INPUT @006 ACCTNO         10.
+        @092 SUSPEND   COMMA13.2     /* (E) */
+        @117 RECOVER   COMMA13.2     /* (F) */
+        @142 RECC      COMMA13.2     /* (G) */
+        @167 IISPW     COMMA13.2     /* (H) */
+        @192 WOISUSP   COMMA13.2     /* (K) */
+        @217 WOIRECV   COMMA13.2     /* (L) */
+        @242 WOIRECC   COMMA13.2     /* (M) */
+        @267 WOIW      COMMA13.2     /* (N) */
+        ;
+  IF ACCTNO GT 0;
+RUN;
+PROC SORT; BY ACCTNO;
+PROC PRINT;
+
+ ******************************
+ * PATCH ON IIS
+ ******************************;
+PROC SORT DATA=NPL.WIIS; BY ACCTNO; RUN;
+DATA NPL.WIIS;
+   MERGE NPL.WIIS(IN=A) PATCH;
+   BY ACCTNO;
+   IF A;
+RUN;
+
+
+===================================================================== EIAWOF12 ==========================================================================================
+
+//EIAWOF12  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//*
+//EIAWOF12 EXEC SAS609
+//LOAN     DD DSN=SAP.PBB.MNILN.DAILY(0),DISP=SHR
+//NPL6     DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SORTWK01 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK02 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK03 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SORTWK04 DD UNIT=SYSDA,SPACE=(CYL,(500))
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP02),DISP=SHR
+//*
+//
+
+===================================================================== EIAWOF13 ==========================================================================================
+
+//EIAWOF13  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//*
+//LABEL    OUTPUT CLASS=K,
+//         NAME='CIK ROSEDAH',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HP CREDIT CONTROL DEPARTMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//**********************************************************************
+//EIFMNP03 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP03),DISP=SHR
+//**********************************************************************
+//EIFMNP06 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP06),DISP=SHR
+//**********************************************************************
+//EIFMNP07 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP07),DISP=SHR
+//**********************************************************************
+//*
+//
+
+===================================================================== EIAWOF14 ==========================================================================================
+
+//EIAWOF14 JOB MISEIS,EIFWOFFA,MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,       JOB11490
+//         NOTIFY=&SYSUID
+//* **********************************************
+//*   TO SELECT WIIS WSP2 WAQ FROM XMIT
+//* **********************************************
+//*DELETE  EXEC PGM=IEFBR14
+//*DEL01    DD DSN=PROGTGX.SAP.PBB.NPL.HP.SASDATA,
+//*            DISP=(MOD,DELETE,DELETE),
+//*            SPACE=(CYL,(0))
+//*
+//EIAWOF14 EXEC SAS609
+//*NPL1     DD DSN=PROGTGX.SAP.PBB.NPL.HP.SASDATA,
+//*            DISP=(NEW,CATLG,DELETE),
+//*            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//*            SPACE=(CYL,(200,200),RLSE),UNIT=(SYSDA,5)
+//WMIS     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=SHR
+//NPL1     DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=OLD
+//SYSIN    DD *
+OPTIONS YEARCUTOFF=1950 NOCENTER;
+
+DATA NPL1.WIIS;
+   SET NPL.WIIS;
+RUN;
+
+DATA NPL1.WSP2;
+   SET NPL.WSP2;
+RUN;
+
+DATA NPL1.WAQ;
+   SET NPL.WAQ;
+RUN;
+
+*--------------------------------------------------*
+*   APPEND WOFF INFO INTO WOFFTOT(ACCUMULATIVE)    *
+*--------------------------------------------------*;
+
+DATA WOFF(DROP=DDWOFF MMWOFF YYWOFF COSTCTR);
+   INFILE WMIS;
+    INPUT @142 ACCTNO    10.
+          @152 NOTENO    5.
+          @162 IISWOFF  16.2
+          @178 SPWOFF   16.2
+          @210 DDWOFF    2.
+          @213 MMWOFF    2.
+          @216 YYWOFF    4.
+          @220 CAPBAL   16.2
+          @236 COSTCTR   4.
+   ;
+    WOFFDT = PUT(MMWOFF,Z2.)||'/'||PUT(YYWOFF,Z4.);
+    SPWOFF=CAPBAL;
+    IF ((3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048)) THEN DELETE;
+    ELSE                          OUTPUT WOFF;
+RUN;
+PROC PRINT DATA=WOFF;RUN;
+
+PROC APPEND DATA=WOFF BASE=NPL1.WOFFTOT FORCE;RUN;
+PROC SORT DATA=NPL1.WOFFTOT NODUPKEY;BY ACCTNO NOTENO;RUN;
+
+
+
