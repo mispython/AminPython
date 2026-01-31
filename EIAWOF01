@@ -27,6 +27,16 @@
 //SYSIN DD DUMMY
 //*
 
+from common import *
+
+# To copy sysut1 into sysut2 only
+
+src = read_sas("NPL_HP_SASDATA.sas7bdat")
+
+write_parquet(src, "NPL_HP_SASDATA_WOFF")
+write_parquet(src, "NPL_HP_SASDATA_BAK")
+
+
 ===================================================================== EIAWOF02 ==========================================================================================
 
 
@@ -59,6 +69,63 @@ DATA NPL.WOFFHP(KEEP=ACCTNO);
 RUN;
 PROC SORT; BY ACCTNO;
 PROC PRINT;
+
+# ============================================================
+# EIAWOF02 – Upload write-off accounts from CCD text file
+#
+# Original:
+# - Reads fixed-width MIS text file
+# - Extracts ACCTNO and COSTCTR
+# - Removes ineligible cost centres
+# - Creates NPL.WOFFHP
+#
+# Python version:
+# - No overwrite / no delete
+# - Output versioned by run date
+# ============================================================
+
+from common import *
+import pandas as pd
+
+# ------------------------------------------------------------
+# Read fixed-width CCD MIS file (SYSIN + INFILE WOFF equivalent)
+# ------------------------------------------------------------
+# SAS:
+# INPUT @142 ACCTNO 10.
+#       @236 COSTCTR 4.
+
+df = pd.read_fwf(
+    RAW_DIR / "RBP2_B033_LN_WRI2_OFF_MIS.txt",
+    colspecs=[(141, 151), (235, 239)],  # zero-based indexing
+    names=["ACCTNO", "COSTCTR"]
+)
+
+# ------------------------------------------------------------
+# Apply business rule:
+# Exclude cost centres not eligible for write-off
+# ------------------------------------------------------------
+df = df[
+    ~(
+        df["COSTCTR"].between(3000, 3999) |
+        df["COSTCTR"].isin([4043, 4048])
+    )
+]
+
+# ------------------------------------------------------------
+# Keep only ACCTNO (same as KEEP=ACCTNO)
+# Remove duplicates (PROC SORT NODUPKEY effect)
+# ------------------------------------------------------------
+woffhp = (
+    df[["ACCTNO"]]
+    .dropna()
+    .drop_duplicates()
+    .sort_values("ACCTNO")
+)
+
+# ------------------------------------------------------------
+# Write versioned output (replaces NPL.WOFFHP)
+# ------------------------------------------------------------
+write_parquet(woffhp, "NPL_WOFFHP")
 
 
 ===================================================================== EIAWOF03 ==========================================================================================
