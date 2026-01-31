@@ -166,6 +166,188 @@ write_parquet(woffhp, "NPL_WOFFHP")
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP02),DISP=SHR
 
 
+from common import *
+import pandas as pd
+from datetime import datetime
+
+# ============================================================
+# 1. OPC LOGIC REPLACEMENT
+# ============================================================
+
+def select_loan_source(run_date: datetime) -> pd.DataFrame:
+    """
+    Replaces %OPC COMP logic in JCL.
+
+    Days 01–07  -> SAP.PBB.MNILN(0)        (monthly)
+    Days 08–31  -> SAP.PBB.MNILN.DAILY(0)  (daily)
+    """
+    if run_date.day <= 7:
+        return read_sas("MNILN_MONTHLY.sas7bdat")
+    return read_sas("MNILN_DAILY.sas7bdat")
+
+
+# ============================================================
+# 2. DERIVE REPORTING MONTH (REPTMON)
+# ============================================================
+
+def derive_reptmon(loan_reptdate: pd.DataFrame) -> str:
+    """
+    Equivalent to:
+        CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+    """
+    reptdate = pd.to_datetime(loan_reptdate["REPTDATE"].iloc[0])
+    return reptdate.strftime("%m")
+
+
+# ============================================================
+# 3. PREPARE LNNOTE (PROC SORT + WHERE + NODUPKEY)
+# ============================================================
+
+def prepare_lnnote(loan_lnnote: pd.DataFrame) -> pd.DataFrame:
+    """
+    Equivalent to multiple PROC SORT steps on LOAN.LNNOTE
+    """
+    df = loan_lnnote[
+        (loan_lnnote["REVERSED"] != "Y") &
+        (loan_lnnote["NOTENO"].notna()) &
+        (loan_lnnote["NTBRCH"].notna()) &
+        (loan_lnnote["LOANTYPE"].isin([
+            128,130,380,381,700,705,131,132,720,725,
+            983,993,996
+        ]))
+    ].copy()
+
+    # DESCENDING NOTENO, then NODUPKEY ACCTNO
+    df = (
+        df.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
+          .drop_duplicates("ACCTNO")
+    )
+
+    return df
+
+
+# ============================================================
+# 4. FILTER WIIS / WAQ / WSP2 BY LNNOTE
+# ============================================================
+
+def filter_by_lnnote(df: pd.DataFrame, lnnote: pd.DataFrame) -> pd.DataFrame:
+    return df.merge(lnnote[["ACCTNO"]], on="ACCTNO", how="inner")
+
+
+# ============================================================
+# 5. APPLY BORSTAT = 'W' RULE
+# ============================================================
+
+def apply_borstat_w(npglobal: pd.DataFrame,
+                     wiis: pd.DataFrame) -> pd.DataFrame:
+    """
+    SAS:
+        IF B THEN BORSTAT = 'W';
+    """
+    df = npglobal.merge(
+        wiis[["ACCTNO"]],
+        on="ACCTNO",
+        how="left",
+        indicator=True
+    )
+
+    df.loc[df["_merge"] == "both", "BORSTAT"] = "W"
+    return df.drop(columns="_merge")
+
+
+# ============================================================
+# 6. EIFMNP02 CORE LOGIC (PARTIAL, STRUCTURALLY COMPLETE)
+# ============================================================
+
+def eifmnp02_prepare(
+    loan: pd.DataFrame,
+    loan_lnnote: pd.DataFrame,
+    loan_reptdate: pd.DataFrame,
+    npglobal: pd.DataFrame,
+    wiis: pd.DataFrame,
+    waq: pd.DataFrame,
+    wsp2: pd.DataFrame
+) -> tuple[pd.DataFrame, str]:
+    """
+    Python equivalent of SYSIN = EIFMNP02
+
+    REMARK:
+    - Full DAYS / BLDATE / interest macros are NOT yet ported
+    - Structure, joins, and BORSTAT logic are preserved
+    """
+
+    reptmon = derive_reptmon(loan_reptdate)
+
+    # Prepare LNNOTE
+    lnnote = prepare_lnnote(loan_lnnote)
+
+    # Filter WIIS / WAQ / WSP2
+    wiis_f = filter_by_lnnote(wiis, lnnote)
+    waq_f  = filter_by_lnnote(waq, lnnote)
+    wsp2_f = filter_by_lnnote(wsp2, lnnote)
+
+    # Merge NPGLOBAL + LNNOTE
+    df = npglobal.merge(
+        lnnote,
+        on="ACCTNO",
+        how="left",
+        suffixes=("", "_LN")
+    )
+
+    # Apply BORSTAT = 'W'
+    df = apply_borstat_w(df, wiis_f)
+
+    # --------------------------------------------------------
+    # REMARK (IMPORTANT):
+    # The following SAS logic must be ported here if required:
+    # - DAYS calculation
+    # - %NXTBLDT macro
+    # - guideline branching (LOAN vs PLOAN)
+    # - BORSTAT reassignment rules
+    # --------------------------------------------------------
+
+    return df, reptmon
+
+
+# ============================================================
+# 7. MAIN EXECUTION (EIAWOF03 REPLACEMENT)
+# ============================================================
+
+def main():
+    run_date = datetime.today()
+
+    # OPC replacement
+    loan = select_loan_source(run_date)
+
+    # Load required datasets
+    loan_lnnote   = read_sas("LNNOTE.sas7bdat")
+    loan_reptdate = read_sas("REPTDATE.sas7bdat")
+    npglobal      = read_sas("NPGLOBAL.sas7bdat")
+
+    wiis = read_parquet_latest("NPL_WIIS")
+    waq  = read_parquet_latest("NPL_WAQ")
+    wsp2 = read_parquet_latest("NPL_WSP2")
+
+    # SYSIN logic
+    prepared_npl, reptmon = eifmnp02_prepare(
+        loan=loan,
+        loan_lnnote=loan_lnnote,
+        loan_reptdate=loan_reptdate,
+        npglobal=npglobal,
+        wiis=wiis,
+        waq=waq,
+        wsp2=wsp2
+    )
+
+    # Output (replaces NPL6.LOAN&REPTMON)
+    write_parquet(prepared_npl, f"NPL6_LOAN_{reptmon}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
 ===================================================================== EIAWOF04 ==========================================================================================
 
 //EIAWOF04  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
@@ -187,6 +369,9 @@ write_parquet(woffhp, "NPL_WOFFHP")
 //NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
 //SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP03),DISP=SHR
+
+
+
 
 ===================================================================== EIAWOF05 ==========================================================================================
 
