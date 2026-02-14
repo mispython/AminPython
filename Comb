@@ -24,3 +24,35 @@ with open(output_file, "w", encoding="utf-8") as outfile:
         outfile.write("\n\n")
 
 print("All files combined successfully.")
+
+
+
+===============================================================================
+
+
+import os
+
+folder_path = r"C:\python_jobs"
+output_filename = "combined_code.txt"
+output_file = os.path.join(folder_path, output_filename)
+
+files = sorted([
+    f for f in os.listdir(folder_path)
+    if f.endswith(".txt") and f != output_filename
+])
+
+with open(output_file, "w", encoding="utf-8") as outfile:
+    for filename in files:
+        file_path = os.path.join(folder_path, filename)
+
+        outfile.write("\n")
+        outfile.write("========================================\n")
+        outfile.write(f"====== {filename} ======\n")
+        outfile.write("========================================\n\n")
+
+        with open(file_path, "r", encoding="utf-8") as infile:
+            outfile.write(infile.read())
+
+        outfile.write("\n\n")
+
+print("All files combined successfully.")
