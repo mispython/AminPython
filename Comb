@@ -285,3 +285,42 @@ with open(output_file, "w") as outfile:
         else:
             print("NOT FOUND:", file_path)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+>>>         with open(file_path, "r") as infile:
+  File "<stdin>", line 1
+    with open(file_path, "r") as infile:
+IndentationError: unexpected indent
+>>>             outfile.write(infile.read())
+  File "<stdin>", line 1
+    outfile.write(infile.read())
+IndentationError: unexpected indent
+>>>         outfile.write("\n\n")
+  File "<stdin>", line 1
+    outfile.write("\n\n")
+IndentationError: unexpected indent
+>>> 
+>>>     else:
+  File "<stdin>", line 1
+    else:
+IndentationError: unexpected indent
+>>>         print("NOT FOUND:", file_path)
+  File "<stdin>", line 1
+    print("NOT FOUND:", file_path)
+IndentationError: unexpected indent
+>>> 
+
