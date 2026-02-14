@@ -195,3 +195,12 @@ with open(output_file, "w", encoding="utf-8") as outfile:
 print("DONE. Combined file created.")
 
 
+
+import os
+
+source_folder = r"C:\Users\Putera\Project\Data_Warehouse\MIS\XMIS\input_testing_file"
+
+print("Folder exists:", os.path.exists(source_folder))
+print("Files inside folder:")
+print(os.listdir(source_folder))
+
