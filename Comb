@@ -160,3 +160,38 @@ print("\n ========== PREVIEW =========== \n")
 print(df_sorted.head(100))
 
 
+import os
+
+base_path = os.getcwd()
+
+source_folder = os.path.join(base_path, 
+                             "Data_Warehouse/MIS/XMIS/input_testing_file")
+
+job_list_file = os.path.join(source_folder, "job_list.txt")
+output_file = os.path.join(source_folder, "combined_code.txt")
+
+with open(job_list_file, "r", encoding="utf-8") as f:
+    job_names = [line.strip() for line in f if line.strip()]
+
+with open(output_file, "w", encoding="utf-8") as outfile:
+    for job in job_names:
+        file_path = os.path.join(source_folder, job)
+
+        if os.path.isfile(file_path):
+
+            outfile.write("\n")
+            outfile.write("========================================\n")
+            outfile.write(f"====== {job} ======\n")
+            outfile.write("========================================\n\n")
+
+            with open(file_path, "r", encoding="utf-8") as infile:
+                outfile.write(infile.read())
+
+            outfile.write("\n\n")
+
+        else:
+            print(f"WARNING: {job} not found.")
+
+print("DONE. Combined file created.")
+
+
