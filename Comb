@@ -92,3 +92,71 @@ with open(output_file, "w", encoding="utf-8") as outfile:
 
 print("Done.")
 
+
+
+# //EIBLCGCS JOB MISEIS,EIBWBTEX,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
+# //*
+# //*
+# //*
+# //EIBLCGCS EXEC SAS609
+# //GP3      DD DSN=RBP2.B033.GP3.KLUNION,DISP=SHR
+# //NPGS     DD DSN=SAP.PBB.GP3.NPGS.SASDATA,DISP=OLD
+# //SASLIST  DD SYSOUT=X
+# //SYSIN    DD *
+
+# OPTIONS YEARCUTOFF=1940 SORTDEV=3390
+#         NONUMBER NODATE NOCENTER;
+# *;
+# DATA GP3;
+#    INFILE GP3;
+#    INPUT  @004 ACCTNO   10.
+#           @019 RPTDAY    2.
+#           @021 RPTMON    2.
+#           @023 RPTYEAR   4.;
+# PROC SORT DATA=GP3 OUT=NPGS.NPGS ; BY ACCTNO;
+# *;
+
+import pandas as pd
+import os
+from datetime import datetime
+today_date = datetime.now().strftime("%d%m%y")
+
+file_path = f"Data_Warehouse/MIS/XMIS/input_testing_file/GP3_KLUNION.csv"
+# file_path = f"Data_Warehouse/MIS/XMIS/input_testing_file/GP3_KLUNION_{today_date}.csv"
+
+# To check if file exist
+print("Current working directory:", os.getcwd())
+if os.path.isfile(file_path):
+    print("File detected!")
+else:
+    print("File NOT Exist.")
+
+colspecs = [
+    (3, 13),
+    (18, 20),
+    (20, 22),
+    (22, 26)
+]
+names = [
+    "ACCTNO", 
+    "RPTDAY", 
+    "RPTMON", 
+    "RPTYEAR"
+]
+
+df = pd.read_fwf(file_path, colspecs=colspecs, names=names)
+
+df = df.apply(pd.to_numeric, errors='coerce')
+
+df_sorted = df.sort_values(by="ACCTNO")
+
+output_path = f"Data_Warehouse/MIS/XMIS/output/GP3/GP3_NPGS_{today_date}.parquet"
+df_sorted.to_parquet(output_path, index=False)
+
+print(f"DONE! Output saved as: {output_path}")
+
+# TO SHOW DATA FOR TESTING PURPOSE ONLY
+print("\n ========== PREVIEW =========== \n")
+print(df_sorted.head(100))
+
+
