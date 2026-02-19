@@ -240,6 +240,141 @@ print("All reports generated successfully.")
 
 ==============================================================      JOB : EIBELRP2     ==============================================================  
 
+
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# 1. ASSUME BASE DATA EXISTS (FROM JOB 1)
+# =========================================================
+# df_base = equivalent of TEMP.TFINAL&REPTYEAR
+# br1     = equivalent of TEMP.BR1
+
+# If loading from file:
+# df_base = pd.read_csv("TFINAL_YEAR.csv")
+# br1 = pd.read_csv("BR1.csv")
+
+df = df_base.copy()
+
+reptdate = datetime.today()
+current_month = reptdate.month
+previous_month = 12 if current_month == 1 else current_month - 1
+rdate = reptdate.strftime("%d/%m/%Y")
+
+# =========================================================
+# 2. FACILITY GROUP MAPPING (FACGRP → FACTYPE)
+# =========================================================
+
+facgrp_map = {
+    1: "3OD",
+    2: "2FL",
+    3: "1HL",
+    4: "5RC",
+    5: "4BT"
+}
+
+facdec_map = {
+    "3OD": "OD",
+    "2FL": "FL",
+    "1HL": "HL",
+    "5RC": "RC",
+    "4BT": "TRADE BILLS",
+    "6OT": "OTHERS"
+}
+
+df["FACTYPE"] = df["FACGRP"].map(facgrp_map).fillna("6OT")
+
+# =========================================================
+# 3. CATEGORY SPLIT (SAME AS SAS)
+# =========================================================
+
+def category(row):
+    if pd.isna(row["ACCPTDATE"]):
+        return None
+    if row["ACCPTDATE"].month == current_month:
+        return "CURRENT MONTH"
+    elif row["ACCPTDATE"].month == previous_month:
+        return "PREVIOUS MONTH"
+    elif row["ACCPTDATE"].month <= current_month:
+        return "YEAR TO DATE"
+    return None
+
+df["CAT"] = df.apply(category, axis=1)
+df["COUNT"] = np.where(df["ACCPTDATE"].notna(), 1, 0)
+df["IND"] = np.where(df["IMPAIRED"] == "Y", "Y", "N")
+df["AMOUNT"] = df["AMOUNT"].fillna(0)
+
+# =========================================================
+# 4. REPORT 2A – ALL BRANCH
+# =========================================================
+
+report2a = pd.pivot_table(
+    df,
+    values=["COUNT", "AMOUNT"],
+    index=["FACTYPE", "BRANCH", "CAT", "IND"],
+    aggfunc={"COUNT": "sum", "AMOUNT": "sum"},
+    fill_value=0
+)
+
+report2a.rename(index=facdec_map, level=0, inplace=True)
+report2a.to_csv("REPORT_2A_ALL_BRANCH.csv")
+
+# =========================================================
+# 5. REPORT 2B – BY BRANCH
+# =========================================================
+
+for branch in df["BRANCH"].dropna().unique():
+    rpt = pd.pivot_table(
+        df[df["BRANCH"] == branch],
+        values=["COUNT", "AMOUNT"],
+        index=["FACTYPE", "CAT", "IND"],
+        aggfunc={"COUNT": "sum", "AMOUNT": "sum"},
+        fill_value=0
+    )
+    rpt.rename(index=facdec_map, level=0, inplace=True)
+    rpt.to_csv(f"REPORT_2B_BRANCH_{branch}.csv")
+
+# =========================================================
+# 6. REPORT 2C – BY REGION
+# =========================================================
+
+df = df.merge(br1[["BRANCH", "REG"]], on="BRANCH", how="left")
+
+for region in df["REG"].dropna().unique():
+    rpt = pd.pivot_table(
+        df[df["REG"] == region],
+        values=["COUNT", "AMOUNT"],
+        index=["FACTYPE", "BRANCH", "CAT", "IND"],
+        aggfunc={"COUNT": "sum", "AMOUNT": "sum"},
+        fill_value=0
+    )
+    rpt.rename(index=facdec_map, level=0, inplace=True)
+    rpt.to_csv(f"REPORT_2C_REGION_{region}.csv")
+
+# =========================================================
+# 7. REPORT 2D – BY BRANCH SORTED BY REGION
+# =========================================================
+
+df_sorted = df.sort_values(["REG", "BRANCH"])
+
+for branch in df_sorted["BRANCH"].dropna().unique():
+    rpt = pd.pivot_table(
+        df_sorted[df_sorted["BRANCH"] == branch],
+        values=["COUNT", "AMOUNT"],
+        index=["FACTYPE", "CAT", "IND"],
+        aggfunc={"COUNT": "sum", "AMOUNT": "sum"},
+        fill_value=0
+    )
+    rpt.rename(index=facdec_map, level=0, inplace=True)
+    rpt.to_csv(f"REPORT_2D_BRANCH_{branch}.csv")
+
+print("REPORT 2 completed successfully.")
+
+
+
+
 //EIBELRP2 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M
 //**********************************************************************
 //* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
@@ -310,6 +445,166 @@ print("All reports generated successfully.")
 
 ==============================================================      JOB : EIBELRP3     ==============================================================  
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+REPTDATE = datetime.today()
+CURRENT_MONTH = REPTDATE.month
+PREV_MONTH = 12 if CURRENT_MONTH == 1 else CURRENT_MONTH - 1
+RDATE = REPTDATE.strftime("%d/%m/%Y")
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+
+df_tfinal = pd.read_csv("TFINAL.csv")       # from Job 1 logic
+df_day1list = pd.read_csv("DAY1LIST.csv")
+df_br1 = pd.read_csv("BR1.csv")
+
+# =========================================================
+# COMMON PREP
+# =========================================================
+
+df = df_tfinal.copy()
+
+df["COUNT"] = np.where(df["ACCPTDATE"].notna(), 1, 0)
+df["AMOUNT"] = df["AMOUNT"].fillna(0)
+df["IND"] = np.where(df["IMPAIRED"] == "Y", "Y", "N")
+
+def category(row):
+    if pd.isna(row["ACCPTDATE"]):
+        return None
+    if row["ACCPTDATE"].month == CURRENT_MONTH:
+        return "CURRENT MONTH"
+    elif row["ACCPTDATE"].month == PREV_MONTH:
+        return "PREVIOUS MONTH"
+    elif row["ACCPTDATE"].month <= CURRENT_MONTH:
+        return "YEAR TO DATE"
+    return None
+
+df["CAT"] = df.apply(category, axis=1)
+
+# =========================================================
+# ==================== REPORT 1 ===========================
+# =========================================================
+
+report1 = pd.pivot_table(
+    df,
+    values=["COUNT", "AMOUNT"],
+    index=["NRRTAG", "BRANCH", "CAT", "IND"],
+    aggfunc={"COUNT": "sum", "AMOUNT": "sum"},
+    fill_value=0
+)
+
+report1.to_csv("REPORT1_ALL_BRANCH.csv")
+
+# =========================================================
+# ==================== REPORT 2 ===========================
+# =========================================================
+
+facgrp_map = {
+    1: "3OD",
+    2: "2FL",
+    3: "1HL",
+    4: "5RC",
+    5: "4BT"
+}
+
+df["FACTYPE"] = df["FACGRP"].map(facgrp_map).fillna("6OT")
+
+report2 = pd.pivot_table(
+    df,
+    values=["COUNT", "AMOUNT"],
+    index=["FACTYPE", "BRANCH", "CAT", "IND"],
+    aggfunc={"COUNT": "sum", "AMOUNT": "sum"},
+    fill_value=0
+)
+
+report2.to_csv("REPORT2_ALL_BRANCH.csv")
+
+# =========================================================
+# ==================== REPORT 3 ===========================
+# =========================================================
+
+# Split NRRR / NRRS
+nrrr = df[df["NRRTAG"] == "NRRR"].copy()
+nrss = df[df["NRRTAG"] == "NRRS"].copy()
+
+# Expand EXTFAC
+nrss_expanded = (
+    nrss.assign(AANO=nrss["EXTFAC"].str.split(","))
+    .explode("AANO")
+)
+
+nrss_expanded["AANO"] = nrss_expanded["AANO"].str.strip()
+nrss_expanded = nrss_expanded[nrss_expanded["AANO"] != ""]
+
+# Day1 Summary
+df_day1list["COUNT1"] = 1
+
+day1_summary = (
+    df_day1list.groupby("AANO", as_index=False)["COUNT1"]
+    .sum()
+)
+
+# Merge NRRS with DAY1
+nrss2 = nrss_expanded.merge(day1_summary, on="AANO", how="left")
+nrss2["COUNT1"] = nrss2["COUNT1"].fillna(0)
+nrss2["NEWCOUNT"] = 1 + nrss2["COUNT1"]
+
+# NRRR base
+nrrr["NEWCOUNT"] = 1
+
+# Combine
+freq_df = pd.concat([nrrr, nrss2], ignore_index=True)
+
+freq_summary = (
+    freq_df.groupby(
+        ["BRANCH", "CUSTNAME", "CUSTID", "AANO", "FACNAME"],
+        as_index=False
+    )["NEWCOUNT"]
+    .sum()
+)
+
+# Frequency band
+def classify_freq(x):
+    if x == 1:
+        return "1X"
+    elif x == 2:
+        return "2X"
+    elif x == 3:
+        return "3X"
+    elif x == 4:
+        return "4X"
+    elif x == 5:
+        return "5X"
+    else:
+        return ">5X"
+
+freq_summary["FREQ_BAND"] = freq_summary["NEWCOUNT"].apply(classify_freq)
+
+report3 = pd.pivot_table(
+    freq_summary,
+    index=["BRANCH", "CUSTNAME", "CUSTID", "AANO", "FACNAME"],
+    columns="FREQ_BAND",
+    values="NEWCOUNT",
+    aggfunc="count",
+    fill_value=0
+)
+
+report3.to_csv("REPORT3_ALL_BRANCH.csv")
+
+# =========================================================
+print("All Reports (1, 2, 3) Generated Successfully.")
+
+
+
+
 //EIBELRP3 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
 //* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
@@ -379,6 +674,109 @@ print("All reports generated successfully.")
 
 
 ==============================================================      JOB : EIBELRP4     ==============================================================  
+
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+REPTDATE = datetime.today()
+CURRENT_MONTH = REPTDATE.month
+PREV_MONTH = 12 if CURRENT_MONTH == 1 else CURRENT_MONTH - 1
+
+# Input files (adjust paths)
+TFINAL_FILE = "data/TFINAL_YEAR.csv"
+FIN3FREQ_FILE = "data/FIN3FREQ_YEAR.csv"
+BR1_FILE = "data/BR1.csv"
+
+OUTPUT_FILE = "output/REPORT4_ALL_BRANCH.csv"
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+
+df_tfinal = pd.read_csv(TFINAL_FILE)
+df_freq = pd.read_csv(FIN3FREQ_FILE)
+df_br1 = pd.read_csv(BR1_FILE)
+
+# =========================================================
+# MERGE FREQUENCY BACK
+# =========================================================
+
+df = df_tfinal.merge(
+    df_freq[["ACCTNO1", "NOTENO", "AANO", "TKDATE", "COUNT"]],
+    on=["ACCTNO1", "NOTENO", "AANO", "TKDATE"],
+    how="left"
+)
+
+df["COUNT"] = df["COUNT"].fillna(1)
+
+# =========================================================
+# Convert to frequency band
+# =========================================================
+
+def freq_band(x):
+    if x >= 6:
+        return 6
+    return int(x)
+
+df["FREQ"] = df["COUNT"].apply(freq_band)
+
+# =========================================================
+# Month category
+# =========================================================
+
+df["ACCPTDATE"] = pd.to_datetime(df["ACCPTDATE"], errors="coerce")
+
+def category(row):
+    if pd.isna(row["ACCPTDATE"]):
+        return None
+    if row["ACCPTDATE"].month == CURRENT_MONTH:
+        return "CURRENT MONTH"
+    elif row["ACCPTDATE"].month == PREV_MONTH:
+        return "PREVIOUS MONTH"
+    elif row["ACCPTDATE"].month <= CURRENT_MONTH:
+        return "YEAR TO DATE"
+    return None
+
+df["CAT"] = df.apply(category, axis=1)
+
+# =========================================================
+# Indicators
+# =========================================================
+
+df["IND"] = np.where(df["IMPAIRED"] == "Y", "Y", "N")
+df["COUNT_AC"] = np.where(df["ACCPTDATE"].notna(), 1, 0)
+df["AMOUNT"] = df["AMOUNT"].fillna(0)
+
+# =========================================================
+# Attach region
+# =========================================================
+
+df = df.merge(df_br1[["BRANCH", "REG"]], on="BRANCH", how="left")
+
+# =========================================================
+# AGGREGATION (Equivalent PROC TABULATE)
+# =========================================================
+
+report4 = pd.pivot_table(
+    df,
+    values=["COUNT_AC", "AMOUNT"],
+    index=["REG", "BRANCH", "FREQ", "CAT", "IND"],
+    aggfunc={"COUNT_AC": "sum", "AMOUNT": "sum"},
+    fill_value=0
+)
+
+report4.to_csv(OUTPUT_FILE)
+
+print("JOB 4 (Report 4) completed successfully.")
+
+
+
 
 //EIBELRP4 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
