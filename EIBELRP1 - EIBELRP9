@@ -1,5 +1,171 @@
 ==============================================================      JOB : EIBELRP1     ==============================================================  
 
+
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# 1. REPORT DATE (Equivalent to LIST.REPTDATE)
+# =========================================================
+
+reptdate = datetime.today()   # replace with actual value if needed
+reptday = reptdate.strftime("%d")
+reptmon = reptdate.strftime("%m")
+reptyear = reptdate.strftime("%y")
+rdate = reptdate.strftime("%d/%m/%Y")
+
+# =========================================================
+# 2. READ ELDS FIXED WIDTH FILE
+# =========================================================
+
+elds = pd.read_fwf(
+    "ELDS.txt",
+    colspecs=[
+        (0,8),(11,26),(29,44),(47,50),(51,54),(57,61),
+        (64,214),(217,229),(232,237),(240,300),(303,313),
+        (316,331),(334,349),(352,357),(360,365),(368,374),
+        (377,437),(440,450),(453,463),(466,470)
+    ],
+    names=[
+        "PTYPE","MAANO","AANO","BRANCH","BRCHABR","REGION",
+        "CUSTNAME","ACCTNO1","NOTENO","FACNAME","FACGRP",
+        "APPRAMT","OUTSTAND","DSR","CRR","MA",
+        "APPRNAME","APPRDATE1","ACCPTDATE1","NRRTAG"
+    ]
+)
+
+elds = elds[elds["PTYPE"] == "PBB"]
+
+# Convert dates
+elds["ACCPTDATE"] = pd.to_datetime(elds["ACCPTDATE1"], format="%d/%m/%Y", errors="coerce")
+
+# Convert numeric fields
+elds["APPRAMT"] = pd.to_numeric(elds["APPRAMT"], errors="coerce")
+elds["OUTSTAND"] = pd.to_numeric(elds["OUTSTAND"], errors="coerce")
+
+# =========================================================
+# 3. READ LN BALANCE
+# =========================================================
+
+ln = pd.read_csv("LNNOTE.csv")
+ln = ln[["ACCTNO","NOTENO","BALANCE"]]
+ln.rename(columns={"ACCTNO":"ACCTNO1"}, inplace=True)
+
+# =========================================================
+# 4. MERGE LN
+# =========================================================
+
+df = elds.merge(ln, on=["ACCTNO1","NOTENO"], how="left")
+
+# =========================================================
+# 5. AMOUNT LOGIC (Same as SAS)
+# =========================================================
+
+def calculate_amount(row):
+    if row["FACGRP"] == "4" or row["NRRTAG"] == "NRRS":
+        return row["APPRAMT"]
+    elif row["NRRTAG"] == "NRRR":
+        return row["OUTSTAND"]
+    elif pd.notna(row["BALANCE"]) and row["BALANCE"] != 0:
+        return row["BALANCE"]
+    else:
+        return row["APPRAMT"]
+
+df["AMOUNT"] = df.apply(calculate_amount, axis=1)
+
+# =========================================================
+# 6. READ CCRIS FILES
+# =========================================================
+
+provsub = pd.read_csv(f"PROVSUBAC{reptmon}{reptyear}.csv")
+provsub["ILAMT"] = provsub[["BALANCE","INTEREST","OTHERCHG"]].sum(axis=1)
+provsub = provsub[provsub["IMPAIRED_LOAN"] == "Y"]
+provsub.rename(columns={"ACCTNUM":"ACCTNO1"}, inplace=True)
+
+df = df.merge(
+    provsub[["ACCTNO1","NOTENO","ILAMT","IMPAIRED_LOAN"]],
+    on=["ACCTNO1","NOTENO"],
+    how="left"
+)
+
+# Override AMOUNT if impaired
+df.loc[df["IMPAIRED_LOAN"] == "Y", "AMOUNT"] = df["ILAMT"]
+
+# =========================================================
+# 7. CATEGORY SPLIT
+# =========================================================
+
+current_month = reptdate.month
+previous_month = (reptdate.month - 1) or 12
+
+def category(row):
+    if pd.isna(row["ACCPTDATE"]):
+        return None
+    if row["ACCPTDATE"].month == current_month:
+        return "CURRENT MONTH"
+    elif row["ACCPTDATE"].month == previous_month:
+        return "PREVIOUS MONTH"
+    elif row["ACCPTDATE"].month <= current_month:
+        return "YEAR TO DATE"
+    return None
+
+df["CAT"] = df.apply(category, axis=1)
+df["COUNT"] = np.where(df["ACCPTDATE"].notna(), 1, 0)
+df["IND"] = np.where(df["IMPAIRED_LOAN"] == "Y", "Y", "N")
+
+df["AMOUNT"] = df["AMOUNT"].fillna(0)
+
+# =========================================================
+# 8. REPORT 1A – ALL BRANCH
+# =========================================================
+
+report1a = pd.pivot_table(
+    df,
+    values=["COUNT","AMOUNT"],
+    index=["NRRTAG","BRANCH","CAT","IND"],
+    aggfunc={"COUNT":"sum","AMOUNT":"sum"},
+    fill_value=0
+)
+
+report1a.to_csv("REPORT_1A_ALL_BRANCH.csv")
+
+# =========================================================
+# 9. REPORT 1B – BY BRANCH
+# =========================================================
+
+for branch in df["BRANCH"].dropna().unique():
+    rpt = pd.pivot_table(
+        df[df["BRANCH"] == branch],
+        values=["COUNT","AMOUNT"],
+        index=["NRRTAG","CAT","IND"],
+        aggfunc={"COUNT":"sum","AMOUNT":"sum"},
+        fill_value=0
+    )
+    rpt.to_csv(f"REPORT_1B_BRANCH_{branch}.csv")
+
+# =========================================================
+# 10. REPORT 1C – BY REGION
+# =========================================================
+
+for region in df["REGION"].dropna().unique():
+    rpt = pd.pivot_table(
+        df[df["REGION"] == region],
+        values=["COUNT","AMOUNT"],
+        index=["NRRTAG","BRANCH","CAT","IND"],
+        aggfunc={"COUNT":"sum","AMOUNT":"sum"},
+        fill_value=0
+    )
+    rpt.to_csv(f"REPORT_1C_REGION_{region}.csv")
+
+print("All reports generated successfully.")
+
+
+
+
+
+
 //EIBELRP1 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
 //* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
