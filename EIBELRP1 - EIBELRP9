@@ -847,6 +847,122 @@ print("JOB 4 (Report 4) completed successfully.")
 
 ==============================================================      JOB : EIBELRP5     ==============================================================  
 
+
+
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+REPTDATE = datetime.today()
+CURRENT_MONTH = REPTDATE.month
+PREV_MONTH = 12 if CURRENT_MONTH == 1 else CURRENT_MONTH - 1
+
+TFINAL_FILE = "data/TFINAL_YEAR.csv"
+BR1_FILE = "data/BR1.csv"
+
+OUTPUT_FILE = "output/REPORT5_ALL_BRANCH.csv"
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+
+df = pd.read_csv(TFINAL_FILE)
+df_br1 = pd.read_csv(BR1_FILE)
+
+df["ACCPTDATE"] = pd.to_datetime(df["ACCPTDATE"], errors="coerce")
+
+# =========================================================
+# Months In Arrears (MIA)
+# =========================================================
+
+df["MTHARR"] = df["MTHARR"].fillna(0)
+
+def map_mia(x):
+    if x == 0:
+        return 0
+    elif x == 1:
+        return 1
+    elif x == 2:
+        return 2
+    else:
+        return 3
+
+df["MIA"] = df["MTHARR"].apply(map_mia)
+
+# =========================================================
+# Month category
+# =========================================================
+
+def category(row):
+    if pd.isna(row["ACCPTDATE"]):
+        return None
+    if row["ACCPTDATE"].month == CURRENT_MONTH:
+        return "CURRENT MONTH"
+    elif row["ACCPTDATE"].month == PREV_MONTH:
+        return "PREVIOUS MONTH"
+    elif row["ACCPTDATE"].month <= CURRENT_MONTH:
+        return "YEAR TO DATE"
+    return None
+
+df["CAT"] = df.apply(category, axis=1)
+
+# =========================================================
+# Indicators
+# =========================================================
+
+df["COUNT"] = np.where(df["ACCPTDATE"].notna(), 1, 0)
+df["AMOUNT"] = df["AMOUNT"].fillna(0)
+
+# =========================================================
+# Attach region
+# =========================================================
+
+df = df.merge(df_br1[["BRANCH", "REG"]], on="BRANCH", how="left")
+
+# =========================================================
+# Calculate YTD Total Amount (for composition)
+# =========================================================
+
+ytd_total = df[df["CAT"] == "YEAR TO DATE"]["AMOUNT"].sum()
+
+# Avoid division by zero
+if ytd_total == 0:
+    ytd_total = 1
+
+df["COMPOSITION"] = np.where(
+    df["CAT"] == "YEAR TO DATE",
+    (df["AMOUNT"] / ytd_total) * 100,
+    0
+)
+
+# =========================================================
+# Aggregation (Equivalent PROC TABULATE)
+# =========================================================
+
+report5 = pd.pivot_table(
+    df,
+    values=["COUNT", "AMOUNT", "COMPOSITION"],
+    index=["REG", "BRANCH", "MIA", "CAT"],
+    aggfunc={
+        "COUNT": "sum",
+        "AMOUNT": "sum",
+        "COMPOSITION": "sum"
+    },
+    fill_value=0
+)
+
+report5.to_csv(OUTPUT_FILE)
+
+print("JOB 5 (Report 5) completed successfully.")
+
+
+
+
 //EIBELRP5 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
 //* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
@@ -915,6 +1031,123 @@ print("JOB 4 (Report 4) completed successfully.")
 
 
 ==============================================================      JOB : EIBELRP6     ==============================================================  
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+REPTDATE = datetime.today()
+CURRENT_MONTH = REPTDATE.month
+PREV_MONTH = 12 if CURRENT_MONTH == 1 else CURRENT_MONTH - 1
+
+TFINAL_FILE = "data/TFINAL_YEAR.csv"
+BR1_FILE = "data/BR1.csv"
+
+OUTPUT_FILE = "output/REPORT6_ALL_BRANCH.csv"
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+
+df = pd.read_csv(TFINAL_FILE)
+df_br1 = pd.read_csv(BR1_FILE)
+
+df["ACCPTDATE"] = pd.to_datetime(df["ACCPTDATE"], errors="coerce")
+
+# =========================================================
+# Remove COMSCORE records (same as SAS)
+# =========================================================
+
+df = df[df["COMSCORE"].fillna("") == ""]
+
+# =========================================================
+# Map CRR Grade
+# =========================================================
+
+def map_crr(row):
+    crr = str(row["CRR"])
+
+    if len(crr) >= 2:
+        prefix2 = crr[:2]
+        if prefix2 == "AA":
+            return 1
+        if prefix2 == "BB":
+            return 3
+        if prefix2 == "CC":
+            return 5
+
+    if len(crr) >= 1:
+        prefix1 = crr[:1]
+        if prefix1 == "A":
+            return 2
+        if prefix1 == "B":
+            return 4
+        if prefix1 == "C":
+            return 6
+        if prefix1 == "D":
+            return 7
+        if prefix1 == "E":
+            return 8
+
+    return None
+
+df["CRRGRD"] = df.apply(map_crr, axis=1)
+
+# =========================================================
+# Month category split
+# =========================================================
+
+def category(row):
+    if pd.isna(row["ACCPTDATE"]):
+        return None
+    if row["ACCPTDATE"].month == CURRENT_MONTH:
+        return "CURRENT MONTH"
+    elif row["ACCPTDATE"].month == PREV_MONTH:
+        return "PREVIOUS MONTH"
+    elif row["ACCPTDATE"].month <= CURRENT_MONTH:
+        return "YEAR TO DATE"
+    return None
+
+df["CAT"] = df.apply(category, axis=1)
+
+# =========================================================
+# Indicators
+# =========================================================
+
+df["IND"] = np.where(df["IMPAIRED"] == "Y", "Y", "N")
+df["COUNT"] = np.where(df["ACCPTDATE"].notna(), 1, 0)
+df["AMOUNT"] = df["AMOUNT"].fillna(0)
+
+# =========================================================
+# Attach branch/region
+# =========================================================
+
+df = df.merge(df_br1[["BRANCH", "REG"]], on="BRANCH", how="left")
+
+# =========================================================
+# Aggregate (PROC TABULATE equivalent)
+# =========================================================
+
+report6 = pd.pivot_table(
+    df,
+    values=["COUNT", "AMOUNT"],
+    index=["CRRGRD", "IND", "CAT"],
+    aggfunc={
+        "COUNT": "sum",
+        "AMOUNT": "sum"
+    },
+    fill_value=0
+)
+
+report6.to_csv(OUTPUT_FILE)
+
+print("JOB 6 (Report 6) completed successfully.")
+
+
 
 //EIBELRP6 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
@@ -985,6 +1218,91 @@ print("JOB 4 (Report 4) completed successfully.")
 
 ==============================================================      JOB : EIBELRP7     ==============================================================  
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+REPTDATE = datetime.today()
+TFINAL_FILE = "data/TFINAL.csv"
+BR1_FILE = "data/BR1.csv"
+
+OUTPUT_FILE = "output/REPORT7_LISTING.csv"
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+
+df = pd.read_csv(TFINAL_FILE)
+df_br1 = pd.read_csv(BR1_FILE)
+
+# =========================================================
+# Clean fields
+# =========================================================
+
+df["ILAMT"] = df["ILAMT"].fillna(0)
+df["MTHARR"] = df["MTHARR"].fillna(0)
+
+# Add running number
+df = df.reset_index(drop=True)
+df.insert(0, "NO", df.index + 1)
+
+# =========================================================
+# If empty dataset (same as SAS macro CHECK)
+# =========================================================
+
+if df.shape[0] == 0:
+    df = pd.DataFrame({
+        "NO": [np.nan],
+        "MAANO": [""],
+        "AANO": [""],
+        "REQNO": [""],
+        "CUSTNAME": [""],
+        "FACNAME": [""],
+        "APPRAMT": [np.nan],
+        "AMOUNT": [np.nan],
+        "DSR": [np.nan],
+        "CRR": [""],
+        "MRISKGRD": [""],
+        "SCORECARD": [""],
+        "CCRISCOMM": [""],
+        "COMSCORE": [""],
+        "MA": [""],
+        "APPRNAME": [""],
+        "APPRDATE1": [""],
+        "ACCPTDATE1": [""],
+        "NRRTAG": [""],
+        "ILAMT": [np.nan],
+        "MTHARR": [np.nan]
+    })
+
+# =========================================================
+# OPTIONAL FILTERS
+# =========================================================
+
+def generate_all_branches(df):
+    return df.copy()
+
+def generate_by_branch(df, branch_code):
+    return df[df["BRANCH"] == branch_code]
+
+def generate_by_region(df, region_code):
+    df = df.merge(df_br1[["BRANCH", "REG"]], on="BRANCH", how="left")
+    return df[df["REG"] == region_code]
+
+# =========================================================
+# Save ALL branch version
+# =========================================================
+
+generate_all_branches(df).to_csv(OUTPUT_FILE, index=False)
+
+print("JOB 7 (Listing Report) completed successfully.")
+
+
+
 //EIBELRP7 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
 //* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
@@ -1054,6 +1372,138 @@ print("JOB 4 (Report 4) completed successfully.")
 
 ==============================================================      JOB : EIBELRP8     ==============================================================  
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+REPTDATE = datetime.today()
+YEAR = REPTDATE.year
+
+TFINAL_FILE = f"data/TFINAL_{YEAR}.csv"
+LN_FILE = "data/LN.csv"
+BR1_FILE = "data/BR1.csv"
+
+OUTPUT_FILE = "output/REPORT8_ASCORE.csv"
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+
+df = pd.read_csv(TFINAL_FILE)
+df_ln = pd.read_csv(LN_FILE)
+df_br = pd.read_csv(BR1_FILE)
+
+# =========================================================
+# Remove Commercial A-Score (same as SAS)
+# =========================================================
+
+df = df[df["COMSCORE"].isna() | (df["COMSCORE"] == "")]
+
+# =========================================================
+# Map SCORECARD → SCRISKGRD
+# =========================================================
+
+score_map = {
+    "AA": 1,
+    "A": 2,
+    "BB": 3,
+    "B": 4,
+    "CC": 5,
+    "C": 6,
+    "DD": 7,
+    "D": 8,
+    "E": 9,
+    "F": 10
+}
+
+df["SCRISKGRD"] = df["SCORECARD"].map(score_map)
+
+# =========================================================
+# Category Logic
+# =========================================================
+
+df["ACCPTDATE"] = pd.to_datetime(df["ACCPTDATE"])
+current_month = REPTDATE.month
+previous_month = (REPTDATE.replace(day=1) - pd.Timedelta(days=1)).month
+
+df["CAT"] = "YEAR TO DATE"
+
+df.loc[df["ACCPTDATE"].dt.month == current_month, "CAT"] = "CURRENT MONTH"
+df.loc[df["ACCPTDATE"].dt.month == previous_month, "CAT"] = "PREVIOUS MONTH"
+
+# =========================================================
+# Split Impaired
+# =========================================================
+
+df_normal = df.copy()
+df_impaired = df[df["IMPAIRED"] == "Y"].copy()
+
+# =========================================================
+# Get Balance
+# =========================================================
+
+df_ln = df_ln[["ACCTNO1", "NOTENO", "BALANCE"]].drop_duplicates()
+
+df = df.merge(df_ln, on=["ACCTNO1", "NOTENO"], how="left")
+df["AMOUNT"] = np.where(
+    (df["BALANCE"].notna()) & (df["FACGRP"] != "4"),
+    df["BALANCE"],
+    0
+)
+
+# =========================================================
+# Add COUNT flag
+# =========================================================
+
+df["COUNT"] = np.where(df["ACCPTDATE"].notna(), 1, 0)
+
+# =========================================================
+# Build Final Dataset
+# =========================================================
+
+df["IND"] = np.where(df["IMPAIRED"] == "Y", "Y", "N")
+
+final = df[[
+    "BRANCH",
+    "SCRISKGRD",
+    "CAT",
+    "IND",
+    "AMOUNT",
+    "COUNT"
+]]
+
+# Replace missing
+final["AMOUNT"] = final["AMOUNT"].fillna(0)
+final["COUNT"] = final["COUNT"].fillna(0)
+
+# =========================================================
+# Aggregation (Equivalent PROC TABULATE)
+# =========================================================
+
+summary = (
+    final
+    .groupby(["SCRISKGRD", "IND", "CAT"], dropna=False)
+    .agg(
+        NO_OF_AC=("COUNT", "sum"),
+        TOTAL_AMOUNT=("AMOUNT", "sum")
+    )
+    .reset_index()
+)
+
+# =========================================================
+# Save
+# =========================================================
+
+summary.to_csv(OUTPUT_FILE, index=False)
+
+print("JOB 8 (A-Score Grade Report) completed successfully.")
+
+
+
 //EIBELRP8 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
 //* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
@@ -1122,6 +1572,110 @@ print("JOB 4 (Report 4) completed successfully.")
 
 
 ==============================================================      JOB : EIBELRP9     ==============================================================  
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================================================
+# CONFIG
+# =========================================================
+
+REPTDATE = datetime.today()
+YEAR = REPTDATE.year
+
+TFINAL_FILE = f"data/TFINAL_{YEAR}.csv"
+LN_FILE = "data/LN.csv"
+
+OUTPUT_FILE = "output/REPORT9_COMMERCIAL_ASCORE.csv"
+
+# =========================================================
+# LOAD DATA
+# =========================================================
+
+df = pd.read_csv(TFINAL_FILE)
+df_ln = pd.read_csv(LN_FILE)
+
+# =========================================================
+# Include ONLY commercial (SAS: IF COMSCORE NE ' ')
+# =========================================================
+
+df = df[df["COMSCORE"].notna() & (df["COMSCORE"] != "")]
+
+# =========================================================
+# Map COMSCORETYP → CRRGRD (5 categories)
+# =========================================================
+
+commercial_map = {
+    "FICO MICRO/SMALL": 1,
+    "FICO MEDIUM": 2,
+    "S&P": 3,
+    "EXTERNAL RATING": 4,
+    "INTERNAL RATING": 5
+}
+
+df["CRRGRD"] = df["COMSCORETYP"].map(commercial_map)
+
+# =========================================================
+# Category (Current / Previous / YTD)
+# =========================================================
+
+df["ACCPTDATE"] = pd.to_datetime(df["ACCPTDATE"])
+
+current_month = REPTDATE.month
+previous_month = (REPTDATE.replace(day=1) - pd.Timedelta(days=1)).month
+
+df["CAT"] = "YEAR TO DATE"
+
+df.loc[df["ACCPTDATE"].dt.month == current_month, "CAT"] = "CURRENT MONTH"
+df.loc[df["ACCPTDATE"].dt.month == previous_month, "CAT"] = "PREVIOUS MONTH"
+
+# =========================================================
+# Merge Balance (LN)
+# =========================================================
+
+df_ln = df_ln[["ACCTNO1", "NOTENO", "BALANCE"]].drop_duplicates()
+
+df = df.merge(df_ln, on=["ACCTNO1", "NOTENO"], how="left")
+
+df["AMOUNT"] = np.where(
+    (df["BALANCE"].notna()) & (df["FACGRP"] != "4"),
+    df["BALANCE"],
+    0
+)
+
+# =========================================================
+# Indicators
+# =========================================================
+
+df["COUNT"] = np.where(df["ACCPTDATE"].notna(), 1, 0)
+df["IND"] = np.where(df["IMPAIRED"] == "Y", "Y", "N")
+
+df["AMOUNT"] = df["AMOUNT"].fillna(0)
+df["COUNT"] = df["COUNT"].fillna(0)
+
+# =========================================================
+# Aggregation (PROC TABULATE equivalent)
+# =========================================================
+
+summary = (
+    df
+    .groupby(["CRRGRD", "IND", "CAT"], dropna=False)
+    .agg(
+        NO_OF_AC=("COUNT", "sum"),
+        TOTAL_AMOUNT=("AMOUNT", "sum")
+    )
+    .reset_index()
+)
+
+# =========================================================
+# Save Output
+# =========================================================
+
+summary.to_csv(OUTPUT_FILE, index=False)
+
+print("JOB 9 (Commercial A-Score Type Report) completed successfully.")
+
 
 //EIBELRP9 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
