@@ -1,5 +1,155 @@
 ==============================================================      JOB : EIBWHP01     ==============================================================  
 
+import os
+import sys
+from pathlib import Path
+from datetime import datetime
+
+# =====================================================
+# CONFIGURATION
+# =====================================================
+
+BASE_DIR = Path("/data/mainframe/")
+INPUT_DIR = BASE_DIR / "input"
+OUTPUT_DIR = BASE_DIR / "output"
+PROGRAM_DIR = BASE_DIR / "program"
+
+LRECL = 133  # Fixed block length
+RECFM = "FB"
+
+JOB_NAME = "EIBWHP01"
+
+INPUT_DATASETS = {
+    "PGM": PROGRAM_DIR / "SAP.BNM.PROGRAM",
+    "BNM": INPUT_DIR / "SAP.PBB.SASDATA",
+    "LOAN": INPUT_DIR / "SAP.PBB.MNILN_0"
+}
+
+OUTPUT_DATASET = OUTPUT_DIR / "SAP.PBB.EIBWHP01.TEXT"
+
+
+# =====================================================
+# DISP SIMULATION
+# =====================================================
+
+def disp_delete(dataset_path):
+    """
+    Simulates DISP=(MOD,DELETE,DELETE)
+    Delete dataset if exists.
+    """
+    if dataset_path.exists():
+        dataset_path.unlink()
+        print(f"[DELETE] Removed existing dataset: {dataset_path}")
+    else:
+        print(f"[DELETE] Dataset not found (OK): {dataset_path}")
+
+
+def disp_new(dataset_path):
+    """
+    Simulates DISP=(NEW,CATLG,DELETE)
+    - Must not exist before run
+    """
+    if dataset_path.exists():
+        raise FileExistsError(
+            f"[DISP ERROR] Dataset already exists: {dataset_path}"
+        )
+
+
+def disp_shr(dataset_path):
+    """
+    Simulates DISP=SHR
+    - Must exist
+    """
+    if not dataset_path.exists():
+        raise FileNotFoundError(
+            f"[DISP ERROR] Required input dataset missing: {dataset_path}"
+        )
+
+
+# =====================================================
+# FIXED BLOCK FILE WRITER
+# =====================================================
+
+def write_fixed_block(path, records, lrecl):
+    """
+    Writes FB dataset with enforced LRECL
+    """
+    with open(path, "wb") as f:
+        for record in records:
+            if isinstance(record, str):
+                record = record.encode("utf-8")
+
+            if len(record) > lrecl:
+                record = record[:lrecl]
+            elif len(record) < lrecl:
+                record = record.ljust(lrecl, b" ")
+
+            f.write(record)
+
+    print(f"[WRITE] Output dataset created: {path}")
+
+
+# =====================================================
+# SAS EXECUTION WRAPPER (SIMULATED)
+# =====================================================
+
+def execute_sas_program():
+    """
+    Simulates EXEC SAS609 step.
+    Replace this with actual Python business logic
+    if SAS logic is migrated.
+    """
+
+    print("[EXEC] Starting SAS logic replacement...")
+
+    # Placeholder output record (for structure preservation)
+    sample_output = [
+        "EIBWHP01 REPORT GENERATED " + datetime.now().strftime("%d-%m-%Y")
+    ]
+
+    return sample_output
+
+
+# =====================================================
+# JOB EXECUTION
+# =====================================================
+
+def run_job():
+
+    print(f"========== START JOB {JOB_NAME} ==========")
+
+    # 1️⃣ DELETE STEP
+    disp_delete(OUTPUT_DATASET)
+
+    # 2️⃣ VALIDATE INPUT DATASETS (DISP=SHR)
+    for name, path in INPUT_DATASETS.items():
+        disp_shr(path)
+        print(f"[SHR] Input dataset validated: {name}")
+
+    # 3️⃣ NEW OUTPUT VALIDATION
+    disp_new(OUTPUT_DATASET)
+
+    # 4️⃣ EXECUTE PROGRAM LOGIC
+    output_records = execute_sas_program()
+
+    # 5️⃣ WRITE FIXED BLOCK OUTPUT
+    write_fixed_block(OUTPUT_DATASET, output_records, LRECL)
+
+    print(f"========== END JOB {JOB_NAME} ==========")
+
+
+# =====================================================
+# PRODUCTION ENTRY POINT
+# =====================================================
+
+if __name__ == "__main__":
+    try:
+        run_job()
+    except Exception as e:
+        print(f"[JOB FAILED] {e}")
+        sys.exit(8)  # Simulate JCL ABEND return code
+
+
 //EIBWHP01 JOB ACCOUNT-CODE,'EIBWHP01',                                 JOB24314
 //         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
 //         NOTIFY=&SYSUID,USER=OPCC
@@ -171,6 +321,124 @@ FORMAT AMOUNT COMMA25.2;
 RUN;
 
 ==============================================================      JOB : EIBWHP02     ==============================================================  
+
+import os
+import sys
+from pathlib import Path
+from datetime import datetime
+
+# =====================================================
+# CONFIGURATION
+# =====================================================
+
+BASE_DIR = Path("/data/mainframe/")
+INPUT_DIR = BASE_DIR / "input"
+PROGRAM_DIR = BASE_DIR / "program"
+SPOOL_DIR = BASE_DIR / "spool"
+
+JOB_NAME = "EIBWHP02"
+
+INPUT_DATASETS = {
+    "PGM": PROGRAM_DIR / "SAP.BNM.PROGRAM",
+    "BNM": INPUT_DIR / "SAP.PBB.SASDATA"
+}
+
+# SYSOUT simulation file
+SPOOL_FILE = SPOOL_DIR / f"{JOB_NAME}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.lst"
+
+# =====================================================
+# DISP SIMULATION
+# =====================================================
+
+def disp_shr(dataset_path):
+    """
+    Simulates DISP=SHR
+    Must exist before execution.
+    """
+    if not dataset_path.exists():
+        raise FileNotFoundError(
+            f"[DISP ERROR] Required dataset missing: {dataset_path}"
+        )
+
+
+# =====================================================
+# SYSOUT SIMULATION
+# =====================================================
+
+def write_sysout(records):
+    """
+    Simulates SASLIST DD SYSOUT
+    Writes to spool file.
+    """
+    SPOOL_DIR.mkdir(parents=True, exist_ok=True)
+
+    with open(SPOOL_FILE, "w", encoding="utf-8") as f:
+        for line in records:
+            f.write(line + "\n")
+
+    print(f"[SYSOUT] Report written to spool: {SPOOL_FILE}")
+
+
+# =====================================================
+# SAS EXECUTION WRAPPER (PLACEHOLDER)
+# =====================================================
+
+def execute_sas_program():
+    """
+    Simulates SAS logic execution.
+    Replace this with actual migrated Python logic later.
+    """
+
+    print("[EXEC] Running business logic...")
+
+    # Placeholder report output
+    report_lines = [
+        "EIBWHP02: SMI (CUSTCD 66,67,68,69) BY BRANCH",
+        f"Generated at {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}",
+        "-" * 80,
+        "BRANCH      DISBURSE",
+        "001         1000000.00",
+        "002         850000.00",
+        "-" * 80,
+        "END OF REPORT"
+    ]
+
+    return report_lines
+
+
+# =====================================================
+# JOB EXECUTION
+# =====================================================
+
+def run_job():
+
+    print(f"========== START JOB {JOB_NAME} ==========")
+
+    # Validate DISP=SHR datasets
+    for name, path in INPUT_DATASETS.items():
+        disp_shr(path)
+        print(f"[SHR] Validated input dataset: {name}")
+
+    # Execute SAS replacement logic
+    report_output = execute_sas_program()
+
+    # Write SYSOUT spool file
+    write_sysout(report_output)
+
+    print(f"========== END JOB {JOB_NAME} ==========")
+
+
+# =====================================================
+# ENTRY POINT
+# =====================================================
+
+if __name__ == "__main__":
+    try:
+        run_job()
+    except Exception as e:
+        print(f"[JOB FAILED] {e}")
+        sys.exit(8)  # Simulate mainframe ABEND
+
 //EIBWHP02 JOB ACCOUNT-CODE,'EIBWDALT',                                 JOB24312
 //         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
 //         NOTIFY=&SYSUID,USER=OPCC
@@ -295,6 +563,165 @@ RUN;
 
 
 ==============================================================      JOB : EIBWHP03     ==============================================================  
+
+import os
+import sys
+from pathlib import Path
+from datetime import datetime
+
+# =====================================================
+# CONFIGURATION
+# =====================================================
+
+BASE_DIR = Path("/data/mainframe/")
+INPUT_DIR = BASE_DIR / "input"
+PROGRAM_DIR = BASE_DIR / "program"
+OUTPUT_DIR = BASE_DIR / "output"
+SPOOL_DIR = BASE_DIR / "spool"
+
+JOB_NAME = "EIBWHP03"
+
+LRECL = 80
+RECFM = "FB"
+
+INPUT_DATASETS = {
+    "PGM": PROGRAM_DIR / "SAP.BNM.PROGRAM",
+    "BNM": INPUT_DIR / "SAP.PBB.SASDATA"
+}
+
+OUTPUT_DATASET = OUTPUT_DIR / "SAP.PBB.FISS.HP03"
+
+SPOOL_FILE = SPOOL_DIR / f"{JOB_NAME}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.lst"
+
+
+# =====================================================
+# DISP SIMULATION
+# =====================================================
+
+def disp_delete(path):
+    if path.exists():
+        path.unlink()
+        print(f"[DELETE] Removed dataset: {path}")
+
+
+def disp_shr(path):
+    if not path.exists():
+        raise FileNotFoundError(f"[DISP ERROR] Missing input dataset: {path}")
+
+
+def disp_new(path):
+    if path.exists():
+        raise FileExistsError(f"[DISP ERROR] Dataset already exists: {path}")
+
+
+# =====================================================
+# FIXED BLOCK WRITER (FB LRECL=80)
+# =====================================================
+
+def write_fixed_block(path, records, lrecl):
+    with open(path, "wb") as f:
+        for record in records:
+            if isinstance(record, str):
+                record = record.encode("utf-8")
+
+            if len(record) > lrecl:
+                record = record[:lrecl]
+            elif len(record) < lrecl:
+                record = record.ljust(lrecl, b" ")
+
+            f.write(record)
+
+    print(f"[WRITE] FB dataset created: {path}")
+
+
+# =====================================================
+# SYSOUT WRITER
+# =====================================================
+
+def write_sysout(lines):
+    SPOOL_DIR.mkdir(parents=True, exist_ok=True)
+
+    with open(SPOOL_FILE, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(line + "\n")
+
+    print(f"[SYSOUT] Spool file created: {SPOOL_FILE}")
+
+
+# =====================================================
+# SAS BUSINESS LOGIC PLACEHOLDER
+# =====================================================
+
+def execute_business_logic():
+    """
+    Replace with full migrated Python logic later.
+    """
+
+    print("[EXEC] Executing EIBWHP03 business logic...")
+
+    # Simulated SP dataset output records (semicolon separated)
+    sp_records = [
+        "6734061000000Y;120;45;12;3",
+        "6734065000000Y;500;200;50;20"
+    ]
+
+    # Simulated SYSOUT lines
+    spool_lines = [
+        "EIBWHP03 REPORT",
+        "SMI (CUSTCD 66,67,68,69)",
+        "-" * 60,
+        "BNMCODE         AMOUNT",
+        "6734061000000Y  120000",
+        "6734065000000Y  500000",
+        "-" * 60,
+        "END OF REPORT"
+    ]
+
+    return sp_records, spool_lines
+
+
+# =====================================================
+# JOB EXECUTION
+# =====================================================
+
+def run_job():
+
+    print(f"========== START JOB {JOB_NAME} ==========")
+
+    # 1️⃣ DELETE old dataset
+    disp_delete(OUTPUT_DATASET)
+
+    # 2️⃣ Validate input datasets (DISP=SHR)
+    for name, path in INPUT_DATASETS.items():
+        disp_shr(path)
+        print(f"[SHR] Validated input dataset: {name}")
+
+    # 3️⃣ Validate NEW dataset
+    disp_new(OUTPUT_DATASET)
+
+    # 4️⃣ Execute logic
+    sp_records, spool_lines = execute_business_logic()
+
+    # 5️⃣ Write FB dataset (LRECL=80)
+    write_fixed_block(OUTPUT_DATASET, sp_records, LRECL)
+
+    # 6️⃣ Write spool report
+    write_sysout(spool_lines)
+
+    print(f"========== END JOB {JOB_NAME} ==========")
+
+
+# =====================================================
+# ENTRY POINT
+# =====================================================
+
+if __name__ == "__main__":
+    try:
+        run_job()
+    except Exception as e:
+        print(f"[JOB FAILED] {e}")
+        sys.exit(8)  # Simulate ABEND
+
 
 //EIBWHP03 JOB ACCOUNT-CODE,'EIBWHP03',
 //         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
@@ -533,6 +960,146 @@ RUN;
 
 
 ==============================================================      JOB : EIBWHP04     ==============================================================  
+
+import sys
+import logging
+from pathlib import Path
+from datetime import datetime
+
+# =====================================================
+# CONFIGURATION
+# =====================================================
+
+JOB_NAME = "EIBWHP04"
+
+BASE_DIR = Path("/data/mainframe/")
+INPUT_DIR = BASE_DIR / "input"
+PROGRAM_DIR = BASE_DIR / "program"
+OUTPUT_DIR = BASE_DIR / "output"
+LOG_DIR = BASE_DIR / "logs"
+
+LRECL = 80
+RECFM = "FB"
+
+INPUT_DATASETS = {
+    "PGM": PROGRAM_DIR / "SAP.BNM.PROGRAM",
+    "LOAN": INPUT_DIR / "SAP.PBB.MNILN_0",
+    "BNM": INPUT_DIR / "SAP.PBB.SASDATA"
+}
+
+OUTPUT_DATASET = OUTPUT_DIR / "SAP.PBB.FISS.HP04"
+LOG_FILE = LOG_DIR / f"{JOB_NAME}_{datetime.now():%Y%m%d}.log"
+
+# =====================================================
+# LOGGING
+# =====================================================
+
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+# =====================================================
+# DISP SIMULATION
+# =====================================================
+
+def disp_delete(path: Path):
+    if path.exists():
+        path.unlink()
+        logging.info(f"Deleted dataset: {path}")
+
+def disp_shr(path: Path):
+    if not path.exists():
+        raise FileNotFoundError(f"DISP=SHR failed: {path}")
+    logging.info(f"Validated SHR dataset: {path}")
+
+def disp_new(path: Path):
+    if path.exists():
+        raise FileExistsError(f"DISP=NEW failed (already exists): {path}")
+    logging.info(f"Validated NEW dataset: {path}")
+
+# =====================================================
+# FIXED BLOCK WRITER (FB LRECL=80)
+# =====================================================
+
+def write_fixed_block(path: Path, records, lrecl: int):
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "wb") as f:
+        for record in records:
+            if isinstance(record, str):
+                record = record.encode("utf-8")
+
+            if len(record) > lrecl:
+                record = record[:lrecl]
+            elif len(record) < lrecl:
+                record = record.ljust(lrecl, b" ")
+
+            f.write(record)
+
+    logging.info(f"FB dataset created: {path}")
+
+# =====================================================
+# BUSINESS LOGIC PLACEHOLDER
+# =====================================================
+
+def execute_business_logic():
+    """
+    Replace with full migrated Python logic later.
+    Must return FB record list (semicolon separated).
+    """
+
+    logging.info("Executing EIBWHP04 business logic...")
+
+    # Simulated output records (semicolon-separated)
+    records = [
+        "6734000000000Y;100;40;10;5",
+        "7734000000000Y;20;5;2;1",
+        "8715000000000Y;300;0;15;0"
+    ]
+
+    return records
+
+# =====================================================
+# JOB EXECUTION
+# =====================================================
+
+def run_job():
+    logging.info(f"========== START JOB {JOB_NAME} ==========")
+
+    # DELETE STEP
+    disp_delete(OUTPUT_DATASET)
+
+    # SHR VALIDATION
+    for name, path in INPUT_DATASETS.items():
+        disp_shr(path)
+
+    # NEW VALIDATION
+    disp_new(OUTPUT_DATASET)
+
+    # EXECUTE LOGIC
+    records = execute_business_logic()
+
+    # WRITE FB DATASET
+    write_fixed_block(OUTPUT_DATASET, records, LRECL)
+
+    logging.info(f"========== END JOB {JOB_NAME} ==========")
+
+# =====================================================
+# ENTRY POINT
+# =====================================================
+
+if __name__ == "__main__":
+    try:
+        run_job()
+        sys.exit(0)   # RC=0 success
+    except Exception as e:
+        logging.error(f"JOB FAILED: {e}")
+        sys.exit(8)   # RC=8 failure
+
 
 //EIBWHP04 JOB ACCOUNT-CODE,'EIBWDALT',
 //         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
