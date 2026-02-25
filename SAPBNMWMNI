@@ -84,6 +84,89 @@ RUN;
 //
 
 
+import pandas as pd
+from datetime import datetime, timedelta
+import sys
+
+# ============================================================
+# CONFIG — map mainframe datasets to file paths
+# ============================================================
+
+BNM_REPTDATE_PATH = "data/bnm_reptdate.parquet"
+LOAN_REPTDATE_PATH = "data/loan_reptdate.parquet"
+DEPOSIT_REPTDATE_PATH = "data/deposit_reptdate.parquet"
+
+# ============================================================
+# LOAD REPORT DATE
+# ============================================================
+
+bnm = pd.read_parquet(BNM_REPTDATE_PATH)
+
+reptdate = pd.to_datetime(bnm["REPTDATE"].iloc[0])
+
+day = reptdate.day
+month = reptdate.month
+year = reptdate.year
+
+# ============================================================
+# CALCULATE WEEK LOGIC (exact SAS logic)
+# ============================================================
+
+if day == 8:
+    sdd, wk, wk1 = 1, "1", "4"
+elif day == 15:
+    sdd, wk, wk1 = 9, "2", "1"
+elif day == 22:
+    sdd, wk, wk1 = 16, "3", "2"
+else:
+    sdd, wk, wk1 = 23, "4", "3"
+
+mm1 = month - 1 if wk == "1" else month
+if mm1 == 0:
+    mm1 = 12
+
+sdate = datetime(year, month, sdd)
+
+# Quarter flag
+if month in [3, 6, 9, 12] and day in [30, 31]:
+    qtr_flag = "1"
+else:
+    qtr_flag = "0"
+
+# ============================================================
+# LOAD EXTRACTION DATES
+# ============================================================
+
+loan = pd.read_parquet(LOAN_REPTDATE_PATH)
+deposit = pd.read_parquet(DEPOSIT_REPTDATE_PATH)
+
+loan_date = pd.to_datetime(loan["REPTDATE"].iloc[0])
+deposit_date = pd.to_datetime(deposit["REPTDATE"].iloc[0])
+
+# ============================================================
+# VALIDATION LOGIC (EXACT SAS BEHAVIOR)
+# ============================================================
+
+if loan_date == reptdate and deposit_date == reptdate:
+
+    print("✔ Dates match — downstream jobs should run")
+
+    # In production this would trigger:
+    # subprocess.run(["python", "lalwpbbd.py"])
+    # subprocess.run(["python", "lalwpbbu.py"])
+    # subprocess.run(["python", "lalweirc.py"])
+
+else:
+    if loan_date != reptdate:
+        print(f"ERROR: Loan extraction not dated {reptdate}")
+
+    if deposit_date != reptdate:
+        print(f"ERROR: Deposit extraction not dated {reptdate}")
+
+    print("JOB ABORTED")
+
+    sys.exit(77)
+
 ==================================================================  EIBWFALE  ==================================================================
 //EIBWFALE JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M
 /*JOBPARM S=S1M1
@@ -214,6 +297,75 @@ RUN;
 //
 
 
+import pandas as pd
+from datetime import timedelta
+
+# =====================================================
+# STEP 1 — READ HEADER DATE
+# =====================================================
+
+with open("deposit_raw.txt") as f:
+    header = f.readline()
+
+tbdate = header[105:111]  # position @106 PD6 equivalent
+reptdate = pd.to_datetime(tbdate, format="%m%d%y")
+
+xdate = reptdate + timedelta(days=1)
+
+# =====================================================
+# STEP 2 — READ FD RECORDS ONLY
+# =====================================================
+
+colspecs = [
+    (2, 4),     # BANKNO
+    (23, 26),   # REPTNO
+    (26, 28),   # FMTCODE
+    (105, 109), # BRANCH
+    (109, 115), # ACCTNO
+    (121, 122), # PURPOSE
+    (126, 132), # DEPODTE
+    (155, 165), # CURBAL
+    (203, 205), # ACCTTYPE
+]
+
+cols = [
+    "BANKNO","REPTNO","FMTCODE","BRANCH",
+    "ACCTNO","PURPOSE","DEPODTE","CURBAL","ACCTTYPE"
+]
+
+df = pd.read_fwf(
+    "deposit_raw.txt",
+    colspecs=colspecs,
+    names=cols,
+    skiprows=1
+)
+
+# =====================================================
+# STEP 3 — FILTER FD ACCOUNTS
+# =====================================================
+
+df = df[
+    (df.BANKNO == 33) &
+    (df.REPTNO == 4001) &
+    (df.FMTCODE.isin([1,2]))
+]
+
+# =====================================================
+# STEP 4 — SPLIT ISLAMIC VS CONVENTIONAL
+# =====================================================
+
+islamic = df[(df.BRANCH >= 3000) & (df.BRANCH <= 3999)]
+conventional = df.drop(islamic.index)
+
+# =====================================================
+# STEP 5 — SAVE OUTPUT
+# =====================================================
+
+islamic.to_parquet("IFD.parquet")
+conventional.to_parquet("FD.parquet")
+
+print("FD extraction completed")
+
 ==================================================================  EIBWRPTS  ==================================================================
 //EIBWRPTS JOB SAS,MISEIS,CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID,
 //         USER=OPCC
@@ -313,6 +465,108 @@ RUN;
 //IPAY      DD DSN=SAP.PIBB.LNPAYSCH.WEEK,DISP=SHR
 //SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT3)
 //SYSIN     DD DSN=SAP.BNM.PROGRAM(EIVWSTAF),DISP=SHR
+
+import subprocess
+from pathlib import Path
+from datetime import datetime
+
+# ============================================================
+# PRINT DISTRIBUTION METADATA (MANDATORY PRESERVATION)
+# ============================================================
+
+REPORT_DISTRIBUTION = {
+    "PRINT1": {
+        "recipient": "MS LIM SIEW KHUAN",
+        "department": "STATISTICS",
+        "room": "26TH FLOOR",
+        "building": "MENARA PBB",
+        "destination": "S1.RMT5"
+    },
+    "PRINT2": {
+        "recipient": "MS LIM POH LAN",
+        "department": "PRODUCT DEVELOPMENT & RESEARCH",
+        "room": "13TH FLOOR",
+        "building": "MENARA PBB",
+        "destination": "S1.LOCAL"
+    },
+    "PRINT3": {
+        "recipient": "MS JOSEPHINE NG",
+        "department": "HR ADMINISTRATION",
+        "room": "11TH FLOOR",
+        "building": "MENARA PBB",
+        "destination": "S1.RMT32"
+    },
+    "PRINT4": {
+        "recipient": "THE MANAGER PIVB (ATTN: CIK HAMIDAH)",
+        "department": "PUBLIC INVESTMENT",
+        "room": "25TH FLOOR",
+        "building": "MENARA PBB",
+        "destination": "S1.RMT40"
+    }
+}
+
+# ============================================================
+# FIXED BLOCK WRITER (FB LRECL=133)
+# ============================================================
+
+def write_fb_file(lines, output_path, lrecl=133):
+    with open(output_path, "w", encoding="ascii") as f:
+        for line in lines:
+            formatted = line.ljust(lrecl)[:lrecl]
+            f.write(formatted)
+
+# ============================================================
+# RUN CHILD REPORT
+# ============================================================
+
+def run_report(script_name):
+    print(f"Running {script_name}...")
+    result = subprocess.run(["python", script_name])
+    if result.returncode != 0:
+        raise RuntimeError(f"{script_name} failed.")
+
+# ============================================================
+# HEADER BUILDER (EMBED PRINT METADATA)
+# ============================================================
+
+def build_header(print_id):
+    meta = REPORT_DISTRIBUTION[print_id]
+    run_date = datetime.now().strftime("%d/%m/%Y")
+
+    header_lines = [
+        f"REPORT OWNER : {meta['recipient']}",
+        f"DEPARTMENT   : {meta['department']}",
+        f"BUILDING     : {meta['building']}",
+        f"DESTINATION  : {meta['destination']}",
+        f"RUN DATE     : {run_date}",
+        "-" * 80
+    ]
+    return header_lines
+
+# ============================================================
+# MAIN EXECUTION (MATCHES JCL ORDER)
+# ============================================================
+
+if __name__ == "__main__":
+
+    # Execute reports in exact JCL order
+    run_report("eibwstaf.py")
+    run_report("eiiwstaf.py")
+    run_report("eivwstaf.py")
+    run_report("eivwstaf.py")
+
+    # Example of embedding metadata into output file
+    header = build_header("PRINT3")
+
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+
+    write_fb_file(
+        [line + "\n" for line in header],
+        output_dir / "distribution_metadata.txt"
+    )
+
+    print("EIBWRPTS completed successfully.")
 
 ==================================================================  EIBWHP01  ==================================================================
 //EIBWHP01 JOB ACCOUNT-CODE,'EIBWHP01',                                 JOB24314
@@ -485,6 +739,166 @@ PROC PRINT DATA=LALW&REPTMON&NOWK;
 FORMAT AMOUNT COMMA25.2;
 RUN;
 
+
+import pandas as pd
+import numpy as np
+
+# =========================================
+# CONFIG — file paths must match JCL inputs
+# =========================================
+
+REPTDATE_FILE = "bnm_reptdate.csv"
+LOAN_MASTER = "loan_lnnote.csv"
+PREV_SNAPSHOT = "loan_prev.csv"
+CURR_SNAPSHOT = "loan_curr.csv"
+
+# =========================================
+# STEP 1 — READ REPORT DATE
+# =========================================
+
+rept = pd.read_csv(REPTDATE_FILE, parse_dates=["REPTDATE"])
+rept_date = rept["REPTDATE"].iloc[0]
+
+day = rept_date.day
+
+if day == 8:
+    wk = "1"
+    wk1 = "4"
+elif day == 15:
+    wk = "2"
+    wk1 = "1"
+elif day == 22:
+    wk = "3"
+    wk1 = "2"
+else:
+    wk = "4"
+    wk1 = "3"
+
+# =========================================
+# STEP 2 — LOAD LOAN MASTER
+# =========================================
+
+loan = pd.read_csv(LOAN_MASTER)
+
+loan = loan[loan["LOANTYPE"].isin([131, 132, 720, 725])].copy()
+
+# Fix interest amount if missing
+mask = loan["INTAMT"] <= 0.01
+
+loan.loc[mask, "INTAMT"] = (
+    loan["INTRATE"] * loan["NETPROC"] * loan["NOTETERM"] / 1200
+) - loan["INTEARN2"]
+
+loan["TERM"] = np.minimum(loan["NOTETERM"], 12)
+
+loan["EFFFACT"] = (
+    100 * loan["TERM"] * loan["INTAMT"]
+) / (loan["NOTETERM"] * (loan["NETPROC"] + loan["INTEARN2"]))
+
+loan["EFFAPR"] = (
+    loan["NOTETERM"] * loan["EFFFACT"] *
+    (300 * loan["TERM"] + loan["NOTETERM"] * loan["EFFFACT"])
+) / (
+    loan["NOTETERM"]**2 * loan["EFFFACT"] +
+    150 * loan["TERM"] * (loan["NOTETERM"] + 1)
+)
+
+# =========================================
+# STEP 3 — LOAD SNAPSHOTS
+# =========================================
+
+prev = pd.read_csv(PREV_SNAPSHOT)
+curr = pd.read_csv(CURR_SNAPSHOT)
+
+prev = prev[prev["PRODUCT"].isin([131,132,720,725])]
+curr = curr[curr["PRODUCT"].isin([131,132,720,725])]
+
+# =========================================
+# STEP 4 — MERGE SNAPSHOTS
+# =========================================
+
+key = ["ACCTNO","NOTENO","SECTORCD"]
+
+merged = pd.merge(
+    prev,
+    curr,
+    on=key,
+    how="outer",
+    suffixes=("_prev","_curr")
+)
+
+# =========================================
+# STEP 5 — CALCULATE DISBURSE / REPAID
+# =========================================
+
+merged["DISBURSE"] = 0
+merged["REPAID"] = 0
+
+both = merged["BALANCE_prev"].notna() & merged["BALANCE_curr"].notna()
+
+merged.loc[both & (merged["BALANCE_prev"] > merged["BALANCE_curr"]), "REPAID"] = \
+    merged["BALANCE_prev"] - merged["BALANCE_curr"]
+
+merged.loc[both & (merged["BALANCE_curr"] > merged["BALANCE_prev"]), "DISBURSE"] = \
+    merged["BALANCE_curr"] - merged["BALANCE_prev"]
+
+only_prev = merged["BALANCE_curr"].isna()
+only_curr = merged["BALANCE_prev"].isna()
+
+merged.loc[only_prev, "REPAID"] = merged["BALANCE_prev"]
+merged.loc[only_curr, "DISBURSE"] = merged["BALANCE_curr"]
+
+# =========================================
+# STEP 6 — MERGE APR
+# =========================================
+
+merged = pd.merge(
+    merged,
+    loan[["ACCTNO","NOTENO","SECTORCD","EFFAPR"]],
+    on=key,
+    how="left"
+)
+
+merged["PRODUCT_WEIGHT"] = merged["DISBURSE"] * merged["EFFAPR"]
+
+# =========================================
+# STEP 7 — AGGREGATE BY SECTOR
+# =========================================
+
+sector = merged.groupby("SECTORCD").agg({
+    "DISBURSE":"sum",
+    "PRODUCT_WEIGHT":"sum"
+}).reset_index()
+
+sector["WEIGHTED"] = sector["PRODUCT_WEIGHT"] / sector["DISBURSE"]
+
+sector["BNMCODE"] = "673400000" + sector["SECTORCD"].astype(str) + "Y"
+
+# =========================================
+# STEP 8 — SAVE OUTPUT
+# =========================================
+
+sector.to_csv("bnm_hp01_output.csv", index=False)
+
+# =========================================
+# STEP 9 — SMI REPORT
+# =========================================
+
+smi_codes = ["66","67","68","69"]
+
+smi = merged[merged["CUSTCD"].astype(str).isin(smi_codes)]
+
+smi_summary = smi.groupby("SECTORCD").agg({
+    "DISBURSE":"sum",
+    "PRODUCT_WEIGHT":"sum"
+}).reset_index()
+
+smi_summary["WEIGHTED"] = smi_summary["PRODUCT_WEIGHT"] / smi_summary["DISBURSE"]
+
+smi_summary.to_csv("bnm_hp01_smi.csv", index=False)
+
+print("EIBWHP01 completed successfully.")
+
 ==================================================================  EIBWHP02  ==================================================================
 //EIBWHP02 JOB ACCOUNT-CODE,'EIBWDALT',                                 JOB24312
 //         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
@@ -607,6 +1021,144 @@ PROC PRINT;
 TITLE1 'EIBWHP02: SMI (CUSTCD 66,67,68,69) BY BRANCH AS AT ' &RDATE;
 TITLE2 'FOR LOANS PRODUCTS 131,132,720,725';
 RUN;
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# ============================================================
+# PRINT DISTRIBUTION METADATA (MANDATORY PRESERVATION)
+# ============================================================
+
+PRINT_METADATA = {
+    "recipient": "CIK MAZNI BT MOHAMMAD",
+    "department": "STATISTICS",
+    "building": "MENARA PBB",
+    "destination": "S1.RMT5"
+}
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+REPTDATE_FILE = "data/bnm_reptdate.parquet"
+PREV_SNAPSHOT = "data/loan_prev.parquet"
+CURR_SNAPSHOT = "data/loan_curr.parquet"
+ULOAN_SNAPSHOT = "data/uloan_curr.parquet"
+
+VALID_PRODUCTS = [131,132,720,725]
+SMI_CODES = ['66','67','68','69']
+
+# ============================================================
+# STEP 1 — REPORT DATE CONTEXT
+# ============================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rept_date = pd.to_datetime(rept["REPTDATE"].iloc[0])
+
+day = rept_date.day
+
+if day == 8:
+    wk, wk1 = "1", "4"
+elif day == 15:
+    wk, wk1 = "2", "1"
+elif day == 22:
+    wk, wk1 = "3", "2"
+else:
+    wk, wk1 = "4", "3"
+
+# ============================================================
+# STEP 2 — LOAD SNAPSHOTS
+# ============================================================
+
+prev = pd.read_parquet(PREV_SNAPSHOT)
+curr = pd.read_parquet(CURR_SNAPSHOT)
+
+prev = prev[prev["PRODUCT"].isin(VALID_PRODUCTS)]
+curr = curr[curr["PRODUCT"].isin(VALID_PRODUCTS)]
+
+# ============================================================
+# STEP 3 — MERGE (DELTA LOGIC EXACT MATCH)
+# ============================================================
+
+key = ["ACCTNO","NOTENO","SECTORCD"]
+
+merged = pd.merge(
+    prev,
+    curr,
+    on=key,
+    how="outer",
+    suffixes=("_prev","_curr")
+)
+
+merged["DISBURSE"] = 0.0
+merged["REPAID"] = 0.0
+merged["NOACCT"] = 1
+
+both = merged["BALANCE_prev"].notna() & merged["BALANCE_curr"].notna()
+
+merged.loc[both & (merged["BALANCE_prev"] > merged["BALANCE_curr"]), "REPAID"] = \
+    merged["BALANCE_prev"] - merged["BALANCE_curr"]
+
+merged.loc[both & (merged["BALANCE_curr"] > merged["BALANCE_prev"]), "DISBURSE"] = \
+    merged["BALANCE_curr"] - merged["BALANCE_prev"]
+
+only_prev = merged["BALANCE_curr"].isna()
+only_curr = merged["BALANCE_prev"].isna()
+
+merged.loc[only_prev, "REPAID"] = merged["BALANCE_prev"]
+merged.loc[only_curr, "DISBURSE"] = merged["BALANCE_curr"]
+
+# ============================================================
+# STEP 4 — APPEND ULOAN SNAPSHOT
+# ============================================================
+
+uloan = pd.read_parquet(ULOAN_SNAPSHOT)
+
+merged = pd.concat([merged, uloan], ignore_index=True)
+
+# ============================================================
+# STEP 5 — FILTER BUSINESS RULES
+# ============================================================
+
+merged = merged[
+    merged["PRODCD"].str[:3].isin(['341','342','343','344'])
+]
+
+merged = merged[merged["SECTCD"] != '0210']
+
+# ============================================================
+# STEP 6 — AGGREGATION
+# ============================================================
+
+alwx = merged.groupby(
+    ["BRANCH","CUSTCD","AMTIND"],
+    dropna=False
+)[["DISBURSE","REPAID","APPRLIM2","NOACCT"]].sum().reset_index()
+
+# ============================================================
+# STEP 7 — SMI FILTER
+# ============================================================
+
+smi = alwx[alwx["CUSTCD"].astype(str).isin(SMI_CODES)]
+
+final = smi.groupby("BRANCH")[["DISBURSE"]].sum().reset_index()
+
+# ============================================================
+# STEP 8 — REPORT OUTPUT
+# ============================================================
+
+print("="*70)
+print("EIBWHP02: SMI (CUSTCD 66,67,68,69) BY BRANCH")
+print("FOR LOANS PRODUCTS 131,132,720,725")
+print(f"RUN DATE: {rept_date.strftime('%d/%m/%Y')}")
+print(f"REPORT OWNER: {PRINT_METADATA['recipient']}")
+print("="*70)
+
+print(final)
+
+print("Job EIBWHP02 completed successfully.")
+
 
 ==================================================================  EIBWHP03  ==================================================================
 //EIBWHP03 JOB ACCOUNT-CODE,'EIBWHP03',
@@ -844,6 +1396,146 @@ DATA _NULL_;
 RUN;
 *;
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# ============================================================
+# PRINT METADATA
+# ============================================================
+
+PRINT_METADATA = {
+    "recipient": "CIK MAZNI BT MOHAMMAD",
+    "department": "FINANCE DIV",
+    "destination": "S1.RMT5"
+}
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+REPTDATE_FILE = "data/bnm_reptdate.parquet"
+PREV_SNAPSHOT = "data/loan_prev.parquet"
+CURR_SNAPSHOT = "data/loan_curr.parquet"
+ULOAN_SNAPSHOT = "data/uloan_curr.parquet"
+
+VALID_PRODUCTS = [131,132,720,725]
+
+# ============================================================
+# STEP 1 — REPORT DATE
+# ============================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rept_date = pd.to_datetime(rept["REPTDATE"].iloc[0])
+
+# ============================================================
+# STEP 2 — LOAD SNAPSHOTS
+# ============================================================
+
+prev = pd.read_parquet(PREV_SNAPSHOT)
+curr = pd.read_parquet(CURR_SNAPSHOT)
+
+prev = prev[prev["PRODUCT"].isin(VALID_PRODUCTS)]
+curr = curr[curr["PRODUCT"].isin(VALID_PRODUCTS)]
+
+key = ["ACCTNO","NOTENO","SECTORCD"]
+
+merged = pd.merge(prev, curr, on=key, how="outer",
+                  suffixes=("_prev","_curr"))
+
+merged["DISBURSE"] = 0.0
+merged["REPAID"] = 0.0
+merged["NOACCT"] = 1
+
+both = merged["BALANCE_prev"].notna() & merged["BALANCE_curr"].notna()
+
+merged.loc[both & (merged["BALANCE_prev"] > merged["BALANCE_curr"]),
+           "REPAID"] = merged["BALANCE_prev"] - merged["BALANCE_curr"]
+
+merged.loc[both & (merged["BALANCE_curr"] > merged["BALANCE_prev"]),
+           "DISBURSE"] = merged["BALANCE_curr"] - merged["BALANCE_prev"]
+
+merged.loc[merged["BALANCE_curr"].isna(), "REPAID"] = merged["BALANCE_prev"]
+merged.loc[merged["BALANCE_prev"].isna(), "DISBURSE"] = merged["BALANCE_curr"]
+
+# ============================================================
+# STEP 3 — SUMMARY
+# ============================================================
+
+summary = merged.groupby(
+    ["CUSTCD","AMTIND"],
+    dropna=False
+)[["DISBURSE","REPAID","APPRLIM2","NOACCT"]].sum().reset_index()
+
+# ============================================================
+# STEP 4 — BNMCODE MAPPING (EXACT LOGIC)
+# ============================================================
+
+def map_bnmcode(custcd):
+    if custcd in ['02','03','11','12']:
+        return '6734010000000Y'
+    elif custcd in ['13','17','30','31','32','33','34','35',
+                    '36','37','38','39','40','45','04','05','06']:
+        return '6734020000000Y'
+    elif custcd in ['71','72','73','74']:
+        return '6734070000000Y'
+    elif custcd == '77':
+        return '6734077000000Y'
+    elif custcd == '78':
+        return '6734078000000Y'
+    elif custcd == '79':
+        return '6734079000000Y'
+    elif custcd in ['81','82','83','84','85','86','90','91','92','95','96','98','99']:
+        return '6734080000000Y'
+    else:
+        return None
+
+summary["BNMCODE"] = summary["CUSTCD"].astype(str).apply(map_bnmcode)
+summary = summary.dropna(subset=["BNMCODE"])
+
+# ============================================================
+# STEP 5 — FINAL AGGREGATION
+# ============================================================
+
+final = summary.groupby(["BNMCODE","AMTIND"])[
+    ["DISBURSE","NOACCT"]
+].sum().reset_index()
+
+# ============================================================
+# STEP 6 — FIXED WIDTH EXPORT (FB 80)
+# ============================================================
+
+def write_fb80(df, filepath):
+    with open(filepath, "w", encoding="ascii") as f:
+        for code in df["BNMCODE"].unique():
+            sub = df[df["BNMCODE"] == code]
+
+            amount_d = 0
+            amount_i = 0
+            acct_d = 0
+            acct_i = 0
+
+            for _, row in sub.iterrows():
+                amt = round(row["DISBURSE"] / 1000)
+                cnt = round(row["NOACCT"])
+                if row["AMTIND"] == 'D':
+                    amount_d += amt
+                    acct_d += cnt
+                elif row["AMTIND"] == 'I':
+                    amount_i += amt
+                    acct_i += cnt
+
+            amount_total = amount_d + amount_i
+            acct_total = acct_d + acct_i
+
+            line = f"{code};{amount_d};{amount_i};{acct_d};{acct_i}"
+            line = line.ljust(80)[:80]
+            f.write(line + "\n")
+
+write_fb80(final, "output_hp03.txt")
+
+print("EIBWHP03 completed successfully.")
+
 ==================================================================  EIBWHP04  ==================================================================
 //EIBWHP04 JOB ACCOUNT-CODE,'EIBWDALT',
 //         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
@@ -998,6 +1690,163 @@ DATA _NULL_;
 RUN;
 *;
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+REPTDATE_FILE = "data/loan_reptdate.parquet"
+PREV_SNAPSHOT = "data/loan_prev.parquet"
+CURR_SNAPSHOT = "data/loan_curr.parquet"
+ULOAN_SNAPSHOT = "data/uloan_curr.parquet"
+
+VALID_PRODUCTS = [131,132,720,725]
+
+# ============================================================
+# STEP 1 — REPORT DATE
+# ============================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rept_date = pd.to_datetime(rept["REPTDATE"].iloc[0])
+
+# ============================================================
+# STEP 2 — LOAD SNAPSHOTS
+# ============================================================
+
+prev = pd.read_parquet(PREV_SNAPSHOT)
+curr = pd.read_parquet(CURR_SNAPSHOT)
+
+prev = prev[prev["PRODUCT"].isin(VALID_PRODUCTS)]
+curr = curr[curr["PRODUCT"].isin(VALID_PRODUCTS)]
+
+key = ["ACCTNO","NOTENO","SECTORCD"]
+
+merged = pd.merge(prev, curr, on=key, how="outer",
+                  suffixes=("_prev","_curr"))
+
+# ============================================================
+# STEP 3 — DELTA LOGIC
+# ============================================================
+
+merged["DISBURSE"] = 0.0
+merged["REPAID"] = 0.0
+merged["NOACCT"] = 1
+
+both = merged["BALANCE_prev"].notna() & merged["BALANCE_curr"].notna()
+
+merged.loc[both & (merged["BALANCE_prev"] > merged["BALANCE_curr"]),
+           "REPAID"] = merged["BALANCE_prev"] - merged["BALANCE_curr"]
+
+merged.loc[both & (merged["BALANCE_curr"] > merged["BALANCE_prev"]),
+           "DISBURSE"] = merged["BALANCE_curr"] - merged["BALANCE_prev"]
+
+merged.loc[merged["BALANCE_curr"].isna(),
+           "REPAID"] = merged["BALANCE_prev"]
+
+merged.loc[merged["BALANCE_prev"].isna(),
+           "DISBURSE"] = merged["BALANCE_curr"]
+
+# ============================================================
+# STEP 4 — APPEND ULOAN
+# ============================================================
+
+uloan = pd.read_parquet(ULOAN_SNAPSHOT)
+merged = pd.concat([merged, uloan], ignore_index=True)
+
+# ============================================================
+# STEP 5 — AGGREGATE BY SECTOR + AMTIND
+# ============================================================
+
+sector = merged.groupby(
+    ["SECTORCD","AMTIND"],
+    dropna=False
+)[["DISBURSE","REPAID","APPRLIM2","NOACCT"]].sum().reset_index()
+
+# ============================================================
+# STEP 6 — BNMCODE EXPANSION
+# ============================================================
+
+records = []
+
+for _, row in sector.iterrows():
+    sect = str(row["SECTORCD"]).zfill(4)
+
+    # Disbursement
+    records.append({
+        "BNMCODE": f"673400000{sect}Y",
+        "AMTIND": row["AMTIND"],
+        "AMOUNT": row["DISBURSE"],
+        "NOACCT": row["NOACCT"]
+    })
+
+    # Repayment
+    rep_noacct = row["NOACCT"] if row["REPAID"] != 0 else 0
+    records.append({
+        "BNMCODE": f"773400000{sect}Y",
+        "AMTIND": row["AMTIND"],
+        "AMOUNT": row["REPAID"],
+        "NOACCT": rep_noacct
+    })
+
+    # Approval
+    if sect == "0000":
+        code = f"871500000{sect}Y"
+    else:
+        code = f"871510000{sect}Y"
+
+    records.append({
+        "BNMCODE": code,
+        "AMTIND": row["AMTIND"],
+        "AMOUNT": row["APPRLIM2"],
+        "NOACCT": row["NOACCT"]
+    })
+
+expanded = pd.DataFrame(records)
+
+# ============================================================
+# STEP 7 — FINAL GROUP
+# ============================================================
+
+final = expanded.groupby(
+    ["BNMCODE","AMTIND"]
+)[["AMOUNT","NOACCT"]].sum().reset_index()
+
+# ============================================================
+# STEP 8 — WRITE FB80 FILE
+# ============================================================
+
+def write_fb80(df, filepath):
+    with open(filepath, "w", encoding="ascii") as f:
+        for code in df["BNMCODE"].unique():
+            sub = df[df["BNMCODE"] == code]
+
+            amt_d = 0
+            amt_i = 0
+            cnt_d = 0
+            cnt_i = 0
+
+            for _, r in sub.iterrows():
+                amt = round(r["AMOUNT"] / 1000)
+                cnt = round(r["NOACCT"])
+
+                if r["AMTIND"] == "D":
+                    amt_d += amt
+                    cnt_d += cnt
+                elif r["AMTIND"] == "I":
+                    amt_i += amt
+                    cnt_i += cnt
+
+            line = f"{code};{amt_d};{amt_i};{cnt_d};{cnt_i}"
+            line = line.ljust(80)[:80]
+            f.write(line + "\n")
+
+write_fb80(final, "output_hp04.txt")
+
+print("EIBWHP04 completed successfully.")
+
 ==================================================================  EIFFCCD2  ==================================================================
 
 //EIFFCCD2  JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M,USER=OPCC
@@ -1050,6 +1899,76 @@ RUN;
       %INC PGM(LNCCD004);
 %MEND;
 %PROCES1;
+
+import subprocess
+from pathlib import Path
+import pandas as pd
+from datetime import datetime
+
+# ============================================================
+# PRINT DISTRIBUTION METADATA (MANDATORY)
+# ============================================================
+
+PRINT_METADATA = {
+    "recipient": "ATTN JENNY YAP / TAN SOON YEN",
+    "department": "HP CREDIT CONTROL",
+    "building": "MENARA PUBLIC BANK",
+    "priority_class": "K"
+}
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+REPTDATE_FILE = "data/loan_reptdate_daily.parquet"
+OUTPUT_FILE = "output_ccd_weekly.txt"
+
+# ============================================================
+# STEP 1 — BUILD REPORT DATE CONTEXT
+# ============================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rept_date = pd.to_datetime(rept["REPTDATE"].iloc[0])
+
+NOWK = rept_date.day
+RDATE = rept_date.strftime("%d%m%Y")
+REPTYEAR = rept_date.strftime("%Y")
+REPTMON = rept_date.strftime("%m")
+REPTDAY = rept_date.strftime("%d")
+
+# ============================================================
+# STEP 2 — EXECUTE CREDIT CONTROL MODULES
+# ============================================================
+
+def run_module(module_name):
+    result = subprocess.run(["python", module_name])
+    if result.returncode != 0:
+        raise RuntimeError(f"{module_name} failed")
+
+run_module("lnccd001.py")
+run_module("lnccd002.py")
+run_module("lnccd004.py")
+
+# ============================================================
+# STEP 3 — WRITE FBA 133 OUTPUT
+# ============================================================
+
+def write_fba133(lines, filepath):
+    with open(filepath, "w", encoding="ascii") as f:
+        for line in lines:
+            formatted = line.ljust(133)[:133]
+            f.write(formatted + "\n")
+
+header = [
+    f"HP CREDIT CONTROL REPORT",
+    f"RUN DATE : {rept_date.strftime('%d/%m/%Y')}",
+    f"OWNER    : {PRINT_METADATA['recipient']}",
+    "-" * 80
+]
+
+write_fba133(header, OUTPUT_FILE)
+
+print("EIFFCCD2 completed successfully.")
 
 ==================================================================  EIIFCCD2  ==================================================================
 
@@ -1104,3 +2023,75 @@ RUN;
 %MEND;
 %PROCES1;
 
+
+import subprocess
+from pathlib import Path
+import pandas as pd
+from datetime import datetime
+
+# ============================================================
+# PRINT DISTRIBUTION METADATA (MANDATORY)
+# ============================================================
+
+PRINT_METADATA = {
+    "recipient": "ATTN JENNY YAP / TAN SOON YEN",
+    "department": "HP CREDIT CONTROL",
+    "building": "MENARA PUBLIC BANK",
+    "priority_class": "K",
+    "banking_type": "ISLAMIC (PIBB)"
+}
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+REPTDATE_FILE = "data/piib_loan_reptdate_daily.parquet"
+OUTPUT_FILE = "output_ccd_weekly_islamic.txt"
+
+# ============================================================
+# STEP 1 — BUILD REPORT DATE CONTEXT
+# ============================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rept_date = pd.to_datetime(rept["REPTDATE"].iloc[0])
+
+NOWK = rept_date.day
+RDATE = rept_date.strftime("%d%m%Y")
+REPTYEAR = rept_date.strftime("%Y")
+REPTMON = rept_date.strftime("%m")
+REPTDAY = rept_date.strftime("%d")
+
+# ============================================================
+# STEP 2 — EXECUTE ISLAMIC CREDIT CONTROL MODULES
+# ============================================================
+
+def run_module(module_name):
+    result = subprocess.run(["python", module_name])
+    if result.returncode != 0:
+        raise RuntimeError(f"{module_name} failed")
+
+run_module("lnccd001.py")
+run_module("lnccdi02.py")
+run_module("lnccdi04.py")
+
+# ============================================================
+# STEP 3 — WRITE FBA 133 OUTPUT
+# ============================================================
+
+def write_fba133(lines, filepath):
+    with open(filepath, "w", encoding="ascii") as f:
+        for line in lines:
+            formatted = line.ljust(133)[:133]
+            f.write(formatted + "\n")
+
+header = [
+    f"HP CREDIT CONTROL REPORT - ISLAMIC",
+    f"RUN DATE : {rept_date.strftime('%d/%m/%Y')}",
+    f"OWNER    : {PRINT_METADATA['recipient']}",
+    f"BANK     : {PRINT_METADATA['banking_type']}",
+    "-" * 80
+]
+
+write_fba133(header, OUTPUT_FILE)
+
+print("EIIFCCD2 completed successfully.")
