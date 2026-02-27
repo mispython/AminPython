@@ -1,6 +1,214 @@
 ========================================== JOB 1 : EIBMFGP3 ========================================== 				
 
 
+
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+DATA_DIR = Path("data")
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+LOAN_FILE = DATA_DIR / "loan_weekly.parquet"
+CURRENT_FILE = DATA_DIR / "deposit_current.parquet"
+GP3_FILE = DATA_DIR / "limit_gp3.parquet"
+OVERDFT_FILE = DATA_DIR / "limit_overdraft.parquet"
+REPTDATE_FILE = DATA_DIR / "deposit_reptdate.parquet"
+
+
+# ============================================================
+# STEP 1 — DERIVE REPORTING CONTEXT
+# ============================================================
+
+def derive_reporting_context(reptdate_df: pd.DataFrame) -> dict:
+    reptdate = pd.to_datetime(reptdate_df.iloc[0]["REPTDATE"])
+
+    day = reptdate.day
+
+    if 1 <= day <= 8:
+        nowk = "1"
+    elif 9 <= day <= 15:
+        nowk = "2"
+    elif 16 <= day <= 22:
+        nowk = "3"
+    else:
+        nowk = "4"
+
+    return {
+        "NOWK": nowk,
+        "REPTYEAR": reptdate.year,
+        "REPTMON": f"{reptdate.month:02}",
+        "REPTDAY": f"{reptdate.day:02}",
+        "RDATE": reptdate.strftime("%d%m%Y"),
+    }
+
+
+# ============================================================
+# STEP 2 — PREPARE GP3 DATA
+# ============================================================
+
+def prepare_gp3(gp3_df: pd.DataFrame) -> pd.DataFrame:
+    df = gp3_df.copy()
+
+    # Convert risk code (1st digit)
+    df["RISKRTE"] = df["RISKCODE"].astype(str).str[0].astype(float)
+
+    # Map fields
+    df["EXODDATE"] = df["EXCESSDT"]
+    df["TEMPODDT"] = df["TODDATE"]
+    df["ODSTAT"] = df["ODSTATUS"]
+
+    return df.sort_values("ACCTNO")
+
+
+# ============================================================
+# STEP 3 — UPDATE LOAN WITH RISK
+# ============================================================
+
+def update_loan_with_risk(loan_df: pd.DataFrame,
+                          gp3_df: pd.DataFrame) -> pd.DataFrame:
+
+    merged = loan_df.merge(
+        gp3_df[["ACCTNO", "RISKRTE", "RISKCD"]],
+        on="ACCTNO",
+        how="left"
+    )
+
+    return merged
+
+
+# ============================================================
+# STEP 4 — UPDATE CURRENT ACCOUNT WITH OD INFO
+# ============================================================
+
+def update_current_with_gp3(current_df: pd.DataFrame,
+                            gp3_df: pd.DataFrame) -> pd.DataFrame:
+
+    merged = current_df.merge(
+        gp3_df[
+            ["ACCTNO", "EXODDATE", "TEMPODDT",
+             "ODSTAT", "RISKCODE"]
+        ],
+        on="ACCTNO",
+        how="left"
+    )
+
+    return merged
+
+
+# ============================================================
+# STEP 5 — APPLY OVERDRAFT LIMIT TO LOAN
+# ============================================================
+
+def apply_overdraft_limit(
+        loan_df: pd.DataFrame,
+        current_df: pd.DataFrame,
+        overdraft_df: pd.DataFrame
+) -> pd.DataFrame:
+
+    # Filter negative current accounts
+    negative_current = current_df[
+        (~current_df["OPENIND"].isin(["B", "C", "P"])) &
+        (current_df["CURBAL"] < 0)
+    ]
+
+    # Remove duplicates from overdraft
+    overdraft_clean = (
+        overdraft_df
+        .drop_duplicates(subset=["ACCTNO"])
+        .rename(columns={"APPRLIMT": "APPRLIM2"})
+    )
+
+    # Merge overdraft limit to negative accounts
+    negative_with_limit = negative_current.merge(
+        overdraft_clean[["ACCTNO", "APPRLIM2"]],
+        on="ACCTNO",
+        how="left"
+    )
+
+    negative_with_limit["APPRLIM2"] = \
+        negative_with_limit["APPRLIM2"].fillna(0)
+
+    # Merge APPRLIM2 back into loan
+    loan_updated = loan_df.merge(
+        negative_with_limit[["ACCTNO", "APPRLIM2"]],
+        on="ACCTNO",
+        how="left"
+    )
+
+    loan_updated["APPRLIM2"] = \
+        loan_updated["APPRLIM2"].fillna(0)
+
+    return loan_updated
+
+
+# ============================================================
+# MAIN EXECUTION
+# ============================================================
+
+def main():
+
+    print("=== EIBMFGP3 STARTED ===")
+
+    # Load data
+    loan_df = pd.read_parquet(LOAN_FILE)
+    current_df = pd.read_parquet(CURRENT_FILE)
+    gp3_df = pd.read_parquet(GP3_FILE)
+    overdraft_df = pd.read_parquet(OVERDFT_FILE)
+    reptdate_df = pd.read_parquet(REPTDATE_FILE)
+
+    # Derive context
+    context = derive_reporting_context(reptdate_df)
+    print("Reporting Context:", context)
+
+    # Prepare GP3
+    gp3_prepared = prepare_gp3(gp3_df)
+
+    # Update Loan
+    loan_updated = update_loan_with_risk(
+        loan_df,
+        gp3_prepared
+    )
+
+    # Update Current
+    current_updated = update_current_with_gp3(
+        current_df,
+        gp3_prepared
+    )
+
+    # Apply overdraft logic
+    final_loan = apply_overdraft_limit(
+        loan_updated,
+        current_updated,
+        overdraft_df
+    )
+
+    # Save outputs
+    final_loan.to_parquet(
+        OUTPUT_DIR / "loan_updated.parquet",
+        index=False
+    )
+
+    current_updated.to_parquet(
+        OUTPUT_DIR / "current_updated.parquet",
+        index=False
+    )
+
+    print("=== EIBMFGP3 COMPLETED SUCCESSFULLY ===")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
 //EIBMFGP3 JOB MISEIS,EIBMFGP3,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
 //         NOTIFY=&SYSUID,REGION=8M,USER=OPCC
 /*JOBPARM S=S1M2
@@ -84,6 +292,224 @@ RUN;
 
 
 ==========================================  JOB 2 : EIBMTH1A ========================================== 				
+
+
+"""
+EIBMTH1A - Monthly BNM Reporting Orchestration
+
+Equivalent to SAS Job EIBMTH1A
+
+Functions:
+- Derive reporting date & week
+- Validate extraction dates
+- Run DAL / FAL / LAL / KAL modules
+- Backup datasets
+- Clean temp workspace
+- SFTP RDAL files
+"""
+
+import pandas as pd
+from datetime import datetime, timedelta
+from pathlib import Path
+import paramiko
+import sys
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DATA_DIR = Path("data")
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+SFTP_HOST = "your_sftp_host"
+SFTP_USER = "user"
+SFTP_PASS = "password"
+SFTP_PATH = "FD-BNM REPORTING/PBB/BNM RPTG"
+
+
+# ============================================================
+# STEP 1 — REPORTING DATE LOGIC
+# ============================================================
+
+def derive_reporting_context():
+
+    reptdate = datetime.today().replace(day=1) - timedelta(days=1)
+
+    day = reptdate.day
+
+    if day == 8:
+        wk = "1"
+        sdd = 1
+    elif day == 15:
+        wk = "2"
+        sdd = 9
+    elif day == 22:
+        wk = "3"
+        sdd = 16
+    else:
+        wk = "4"
+        sdd = 23
+
+    month = reptdate.month
+    year = reptdate.year
+
+    return {
+        "NOWK": wk,
+        "REPTMON": f"{month:02}",
+        "REPTYEAR": str(year),
+        "RDATE": reptdate.strftime("%d%m%Y"),
+    }
+
+
+# ============================================================
+# STEP 2 — VALIDATE EXTRACTION DATES
+# ============================================================
+
+def validate_dates(context):
+
+    required_files = [
+        "loan_reptdate.parquet",
+        "deposit_reptdate.parquet",
+        "fd_reptdate.parquet",
+        "kapiti1_reptdate.parquet",
+        "kapiti2_reptdate.parquet",
+        "kapiti3_reptdate.parquet"
+    ]
+
+    expected = context["RDATE"]
+
+    for file in required_files:
+        df = pd.read_parquet(DATA_DIR / file)
+        extracted = pd.to_datetime(df.iloc[0]["REPTDATE"]).strftime("%d%m%Y")
+
+        if extracted != expected:
+            raise RuntimeError(
+                f"{file} extraction date mismatch: {extracted} != {expected}"
+            )
+
+    print("All extraction dates validated.")
+
+
+# ============================================================
+# STEP 3 — DAL MODULE
+# ============================================================
+
+def run_dal_pipeline(context):
+    print("Running DAL pipeline...")
+    # placeholder for:
+    # DALMPBBD, DALWBP, DALMBP
+    # implement business logic here
+    return
+
+
+# ============================================================
+# STEP 4 — FAL MODULE
+# ============================================================
+
+def run_fal_pipeline(context):
+    print("Running FAL pipeline...")
+    # placeholder for:
+    # FALMPBBD, FALWPBBP, FALMPBBP
+    return
+
+
+# ============================================================
+# STEP 5 — LAL MODULE
+# ============================================================
+
+def run_lal_pipeline(context):
+    print("Running LAL pipeline...")
+    # placeholder for:
+    # LALWPBBP, LALMPBBP
+    return
+
+
+# ============================================================
+# STEP 6 — KAL MODULE
+# ============================================================
+
+def run_kal_pipeline(context):
+    print("Running KAL pipeline...")
+    # placeholder for:
+    # KALWPBBP, KALMPBBP, KALMSTOR
+    return
+
+
+# ============================================================
+# STEP 7 — BACKUP DATASETS
+# ============================================================
+
+def backup_datasets(context):
+
+    backup_file = OUTPUT_DIR / f"deposit_backup_{context['RDATE']}.parquet"
+
+    deposit_df = pd.read_parquet(DATA_DIR / "deposit_master.parquet")
+
+    deposit_df.to_parquet(backup_file, index=False)
+
+    print("Backup completed:", backup_file)
+
+
+# ============================================================
+# STEP 8 — SFTP TRANSFER
+# ============================================================
+
+def sftp_transfer(context):
+
+    transport = paramiko.Transport((SFTP_HOST, 22))
+    transport.connect(username=SFTP_USER, password=SFTP_PASS)
+
+    sftp = paramiko.SFTPClient.from_transport(transport)
+
+    local_file = OUTPUT_DIR / "RDAL_KAPMNI.txt"
+    remote_file = f"{SFTP_PATH}/RDAL KAPMNI EIR.TXT"
+
+    sftp.put(str(local_file), remote_file)
+
+    sftp.close()
+    transport.close()
+
+    print("SFTP transfer completed.")
+
+
+# ============================================================
+# MAIN ORCHESTRATOR
+# ============================================================
+
+def main():
+
+    print("=== EIBMTH1A STARTED ===")
+
+    context = derive_reporting_context()
+    print("Context:", context)
+
+    validate_dates(context)
+
+    backup_datasets(context)
+
+    run_dal_pipeline(context)
+    run_fal_pipeline(context)
+    run_lal_pipeline(context)
+    run_kal_pipeline(context)
+
+    sftp_transfer(context)
+
+    print("=== EIBMTH1A COMPLETED SUCCESSFULLY ===")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("JOB FAILED:", str(e))
+        sys.exit(77)
+
+
+
+
+
 
 //EIBMTH1A JOB MISEIS,EIBMTH1A,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,
 //         USER=OPCC
@@ -335,7 +761,144 @@ EOB
 
 
 			
-==========================================  JOB 3 :  EIBMMISE ========================================== 				
+==========================================  JOB 3 :  EIBMMISE ========================================== 			
+
+"""
+EIBMMISE - Month-End MIS Processing
+Converted from SAS Job EIBMMISE
+
+Purpose:
+- Execute MIS processing for deposits and loans
+- Only when reporting week = 4
+"""
+
+import pandas as pd
+from datetime import datetime, timedelta
+from pathlib import Path
+import sys
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DATA_DIR = Path("data")
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+# ============================================================
+# STEP 1 — DERIVE REPORTING CONTEXT
+# ============================================================
+
+def derive_reporting_context():
+
+    # SAS equivalent:
+    # REPTDATE = 1st of month - 1 day
+    reptdate = datetime.today().replace(day=1) - timedelta(days=1)
+
+    day = reptdate.day
+
+    if day == 8:
+        wk = "1"
+    elif day == 15:
+        wk = "2"
+    elif day == 22:
+        wk = "3"
+    else:
+        wk = "4"
+
+    context = {
+        "NOWK": wk,
+        "REPTMON": f"{reptdate.month:02}",
+        "REPTYEAR": str(reptdate.year),
+        "RDATE": reptdate.strftime("%d%m%Y")
+    }
+
+    return context
+
+
+# ============================================================
+# STEP 2 — DEPOSIT MIS PIPELINE (DEPMPBBD)
+# ============================================================
+
+def run_deposit_mis(context):
+
+    print("Running Deposit MIS...")
+
+    savg_file = DATA_DIR / f"SAVG{context['REPTMON']}{context['NOWK']}.parquet"
+    curn_file = DATA_DIR / f"CURN{context['REPTMON']}{context['NOWK']}.parquet"
+
+    savg_df = pd.read_parquet(savg_file)
+    curn_df = pd.read_parquet(curn_file)
+
+    # Placeholder for DEPMPBBD transformation logic
+    deposit_mis = pd.concat([savg_df, curn_df])
+
+    deposit_mis.to_parquet(
+        OUTPUT_DIR / f"deposit_mis_{context['RDATE']}.parquet",
+        index=False
+    )
+
+    print("Deposit MIS completed.")
+
+
+# ============================================================
+# STEP 3 — LOAN MIS PIPELINE (LNMHPBBD)
+# ============================================================
+
+def run_loan_mis(context):
+
+    print("Running Loan MIS...")
+
+    loan_file = DATA_DIR / f"LOAN{context['REPTMON']}{context['NOWK']}.parquet"
+    uloan_file = DATA_DIR / f"ULOAN{context['REPTMON']}{context['NOWK']}.parquet"
+
+    loan_df = pd.read_parquet(loan_file)
+    uloan_df = pd.read_parquet(uloan_file)
+
+    # Placeholder for LNMHPBBD transformation logic
+    loan_mis = pd.concat([loan_df, uloan_df])
+
+    loan_mis.to_parquet(
+        OUTPUT_DIR / f"loan_mis_{context['RDATE']}.parquet",
+        index=False
+    )
+
+    print("Loan MIS completed.")
+
+
+# ============================================================
+# MAIN ORCHESTRATOR
+# ============================================================
+
+def main():
+
+    print("=== EIBMMISE STARTED ===")
+
+    context = derive_reporting_context()
+    print("Context:", context)
+
+    if context["NOWK"] != "4":
+        print("Week is not 4. Job not executed.")
+        sys.exit(0)
+
+    print("Week 4 detected. Running MIS pipelines...")
+
+    run_deposit_mis(context)
+    run_loan_mis(context)
+
+    print("=== EIBMMISE COMPLETED SUCCESSFULLY ===")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("JOB FAILED:", str(e))
+        sys.exit(77)
+
+
 
 //EIBMMISE JOB MISEIS,EIBMMISE,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
 /*JOBPARM S=S1M2
@@ -414,6 +977,139 @@ LIBNAME MIS  "SAP.PBB.MIS.D&REPTYEAR" DISP=OLD;
 
 			
 ==========================================  JOB 4 : EIIMMISE ========================================== 					
+
+
+"""
+EIIMMISE - Islamic Month-End MIS Processing
+Converted from SAS Job EIIMMISE
+
+Purpose:
+- Execute Islamic MIS processing (PIBB)
+- Only when reporting week = 4
+"""
+
+import pandas as pd
+from datetime import datetime, timedelta
+from pathlib import Path
+import sys
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DATA_DIR = Path("data_pibb")   # Islamic source
+OUTPUT_DIR = Path("output_pibb")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+# ============================================================
+# STEP 1 — DERIVE REPORTING CONTEXT
+# ============================================================
+
+def derive_reporting_context():
+
+    reptdate = datetime.today().replace(day=1) - timedelta(days=1)
+    day = reptdate.day
+
+    if day == 8:
+        wk = "1"
+    elif day == 15:
+        wk = "2"
+    elif day == 22:
+        wk = "3"
+    else:
+        wk = "4"
+
+    return {
+        "NOWK": wk,
+        "REPTMON": f"{reptdate.month:02}",
+        "REPTYEAR": str(reptdate.year),
+        "RDATE": reptdate.strftime("%d%m%Y")
+    }
+
+
+# ============================================================
+# STEP 2 — ISLAMIC DEPOSIT MIS (DEPMPBBD)
+# ============================================================
+
+def run_islamic_deposit_mis(context):
+
+    print("Running Islamic Deposit MIS...")
+
+    savg_file = DATA_DIR / f"SAVG{context['REPTMON']}{context['NOWK']}.parquet"
+    curn_file = DATA_DIR / f"CURN{context['REPTMON']}{context['NOWK']}.parquet"
+
+    savg_df = pd.read_parquet(savg_file)
+    curn_df = pd.read_parquet(curn_file)
+
+    # Placeholder for DEPMPBBD logic
+    deposit_mis = pd.concat([savg_df, curn_df])
+
+    deposit_mis.to_parquet(
+        OUTPUT_DIR / f"islamic_deposit_mis_{context['RDATE']}.parquet",
+        index=False
+    )
+
+    print("Islamic Deposit MIS completed.")
+
+
+# ============================================================
+# STEP 3 — ISLAMIC LOAN MIS (LNMHPBBD)
+# ============================================================
+
+def run_islamic_loan_mis(context):
+
+    print("Running Islamic Loan MIS...")
+
+    loan_file = DATA_DIR / f"LOAN{context['REPTMON']}{context['NOWK']}.parquet"
+    uloan_file = DATA_DIR / f"ULOAN{context['REPTMON']}{context['NOWK']}.parquet"
+
+    loan_df = pd.read_parquet(loan_file)
+    uloan_df = pd.read_parquet(uloan_file)
+
+    # Placeholder for LNMHPBBD logic
+    loan_mis = pd.concat([loan_df, uloan_df])
+
+    loan_mis.to_parquet(
+        OUTPUT_DIR / f"islamic_loan_mis_{context['RDATE']}.parquet",
+        index=False
+    )
+
+    print("Islamic Loan MIS completed.")
+
+
+# ============================================================
+# MAIN ORCHESTRATOR
+# ============================================================
+
+def main():
+
+    print("=== EIIMMISE STARTED ===")
+
+    context = derive_reporting_context()
+    print("Context:", context)
+
+    if context["NOWK"] != "4":
+        print("Week is not 4. Islamic MIS not executed.")
+        sys.exit(0)
+
+    print("Week 4 detected. Running Islamic MIS pipelines...")
+
+    run_islamic_deposit_mis(context)
+    run_islamic_loan_mis(context)
+
+    print("=== EIIMMISE COMPLETED SUCCESSFULLY ===")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("JOB FAILED:", str(e))
+        sys.exit(77)
+
+
 
 
 //EIIMMISE JOB MISEIS,EIBMMISE,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
@@ -495,6 +1191,141 @@ LIBNAME MIS  "SAP.PIBB.MIS.D&REPTYEAR" DISP=OLD;
 
 
 
+"""
+EIBMRDMI - RDAL for Islamic Items
+Converted from SAS Job EIBMRDMI
+
+Purpose:
+- Generate Islamic RDAL reporting
+- Execute quarterly modules when month in (03, 06, 09, 12)
+"""
+
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
+import sys
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DATA_DIR = Path("data_pibb")
+OUTPUT_DIR = Path("output_pibb_rdal")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+# ============================================================
+# STEP 1 — DERIVE REPORTING CONTEXT
+# ============================================================
+
+def derive_reporting_context():
+
+    reptdate_df = pd.read_parquet(DATA_DIR / "loan_reptdate.parquet")
+    reptdate = pd.to_datetime(reptdate_df.iloc[0]["REPTDATE"])
+
+    day = reptdate.day
+
+    if day == 8:
+        wk = "1"
+    elif day == 15:
+        wk = "2"
+    elif day == 22:
+        wk = "3"
+    else:
+        wk = "4"
+
+    month = reptdate.month
+    year = reptdate.year
+
+    return {
+        "NOWK": wk,
+        "REPTMON": f"{month:02}",
+        "REPTYEAR": str(year),
+        "RDATE": reptdate.strftime("%d%m%Y"),
+        "IS_QUARTER_END": month in [3, 6, 9, 12]
+    }
+
+
+# ============================================================
+# RDAL MODULES (PLACEHOLDER IMPLEMENTATIONS)
+# ============================================================
+
+def run_deposit_rdal(context):
+    print("Running DEPRDALM (Islamic Deposit RDAL)...")
+    # Implement deposit RDAL aggregation logic
+    return
+
+
+def run_loan_rdal(context):
+    print("Running LOANRDAL (Islamic Loan RDAL)...")
+    # Implement loan RDAL aggregation logic
+    return
+
+
+def run_kal_weekly(context):
+    print("Running KALWPBBI (Islamic Weekly Capital)...")
+    return
+
+
+def run_kal_monthly(context):
+    print("Running KALMPBBI (Islamic Monthly Capital)...")
+    return
+
+
+# ============================================================
+# QUARTERLY MODULES
+# ============================================================
+
+def run_fal_quarter(context):
+    print("Running FALQPBBI (Islamic Quarterly FAL)...")
+    return
+
+
+def run_lal_quarter(context):
+    print("Running LALQPBBI (Islamic Quarterly LAL)...")
+    return
+
+
+def run_kal_quarter(context):
+    print("Running KALQPBBI (Islamic Quarterly Capital)...")
+    return
+
+
+# ============================================================
+# MAIN ORCHESTRATOR
+# ============================================================
+
+def main():
+
+    print("=== EIBMRDMI STARTED ===")
+
+    context = derive_reporting_context()
+    print("Context:", context)
+
+    # Core RDAL processing
+    run_deposit_rdal(context)
+    run_loan_rdal(context)
+    run_kal_weekly(context)
+    run_kal_monthly(context)
+
+    # Quarter-end logic
+    if context["IS_QUARTER_END"]:
+        print("Quarter-end detected. Running additional quarterly modules...")
+        run_fal_quarter(context)
+        run_lal_quarter(context)
+        run_kal_quarter(context)
+
+    print("=== EIBMRDMI COMPLETED SUCCESSFULLY ===")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("JOB FAILED:", str(e))
+        sys.exit(77)
+
 //EIBMRDMI JOB MISEIS,EIBMTH1A,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
 //*
 //* RDAL FOR ISLAMIC ITEMS
@@ -573,6 +1404,144 @@ LIBNAME BNM "SAP.PBB.D&REPTYEAR" DISP=SHR;
 ==========================================  JOB 6 : EIBMLIQI ========================================== 						
 
 
+"""
+EIBMLIQI - Islamic Liquidity Reporting
+Converted from SAS Job EIBMLIQI
+
+Purpose:
+- Generate Islamic liquidity regulatory report
+- Output fixed-width formatted report file
+"""
+
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
+import sys
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DATA_DIR = Path("data_pibb")
+OUTPUT_DIR = Path("output_liquidity")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+OUTPUT_FILE = OUTPUT_DIR / "LIQP_ISLM.txt"
+
+
+# ============================================================
+# STEP 1 — DERIVE REPORTING CONTEXT
+# ============================================================
+
+def derive_reporting_context():
+
+    reptdate_df = pd.read_parquet(DATA_DIR / "loan_reptdate.parquet")
+    reptdate = pd.to_datetime(reptdate_df.iloc[0]["REPTDATE"])
+
+    day = reptdate.day
+
+    if day == 8:
+        wk = "1"
+    elif day == 15:
+        wk = "2"
+    elif day == 22:
+        wk = "3"
+    else:
+        wk = "4"
+
+    return {
+        "NOWK": wk,
+        "REPTMON": f"{reptdate.month:02}",
+        "REPTYEAR": str(reptdate.year),
+        "RDATE": reptdate.strftime("%d%m%Y")
+    }
+
+
+# ============================================================
+# STEP 2 — LIQUIDITY CALCULATION MODULES
+# ============================================================
+
+def run_dal_liquidity(context):
+    print("Running DALWPBBD (Deposit Liquidity)...")
+
+    deposit_df = pd.read_parquet(DATA_DIR / "deposit_master.parquet")
+
+    # Placeholder: liquidity aggregation logic
+    liquidity_summary = deposit_df.groupby("PRODUCT")["BALANCE"].sum().reset_index()
+
+    liquidity_summary["TYPE"] = "DEPOSIT"
+
+    return liquidity_summary
+
+
+def run_loan_liquidity(context):
+    print("Running EIBMRLFI (Loan Liquidity)...")
+
+    loan_df = pd.read_parquet(DATA_DIR / "loan_master.parquet")
+
+    # Placeholder: liquidity aggregation logic
+    liquidity_summary = loan_df.groupby("PRODUCT")["OUTSTANDING"].sum().reset_index()
+
+    liquidity_summary["TYPE"] = "LOAN"
+
+    return liquidity_summary
+
+
+# ============================================================
+# STEP 3 — FORMAT OUTPUT (FIXED WIDTH)
+# ============================================================
+
+def write_fixed_width_report(df, context):
+
+    with open(OUTPUT_FILE, "w") as f:
+
+        header = f"ISLAMIC LIQUIDITY REPORT   DATE: {context['RDATE']}\n"
+        f.write(header)
+        f.write("-" * 80 + "\n")
+
+        for _, row in df.iterrows():
+
+            line = (
+                f"{row['TYPE']:<10}"
+                f"{row['PRODUCT']:<20}"
+                f"{row.iloc[1]:>20,.2f}"
+            )
+
+            f.write(line + "\n")
+
+    print("Liquidity report written to:", OUTPUT_FILE)
+
+
+# ============================================================
+# MAIN ORCHESTRATOR
+# ============================================================
+
+def main():
+
+    print("=== EIBMLIQI STARTED ===")
+
+    context = derive_reporting_context()
+    print("Context:", context)
+
+    deposit_liq = run_dal_liquidity(context)
+    loan_liq = run_loan_liquidity(context)
+
+    final_df = pd.concat([deposit_liq, loan_liq])
+
+    write_fixed_width_report(final_df, context)
+
+    print("=== EIBMLIQI COMPLETED SUCCESSFULLY ===")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("JOB FAILED:", str(e))
+        sys.exit(77)
+
+
 //EIBMLIQI JOB MIS,MISEIS,COND=(4,LT),CLASS=A,MSGCLASS=X,
 //         NOTIFY=&SYSUID
 //PRINT1   OUTPUT CLASS=R,
@@ -627,7 +1596,163 @@ RUN;
 	
 ==========================================  JOB 7 : EIBMP124 ========================================== 		
 
+"""
+EIBMP124 - Islamic P124 Regulatory Reporting
+Converted from SAS Job EIBMP124
 
+Purpose:
+- Generate P124 loan regulatory report
+- Compare current vs prior loan snapshot
+- Output fixed-width RDAL124 file
+"""
+
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
+import sys
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DATA_DIR = Path("data_pibb")
+OUTPUT_DIR = Path("output_p124")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+OUTPUT_FILE = OUTPUT_DIR / "RDAL124.txt"
+
+
+# ============================================================
+# STEP 1 — DERIVE REPORTING CONTEXT
+# ============================================================
+
+def derive_reporting_context():
+
+    reptdate_df = pd.read_parquet(DATA_DIR / "loan_reptdate.parquet")
+    reptdate = pd.to_datetime(reptdate_df.iloc[0]["REPTDATE"])
+
+    day = reptdate.day
+
+    if day == 8:
+        wk = "1"
+    elif day == 15:
+        wk = "2"
+    elif day == 22:
+        wk = "3"
+    else:
+        wk = "4"
+
+    month = reptdate.month
+    year = reptdate.year
+
+    # prior month
+    if month == 1:
+        prior_month = 12
+        prior_year = year - 1
+    else:
+        prior_month = month - 1
+        prior_year = year
+
+    return {
+        "NOWK": wk,
+        "REPTMON": f"{month:02}",
+        "REPTYEAR": str(year),
+        "PRIOR_MON": f"{prior_month:02}",
+        "PRIOR_YEAR": str(prior_year),
+        "RDATE": reptdate.strftime("%d%m%Y")
+    }
+
+
+# ============================================================
+# STEP 2 — LOAD LOAN SNAPSHOTS
+# ============================================================
+
+def load_loan_data(context):
+
+    current_loan = pd.read_parquet(DATA_DIR / "loan_master.parquet")
+    prior_loan = pd.read_parquet(DATA_DIR / "loan_master_prior.parquet")
+
+    return current_loan, prior_loan
+
+
+# ============================================================
+# STEP 3 — P124 CALCULATION LOGIC
+# ============================================================
+
+def calculate_p124(current_df, prior_df):
+
+    # Example: compare exposure movement
+    merged = current_df.merge(
+        prior_df,
+        on="ACCTNO",
+        how="left",
+        suffixes=("_CUR", "_PRIOR")
+    )
+
+    merged["EXPOSURE_MOVEMENT"] = (
+        merged["OUTSTANDING_CUR"] -
+        merged["OUTSTANDING_PRIOR"].fillna(0)
+    )
+
+    # Placeholder for P124 classification mapping
+    merged["P124_CLASS"] = "STANDARD"
+
+    return merged
+
+
+# ============================================================
+# STEP 4 — FORMAT OUTPUT FILE
+# ============================================================
+
+def write_p124_report(df, context):
+
+    with open(OUTPUT_FILE, "w") as f:
+
+        header = f"P124 ISLAMIC REPORT     DATE: {context['RDATE']}\n"
+        f.write(header)
+        f.write("-" * 100 + "\n")
+
+        for _, row in df.iterrows():
+
+            line = (
+                f"{row['ACCTNO']:<15}"
+                f"{row['P124_CLASS']:<15}"
+                f"{row['OUTSTANDING_CUR']:>15,.2f}"
+                f"{row['EXPOSURE_MOVEMENT']:>15,.2f}"
+            )
+
+            f.write(line + "\n")
+
+    print("P124 report written to:", OUTPUT_FILE)
+
+
+# ============================================================
+# MAIN ORCHESTRATOR
+# ============================================================
+
+def main():
+
+    print("=== EIBMP124 STARTED ===")
+
+    context = derive_reporting_context()
+    print("Context:", context)
+
+    current_loan, prior_loan = load_loan_data(context)
+
+    p124_df = calculate_p124(current_loan, prior_loan)
+
+    write_p124_report(p124_df, context)
+
+    print("=== EIBMP124 COMPLETED SUCCESSFULLY ===")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("JOB FAILED:", str(e))
+        sys.exit(77)
 
 //EIBMP124 JOB MISEIS,EIBQTR1A,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,       JOB41711
 //         USER=OPCC
@@ -702,7 +1827,178 @@ RUN;
 			
 ==========================================  JOB 8 : EIBM1241 ========================================== 				
 
+"""
+EIBM1241 - FISS P124 RDAL Reporting
+Converted from SAS Job EIBM1241
 
+Purpose:
+- Generate final P124 RDAL output file (FISS version)
+"""
+
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
+import sys
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DATA_DIR = Path("data_pibb")
+REF_DIR = Path("data_reference")
+OUTPUT_DIR = Path("output_fiss")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+OUTPUT_FILE = OUTPUT_DIR / "FISS_RDAL124.txt"
+
+
+# ============================================================
+# STEP 1 — REPORTING CONTEXT
+# ============================================================
+
+def derive_reporting_context():
+
+    reptdate_df = pd.read_parquet(DATA_DIR / "loan_reptdate.parquet")
+    reptdate = pd.to_datetime(reptdate_df.iloc[0]["REPTDATE"])
+
+    month = reptdate.month
+    year = reptdate.year
+
+    return {
+        "REPTMON": f"{month:02}",
+        "REPTYEAR": str(year),
+        "RDATE": reptdate.strftime("%d%m%Y")
+    }
+
+
+# ============================================================
+# STEP 2 — LOAD DATA
+# ============================================================
+
+def load_data():
+
+    current_loan = pd.read_parquet(DATA_DIR / "loan_master.parquet")
+    prior_loan = pd.read_parquet(DATA_DIR / "loan_master_prior.parquet")
+    p124_reference = pd.read_parquet(REF_DIR / "p124_reference.parquet")
+
+    return current_loan, prior_loan, p124_reference
+
+
+# ============================================================
+# STEP 3 — APPLY P124 CLASSIFICATION
+# ============================================================
+
+def apply_p124_classification(current_df, reference_df):
+
+    # Example join by product code
+    classified = current_df.merge(
+        reference_df,
+        on="PRODUCT_CODE",
+        how="left"
+    )
+
+    classified["P124_CLASS"] = classified["P124_CLASS"].fillna("UNCLASSIFIED")
+
+    return classified
+
+
+# ============================================================
+# STEP 4 — CALCULATE MOVEMENT
+# ============================================================
+
+def calculate_movement(current_df, prior_df):
+
+    merged = current_df.merge(
+        prior_df[["ACCTNO", "OUTSTANDING"]],
+        on="ACCTNO",
+        how="left",
+        suffixes=("", "_PRIOR")
+    )
+
+    merged["OUTSTANDING_PRIOR"] = merged["OUTSTANDING_PRIOR"].fillna(0)
+
+    merged["MOVEMENT"] = (
+        merged["OUTSTANDING"] -
+        merged["OUTSTANDING_PRIOR"]
+    )
+
+    return merged
+
+
+# ============================================================
+# STEP 5 — AGGREGATE BY CLASS
+# ============================================================
+
+def aggregate_p124(df):
+
+    summary = (
+        df.groupby("P124_CLASS")
+        .agg({
+            "OUTSTANDING": "sum",
+            "MOVEMENT": "sum"
+        })
+        .reset_index()
+    )
+
+    return summary
+
+
+# ============================================================
+# STEP 6 — WRITE FIXED-WIDTH RDAL OUTPUT
+# ============================================================
+
+def write_rdal_file(summary_df, context):
+
+    with open(OUTPUT_FILE, "w") as f:
+
+        header = f"FISS P124 RDAL REPORT     DATE: {context['RDATE']}\n"
+        f.write(header)
+        f.write("-" * 80 + "\n")
+
+        for _, row in summary_df.iterrows():
+
+            line = (
+                f"{row['P124_CLASS']:<20}"
+                f"{row['OUTSTANDING']:>20,.2f}"
+                f"{row['MOVEMENT']:>20,.2f}"
+            )
+
+            f.write(line + "\n")
+
+    print("RDAL124 file written:", OUTPUT_FILE)
+
+
+# ============================================================
+# MAIN ORCHESTRATOR
+# ============================================================
+
+def main():
+
+    print("=== EIBM1241 STARTED ===")
+
+    context = derive_reporting_context()
+    print("Context:", context)
+
+    current_loan, prior_loan, reference = load_data()
+
+    classified = apply_p124_classification(current_loan, reference)
+
+    movement_df = calculate_movement(classified, prior_loan)
+
+    summary = aggregate_p124(movement_df)
+
+    write_rdal_file(summary, context)
+
+    print("=== EIBM1241 COMPLETED SUCCESSFULLY ===")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("JOB FAILED:", str(e))
+        sys.exit(77)
 
 //EIBM1241  JOB MISEIS,EIBMMTH1,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,
 //         USER=OPCC
