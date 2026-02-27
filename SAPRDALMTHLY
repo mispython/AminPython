@@ -1,0 +1,1334 @@
+========================================== JOB 1 : EIBMFGP3 ========================================== 				
+
+
+//EIBMFGP3 JOB MISEIS,EIBMFGP3,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//         NOTIFY=&SYSUID,REGION=8M,USER=OPCC
+/*JOBPARM S=S1M2
+//**********************************************************************
+//* FIXING LOAN & CURRENT A/C AFTER GP3
+//*
+//**********************************************************************
+//EIBWLMTE  EXEC SAS609,REGION=8M,WORK='12000,8000'
+//LOAN      DD DSN=SAP.PBB.SASDATA,DISP=OLD
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=OLD
+//LIMIT     DD DSN=SAP.PBB.MNILIMT(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SYSIN     DD *
+OPTIONS YEARCUTOFF=1950;
+
+%INC PGM(PBBLNFMT);
+
+DATA REPTDATE;
+  SET DEPOSIT.REPTDATE;
+  SELECT;
+     WHEN(1 <= DAY(REPTDATE) <= 8) CALL SYMPUT('NOWK', PUT('1', $1.));
+     WHEN(9 <= DAY(REPTDATE) <= 15) CALL SYMPUT('NOWK', PUT('2', $1.));
+     WHEN(16 <= DAY(REPTDATE) <= 22) CALL SYMPUT('NOWK', PUT('3', $1.));
+     OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
+  END;
+  CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+  CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+  CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+  CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+RUN;
+*;
+DATA GP3;
+   SET LIMIT.GP3;
+   RISKRTE = INPUT(RISKCODE,1.);
+   EXODDATE = EXCESSDT;
+   TEMPODDT = TODDATE;
+   ODSTAT = ODSTATUS;
+   RISKCD=PUT(RISKCODE, $RISKCD.);
+*;
+PROC SORT DATA=GP3 OUT=GP3; BY ACCTNO; RUN;
+PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN1; BY ACCTNO; RUN;
+
+DATA LOAN.LOAN&REPTMON&NOWK;
+   UPDATE LOAN1(IN=A)
+          GP3(IN=B KEEP=ACCTNO RISKRTE RISKCD);
+   BY ACCTNO;
+   IF A;
+RUN;
+DATA DEPOSIT.CURRENT;
+   UPDATE DEPOSIT.CURRENT(IN=A)
+          GP3(IN=B KEEP=ACCTNO EXODDATE TEMPODDT ODSTAT RISKCODE);
+   BY ACCTNO;
+   IF A;
+RUN;
+
+PROC SORT DATA=DEPOSIT.CURRENT OUT=CURRENT;
+   WHERE OPENIND NOT IN ('B','C','P') AND CURBAL < 0;
+   BY ACCTNO;
+RUN;
+PROC SORT DATA=LIMIT.OVERDFT
+   OUT=OVERDFT(RENAME=APPRLIMT=APPRLIM2) NODUPKEY;
+   BY ACCTNO;
+RUN;
+DATA OVERDFT(KEEP=ACCTNO APPRLIM2);
+  MERGE CURRENT (IN=A)
+        OVERDFT ;
+  BY ACCTNO;
+  IF A;
+RUN;
+
+PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN1; BY ACCTNO; RUN;
+DATA LOAN.LOAN&REPTMON&NOWK;
+   MERGE  LOAN1(IN=A)
+          OVERDFT;
+   BY ACCTNO;
+   IF A;
+   IF APPRLIM2 EQ . THEN APPRLIM2 = 0;
+RUN;
+
+
+
+
+==========================================  JOB 2 : EIBMTH1A ========================================== 				
+
+//EIBMTH1A JOB MISEIS,EIBMTH1A,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,
+//         USER=OPCC
+/*JOBPARM S=S1M2
+//*
+//PRINT1    OUTPUT CLASS=X
+//PRINT10   OUTPUT CLASS=R,
+//          NAME='THE MANAGER, (PBB)',
+//          ROOM='26TH FLOOR',
+//          BUILDING='MENARA PBB',
+//          DEPT='FINANCE DIV',
+//          ADDRESS='JALAN AMPANG',
+//          DEST=S1.LOCAL
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.KAPMNI.RDAL
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.NSRS.KAPMNI.RDAL
+//*
+//EIBMTH1A  EXEC SAS609,REGION=8M,WORK='250000,200000'
+//DEPOBACK  DD DSN=SAP.PBB.DEPOSIT(+1),DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(300,50),RLSE),UNIT=(SYSDA,5)
+//LOAN      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//FD        DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//LMLOAN    DD DSN=SAP.PBB.MNILN(-4),DISP=SHR
+//LMTE      DD DSN=SAP.PBB.MNILIMT(0),DISP=SHR
+//FEE       DD DSN=SAP.PBB.MNIFEE(0),DISP=SHR
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//LMDEPT    DD DSN=SAP.PBB.MNITB(-4),DISP=SHR
+//CISDP     DD DSN=RBP2.B033.CCRIS.CISDEMO.DP.GDG(0),DISP=SHR
+//BNMTBL1   DD DSN=SAP.PBB.KAPITI1(0),DISP=SHR
+//BNMTBL2   DD DSN=SAP.PBB.KAPITI2(0),DISP=SHR
+//BNMTBL3   DD DSN=SAP.PBB.KAPITI3(0),DISP=SHR
+//BNMTBLX   DD DSN=SAP.PBB.KAPITIX.TXT(0),DISP=SHR
+//DCIMTBL   DD DSN=SAP.PBB.DCIMNLY(0),DISP=SHR
+//DCIWH     DD DSN=SAP.PBB.DCIWH,DISP=SHR
+//NID       DD DSN=SAP.PBB.RNID.SASDATA,DISP=SHR
+//BNMK      DD DSN=SAP.PBB.KAPITI.SASDATA,DISP=OLD
+//EQ        DD DSN=SAP.PBB.WEQUT(0),DISP=SHR
+//DISPAY    DD DSN=SAP.PBB.DISPAY,DISP=SHR
+//DAILY     DD DSN=SAP.PBB.DISPAY.DAILY,DISP=SHR
+//LNHIST    DD DSN=SAP.PBB.LNHIST,DISP=SHR
+//FORATE    DD DSN=SAP.PBB.FCYCA,DISP=SHR
+//WOMV      DD DSN=SAP.PBB.WOF.WOMV,DISP=SHR
+//SASD      DD DSN=SAP.PBB.STORE.SASDATA,DISP=SHR
+//UMA       DD DSN=SAP.PBB.UMA.DAILY(0),DISP=SHR
+//RDALKM    DD DSN=SAP.PBB.KAPMNI.RDAL,DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//            SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
+//NSRSKM    DD DSN=SAP.PBB.NSRS.KAPMNI.RDAL,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//             SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
+//TEMP      DD DSN=SAP.TEMP,DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(100,50)),UNIT=(SYSDA,5)
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SFTP01    DD DSN=&&FTPPUT,DISP=(NEW,PASS),
+//             SPACE=(TRK,(1)),UNIT=SYSDA,RECFM=FB,LRECL=80
+//SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT1)
+//SYSIN     DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+
+DATA REPTDATE (KEEP=REPTDATE);
+  REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+                 PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3';
+                            WK2= '2'; WK3 = '1'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  MM2 = MM - 1;
+  IF MM2 = 0 THEN MM2 = 12;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  SDESC = 'PUBLIC BANK BERHAD';
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT('1',$1.));
+  CALL SYMPUT('NOWK2',PUT('2',$1.));
+  CALL SYMPUT('NOWK3',PUT('3',$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTMON2',PUT(MM2,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTYR',PUT(REPTDATE,YEAR2.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('TDATE',REPTDATE);
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+  CALL SYMPUT('SDESC',PUT(SDESC,$26.));
+RUN;
+
+LIBNAME BNM "SAP.PBB.D&REPTYEAR" DISP=OLD;
+LIBNAME BNM1 "SAP.PBB.SASDATA" DISP=SHR;
+  /*
+LIBNAME MIS "SAP.PBB.MIS.D&REPTYEAR" DISP=OLD;
+LIBNAME BNMCD "SAP.PBB.RPT.SASDATA" DISP=OLD;
+  */
+DATA _NULL_;
+  SET LOAN.REPTDATE(OBS=1);
+  CALL SYMPUT('LOAN', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  SET DEPOSIT.REPTDATE(OBS=1);
+  CALL SYMPUT('DEPOSIT', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  SET FD.REPTDATE(OBS=1);
+  CALL SYMPUT('FD', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  INFILE BNMTBL1 OBS=1 DELIMITER = '|' DSD MISSOVER;
+  INPUT REPTDATE : YYMMDD8.;
+  CALL SYMPUT('KAPITI1', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  INFILE BNMTBL2 OBS=1 DELIMITER = '|' DSD MISSOVER;
+  INPUT REPTDATE : YYMMDD8. ;
+  CALL SYMPUT('KAPITI2', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  INFILE BNMTBL3 OBS=1 DELIMITER = '|' DSD MISSOVER;
+  INPUT REPTDATE : YYMMDD8.;
+  CALL SYMPUT('KAPITI3', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+%MACRO PROCESS;
+  %IF "&LOAN"="&RDATE" AND
+      "&DEPOSIT"="&RDATE" AND
+      "&FD"="&RDATE" AND
+      "&KAPITI1"="&RDATE" AND
+      "&KAPITI2"="&RDATE" AND
+      "&KAPITI3"="&RDATE" %THEN %DO;
+
+      /*** REPORT ON DOMESTIC ASSETS AND LIABILITIES ***/
+      %INC PGM(DALMPBBD);
+      %INC PGM(DALWBP);
+      %INC PGM(DALMBP);
+  /*  %INC PGM(DEPMPBBD); */
+      PROC COPY IN=BNM OUT=DEPOBACK;
+        SELECT SAVG&REPTMON&NOWK
+               CURN&REPTMON&NOWK
+               DEPT&REPTMON&NOWK;
+      RUN;
+      PROC DATASETS LIB=BNM NOLIST;
+        DELETE SAVG&REPTMON&NOWK
+               CURN&REPTMON&NOWK
+               DEPT&REPTMON&NOWK;
+      RUN;
+      %INC PGM(FALMPBBD);
+      %INC PGM(FALWPBBP);
+      %INC PGM(FALMPBBP);
+      PROC COPY IN=BNM OUT=DEPOBACK;
+        SELECT FDWKLY
+               FDMTHLY;
+      RUN;
+      PROC DATASETS LIB=BNM NOLIST;
+        DELETE FDWKLY
+               FDMTHLY;
+      RUN;
+      PROC COPY IN=BNM1 OUT=BNM;
+        SELECT LOAN&REPTMON&NOWK
+               ULOAN&REPTMON&NOWK;
+      RUN;
+      PROC DATASETS LIB=WORK KILL NOLIST; RUN;
+  /*  %INC PGM(LNMHPBBD);
+      PROC DATASETS LIB=WORK KILL NOLIST; RUN;  */
+      %INC PGM(LALWPBBP);
+      %INC PGM(LALMPBBP);
+      PROC DATASETS LIB=WORK KILL NOLIST; RUN;
+      PROC DATASETS LIB=BNM NOLIST;
+        DELETE LOAN&REPTMON&NOWK
+               ULOAN&REPTMON&NOWK;
+      RUN;
+      %INC PGM(KALWPBBP);
+      %INC PGM(KALMPBBP);
+      %INC PGM(KALMSTOR);
+      %INC PGM(NALMPBBP);
+      %INC PGM(EIBRDL1A);
+      %INC PGM(EIBRDL2A);
+      %INC PGM(KALMLIFE);
+      %INC PGM(EIBMSAPC);
+      %INC PGM(EIBWRDLA);
+      PROC DATASETS LIB=WORK KILL NOLIST; RUN;
+  %END;
+  %ELSE %DO;
+        %IF "&LOAN" NE "&RDATE" %THEN
+            %PUT THE LOAN EXTRACTION IS NOT DATED &RDATE;
+        %IF "&DEPOSIT" NE "&RDATE" %THEN
+            %PUT THE DEPOSIT EXTRACTION IS NOT DATED &RDATE;
+        %IF "&FD" NE "&RDATE" %THEN
+            %PUT THE FD EXTRACTION IS NOT DATED &RDATE;
+        %IF "&KAPITI1" NE "&RDATE" %THEN
+            %PUT THE KAPITI1 EXTRACTION IS NOT DATED &RDATE;
+        %IF "&KAPITI2" NE "&RDATE" %THEN
+            %PUT THE KAPITI2 EXTRACTION IS NOT DATED &RDATE;
+        %IF "&KAPITI3" NE "&RDATE" %THEN
+            %PUT THE KAPITI3 EXTRACTION IS NOT DATED &RDATE;
+        %PUT THE JOB IS NOT DONE !!;
+        %DO;
+           DATA A;
+              ABORT 77;
+        %END;
+  %END;
+%MEND;
+%PROCESS;
+DATA _NULL_;
+   FILE SFTP01;
+   IF DAY(TODAY())>2 OR (DAY(TODAY())=2 & HOUR(TIME())>20) THEN
+      PUT @1 "PUT //SAP.PBB.KAPMNI.RDAL       ""RDAL KAPMNI EIR.TXT"""
+           / "PUT //SAP.PBB.NSRS.KAPMNI.RDAL  ""NSRS KAPMNI EIR.TXT"""
+           ;
+   ELSE
+      PUT @1 "PUT //SAP.PBB.KAPMNI.RDAL       ""RDAL KAPMNI.TXT"""
+           / "PUT //SAP.PBB.NSRS.KAPMNI.RDAL  ""NSRS KAPMNI.TXT"""
+           ;
+RUN;
+//******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd "FD-BNM REPORTING/PBB/BNM RPTG"
+//           DD DISP=SHR,DSN=&&FTPPUT
+//           DD *
+EOB
+/*
+
+
+
+			
+==========================================  JOB 3 :  EIBMMISE ========================================== 				
+
+//EIBMMISE JOB MISEIS,EIBMMISE,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
+/*JOBPARM S=S1M2
+//EIBMMISE  EXEC SAS609,REGION=64M,WORK='250000,200000'
+//DEPOBACK  DD DSN=SAP.PBB.DEPOSIT(0),DISP=SHR
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//LMDEPT    DD DSN=SAP.PBB.MNITB(-4),DISP=SHR
+//BNM1      DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//LMLOAN    DD DSN=SAP.PBB.MNILN(-4),DISP=SHR
+//BNM       DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(100,50)),UNIT=SYSDA
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SYSIN     DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+
+DATA REPTDATE (KEEP=REPTDATE);
+  REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+                 PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+RUN;
+
+LIBNAME MIS  "SAP.PBB.MIS.D&REPTYEAR" DISP=OLD;
+
+%MACRO PROCESS;
+  %IF "&NOWK"="4" %THEN %DO;
+       PROC COPY IN=DEPOBACK OUT=BNM;
+         SELECT SAVG&REPTMON&NOWK
+                CURN&REPTMON&NOWK;
+       RUN;
+
+       %INC PGM(DEPMPBBD);
+
+       PROC DATASETS LIB=BNM NOLIST;
+         DELETE SAVG&REPTMON&NOWK
+                CURN&REPTMON&NOWK;
+       RUN;
+
+       PROC COPY IN=BNM1 OUT=BNM;
+         SELECT LOAN&REPTMON&NOWK
+                ULOAN&REPTMON&NOWK;
+       RUN;
+       %INC PGM(LNMHPBBD);
+  %END;
+  %ELSE
+  %DO;
+      %PUT THE JOB IS NOT DONE !!;
+  %END;
+%MEND;
+%PROCESS;
+
+//
+
+
+
+			
+==========================================  JOB 4 : EIIMMISE ========================================== 					
+
+
+//EIIMMISE JOB MISEIS,EIBMMISE,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
+/*JOBPARM S=S1M2
+//EIBMMISE  EXEC SAS609
+//DEPOBACK  DD DSN=SAP.PIBB.DEPOSIT(0),DISP=SHR
+//DEPOSIT   DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
+//LMDEPT    DD DSN=SAP.PIBB.MNITB(-4),DISP=SHR
+//BNM1      DD DSN=SAP.PIBB.SASDATA,DISP=SHR
+//LMLOAN    DD DSN=SAP.PIBB.MNILN(-4),DISP=SHR
+//BNM       DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(100,50)),UNIT=SYSDA
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SYSIN     DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+
+DATA REPTDATE (KEEP=REPTDATE);
+  REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+                 PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+RUN;
+
+LIBNAME MIS  "SAP.PIBB.MIS.D&REPTYEAR" DISP=OLD;
+
+%MACRO PROCESS;
+  %IF "&NOWK"="4" %THEN %DO;
+       PROC COPY IN=DEPOBACK OUT=BNM;
+         SELECT SAVG&REPTMON&NOWK
+                CURN&REPTMON&NOWK;
+       RUN;
+
+       %INC PGM(DEPMPBBD);
+
+       PROC DATASETS LIB=BNM NOLIST;
+         DELETE SAVG&REPTMON&NOWK
+                CURN&REPTMON&NOWK;
+       RUN;
+
+       PROC COPY IN=BNM1 OUT=BNM;
+         SELECT LOAN&REPTMON&NOWK
+                ULOAN&REPTMON&NOWK;
+       RUN;
+       %INC PGM(LNMHPBBD);
+  %END;
+  %ELSE
+  %DO;
+      %PUT THE JOB IS NOT DONE !!;
+  %END;
+%MEND;
+%PROCESS;
+
+//
+
+
+		
+==========================================  JOB 5 : EIBMRDMI ========================================== 			
+
+
+
+//EIBMRDMI JOB MISEIS,EIBMTH1A,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
+//*
+//* RDAL FOR ISLAMIC ITEMS
+//*
+//PRINT1   OUTPUT CLASS=X,
+//         NAME='MR TING CHEE CHONG',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='STATISTICS',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//*
+//EIBMRDMI  EXEC SAS609,REGION=8M
+//LOAN      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//DEPOSIT   DD DSN=SAP.PBB.DEPOSIT(0),DISP=SHR
+//BNMTBL1   DD DSN=SAP.PBB.KAPITI1(0),DISP=SHR
+//BNMTBL2   DD DSN=SAP.PBB.KAPITI2(0),DISP=SHR
+//BNMTBL3   DD DSN=SAP.PBB.KAPITI3(0),DISP=SHR
+//BNMK      DD DSN=SAP.PBB.KAPITI.SASDATA,DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT1)
+//SYSIN     DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+
+%INC PGM(PBBDPFMT,PBBLNFMT);
+
+DATA REPTDATE (KEEP=REPTDATE);
+  SET LOAN.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3';
+                            WK2= '2'; WK3 = '1'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('NOWK2',PUT(WK2,$1.));
+  CALL SYMPUT('NOWK3',PUT(WK3,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+RUN;
+
+LIBNAME BNM "SAP.PBB.D&REPTYEAR" DISP=SHR;
+
+%MACRO PROCESS;
+      %INC PGM(DEPRDALM);
+      %INC PGM(LOANRDAL);
+      %INC PGM(KALWPBBI);
+      %INC PGM(KALMPBBI);
+      %IF "&REPTMON" EQ "03" OR
+          "&REPTMON" EQ "06" OR
+          "&REPTMON" EQ "09" OR
+          "&REPTMON" EQ "12" %THEN %DO;
+           %INC PGM(FALQPBBI);
+           %INC PGM(LALQPBBI);
+           %INC PGM(KALQPBBI);
+      %END;
+%MEND;
+%PROCESS;
+
+				
+==========================================  JOB 6 : EIBMLIQI ========================================== 						
+
+
+//EIBMLIQI JOB MIS,MISEIS,COND=(4,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//PRINT1   OUTPUT CLASS=R,
+//         NAME='MR TING CHEE CHONG',
+//         ROOM='26TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='STATISTICS',
+//         ADDRESS=('FINANCE DIVISION','MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.RMT5
+//*
+//EIBMRLFI EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//FD       DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//CISLN    DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//CISDP    DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
+//BNMTBL1  DD DSN=SAP.PBB.KAPITI1(0),DISP=SHR
+//BNMTBL3  DD DSN=SAP.PBB.KAPITI3(0),DISP=SHR
+//BNMK     DD DSN=SAP.PBB.KAPITI.SASDATA,DISP=SHR
+//BNM      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(600,300)),UNIT=(SYSDA,5)
+//BNM1     DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.LIQP.ISLM(+1),
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=133,BLKSIZE=0),
+//            SPACE=(CYL,(2,2)),UNIT=SYSDA
+//SYSIN     DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950;
+*;
+DATA BNM.REPTDATE;
+   SET LOAN.REPTDATE;
+   SELECT(DAY(REPTDATE));
+      WHEN (8)  CALL SYMPUT('NOWK',PUT('1',$1.));
+      WHEN (15) CALL SYMPUT('NOWK',PUT('2',$1.));
+      WHEN (22) CALL SYMPUT('NOWK',PUT('3',$1.));
+      OTHERWISE CALL SYMPUT('NOWK',PUT('4',$1.));
+   END;
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+%INC PGM(DALWPBBD);
+%INC PGM(EIBMRLFI);
+*;
+
+
+	
+==========================================  JOB 7 : EIBMP124 ========================================== 		
+
+
+
+//EIBMP124 JOB MISEIS,EIBQTR1A,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,       JOB41711
+//         USER=OPCC
+//PRINT1    OUTPUT CLASS=R,
+//          NAME='THE MANAGER, (PBB)',
+//          ROOM='26TH FLOOR',
+//          BUILDING='MENARA PBB',
+//          DEPT='FINANCE DIV',
+//          ADDRESS='JALAN AMPANG',
+//          DEST=S1.RMT5
+//*
+//* SMR 2007-0925. RUN AFTER EIBMTH1A.
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.KAPMNI.RDAL124
+//*
+//EIBMP124  EXEC SAS609
+//LOAN      DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
+//LMLOAN    DD DSN=SAP.PIBB.MNILN(-4),DISP=SHR
+//RDALKM    DD DSN=SAP.PBB.KAPMNI.RDAL124,DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//            SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
+//TEMP      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(500,200)),UNIT=(SYSDA,5)
+//BNM       DD DSN=SAP.PBB.P124,DISP=OLD
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD SYSOUT=X
+//SYSIN     DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 NOCENTER;
+
+DATA REPTDATE;
+  SET LOAN.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3';
+                            WK2= '2'; WK3 = '1'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  MM2 = MM - 1;
+  IF MM2 = 0 THEN MM2 = 12;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('NOWK2',PUT(WK2,$1.));
+  CALL SYMPUT('NOWK3',PUT(WK3,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTMON2',PUT(MM2,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+RUN;
+LIBNAME BNM1 "SAP.PIBB.SASDATA" DISP=SHR;
+RUN;
+          %INC PGM(LALWP124);
+          %INC PGM(LALMP124);
+          %INC PGM(P124DL2A);
+          %INC PGM(P124RDLA);
+
+			
+==========================================  JOB 8 : EIBM1241 ========================================== 				
+
+
+
+//EIBM1241  JOB MISEIS,EIBMMTH1,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,
+//         USER=OPCC
+/*JOBPARM S=S1M2
+//PRINT1    OUTPUT CLASS=R,
+//          NAME='THE MANAGER, (PBB)',
+//          ROOM='26TH FLOOR',
+//          BUILDING='MENARA PBB',
+//          DEPT='FINANCE DIV',
+//          ADDRESS='JALAN AMPANG',
+//          DEST=S1.RMT5
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.FISS.RDAL124
+//*
+//EIBM1241  EXEC SAS609,REGION=8M,WORK='250000,200000'
+//LOAN      DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
+//LMLOAN    DD DSN=SAP.PIBB.MNILN(-4),DISP=SHR
+//RDAL      DD DSN=SAP.PBB.FISS.RDAL124,DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//             SPACE=(TRK,(10,5)),UNIT=SYSDA
+//RDALWK    DD DSN=&&WALK,DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//             SPACE=(TRK,(10,5)),UNIT=SYSDA
+//TEMP      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(100,50)),UNIT=SYSDA
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT1)
+//SYSIN     DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+DATA REPTDATE (KEEP=REPTDATE);
+  REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+                 PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+RUN;
+
+LIBNAME BNMX  "SAP.PIBB.D&REPTYEAR" DISP=SHR;
+LIBNAME BNM   "SAP.PBB.P124" DISP=OLD;
+
+      %INC PGM(P124DL1B);
+      %INC PGM(P124DL2B);
+      %INC PGM(P124RDLB);
+      %INC PGM(P124DAL1);
+      %INC PGM(P124DAL2);
+      %INC PGM(P124RDAL);
+
+			
+==========================================  JOB 9 : EIIMFGP3 ========================================== 				
+
+
+//EIIMFGP3 JOB MISEIS,EIBMFGP3,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//         NOTIFY=&SYSUID,REGION=8M,USER=OPCC
+/*JOBPARM S=S1M2
+//**********************************************************************
+//* FIXING LOAN & CURRENT A/C AFTER GP3
+//* BEFORE EIIMTH1A / EIIQTR1A
+//**********************************************************************
+//EIIMFPG3  EXEC SAS609,REGION=8M,WORK='12000,8000'
+//LOAN      DD DSN=SAP.PIBB.SASDATA,DISP=OLD
+//DEPOSIT   DD DSN=SAP.PIBB.MNITB(0),DISP=OLD
+//LIMIT     DD DSN=SAP.PIBB.MNILIMT(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SYSIN     DD *
+OPTIONS YEARCUTOFF=1950;
+
+%INC PGM(PBBLNFMT);
+
+DATA REPTDATE;
+  SET DEPOSIT.REPTDATE;
+  SELECT;
+     WHEN(1 <= DAY(REPTDATE) <= 8) CALL SYMPUT('NOWK', PUT('1', $1.));
+     WHEN(9 <= DAY(REPTDATE) <= 15) CALL SYMPUT('NOWK', PUT('2', $1.));
+     WHEN(16 <= DAY(REPTDATE) <= 22) CALL SYMPUT('NOWK', PUT('3', $1.));
+     OTHERWISE CALL SYMPUT('NOWK', PUT('4', $1.));
+  END;
+  CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+  CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+  CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+  CALL SYMPUT('RDATE', PUT(REPTDATE, DDMMYY8.));
+RUN;
+*;
+DATA GP3;
+   SET LIMIT.GP3;
+   RISKRTE = INPUT(RISKCODE,1.);
+   EXODDATE = EXCESSDT;
+   TEMPODDT = TODDATE;
+   ODSTAT = ODSTATUS;
+   RISKCD=PUT(RISKCODE, $RISKCD.);
+*;
+PROC SORT DATA=GP3 OUT=GP3; BY ACCTNO; RUN;
+PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN1; BY ACCTNO; RUN;
+
+DATA LOAN.LOAN&REPTMON&NOWK;
+   UPDATE LOAN1(IN=A)
+          GP3(IN=B KEEP=ACCTNO RISKRTE RISKCD);
+   BY ACCTNO;
+   IF A;
+RUN;
+DATA DEPOSIT.CURRENT;
+   UPDATE DEPOSIT.CURRENT(IN=A)
+          GP3(IN=B KEEP=ACCTNO EXODDATE TEMPODDT ODSTAT RISKCODE);
+   BY ACCTNO;
+   IF A;
+RUN;
+
+PROC SORT DATA=DEPOSIT.CURRENT OUT=CURRENT;
+   WHERE OPENIND NOT IN ('B','C','P') AND CURBAL < 0;
+   BY ACCTNO;
+RUN;
+PROC SORT DATA=LIMIT.OVERDFT
+   OUT=OVERDFT(RENAME=APPRLIMT=APPRLIM2) NODUPKEY;
+   BY ACCTNO;
+RUN;
+DATA OVERDFT(KEEP=ACCTNO APPRLIM2);
+  MERGE CURRENT (IN=A)
+        OVERDFT ;
+  BY ACCTNO;
+  IF A;
+RUN;
+
+PROC SORT DATA=LOAN.LOAN&REPTMON&NOWK OUT=LOAN1; BY ACCTNO; RUN;
+DATA LOAN.LOAN&REPTMON&NOWK;
+   MERGE  LOAN1(IN=A)
+          OVERDFT;
+   BY ACCTNO;
+   IF A;
+   IF APPRLIM2 EQ . THEN APPRLIM2 = 0;
+RUN;
+
+
+
+			
+==========================================  JOB 10 : EIBMTHLS ========================================== 			
+
+
+//EIBMTHLS JOB MSGCLASS=X,MSGLEVEL=(2,1),REGION=64M
+//*-------------------------------------------------------------------
+//* FILE NAME : FOREX_DCI_mmyy.XLS
+//* ESMR : 2017-1320
+//* EXTRACT DETAIL FOREX AND DCI TRANSACTIONS FOR TOTAL COMMITMENTS &
+//* CONTIGENCIES AND MONTHLY PURCHASES & SALES REPORTING
+//*-------------------------------------------------------------------
+//DELETE   EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PBB.FOREX.DCI.TEXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//*-------------------------------------------------------------------
+//EIBMTHLS EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//DEPO     DD DSN=SAP.PBB.DEPOSIT(0),DISP=SHR
+//OUTPUT   DD DSN=SAP.PBB.FOREX.DCI.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=1000,BLKSIZE=10000),
+//            SPACE=(TRK,(10,10)),UNIT=SYSDA
+//SYSIN    DD *
+
+OPTIONS NOCENTER YEARCUTOFF=1950 COMPRESS=Y;
+
+DATA REPTDATE;
+   REPTDATE=TODAY()-DAY(TODAY());
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('REPTDT',PUT(REPTDATE,YYMMDDN6.));
+RUN;
+
+%LET BIC=('57210','57299','57510','57599','57610','57620','57631',
+          '57632','57633','57639','57711','57712','57720','57730',
+          '57799','57110','57120','57130','57200','57410','57420',
+          '57430','57500','68504','78504');
+
+*------------------------------------------------*
+*  (A) Total Commitments & Contigencies          *
+*------------------------------------------------*;
+DATA FOREX;
+   SET DEPO.K1TBL&REPTMON DEPO.DCITBL&REPTMON;
+   WHERE SUBSTR(BNMCODE,1,5) IN &BIC;
+RUN;
+PROC SORT; BY BNMCODE; RUN;
+
+DATA FOREX;
+   SET FOREX;
+   BY BNMCODE;
+   DLM='05'X;
+   FILE OUTPUT;
+   IF _N_=1 THEN DO;
+      PUT @001 'PUBLIC BANK BERHAD'
+          /    'DETAIL FOREX AND DCI TRANSACTIONS FOR TOTAL COMMITMENTS'
+               ' & CONTIGENCIES AND MONTHLY PURCHASES & SALES'
+          /
+          /    '(A) Total Commitments & Contigencies'
+          /
+          ;
+   END;
+   AMOUNT = ABS(AMOUNT);
+   IF DCIAMT IN (.,0) THEN DCIAMT = AMOUNT;
+   IF FIRST.BNMCODE THEN DO;
+      RECNO = 0; TOTAMT = 0;
+      IF SUBSTR(BNMCODE,1,5) = '68504' AND PRN < 1 THEN DO;
+      PUT @001 '(B) Monthly Purchases & Sales'
+          /
+          ;
+          PRN+1;
+      END;
+
+      IF DCDLP IN ('DCI','RFO','TFO','PFO') THEN
+          PUT @001 'BNMCODE=' BNMCODE
+          /
+          /    'No'                                  DLM
+               'Reporting Date'                      DLM
+               'Deal Type'                           DLM
+               'Deal Reference'                      DLM
+               'Customer Name'                       DLM
+               'Customer Location'                   DLM
+               'Base Currency'                       DLM
+               'Base Amount'                         DLM
+               'Spot Value'                          DLM
+               'RM Equivalent'                       DLM
+               'Alternate Currency'                  DLM
+               'Customer Type'                       DLM
+               'Customer Long Name'                  DLM
+               'Residence Country'                   DLM
+               'Transaction Type'                    DLM
+               'Buy/Sell'                            DLM
+               'Customer Group'                      DLM
+               'Status Indicator'                    DLM
+               'Contract Date'                       DLM
+               'Maturity Date'                       DLM
+               'FISS Code'                           DLM
+               'Option Type'                         DLM
+               'Strike Rate'                         DLM
+          ;
+      ELSE
+          PUT @001 'BNMCODE=' BNMCODE
+          /
+          /    'NO'                                  DLM
+               'BALANCE - ORIGINAL CURRENCY'         DLM
+               'AMOUNT'                              DLM
+               'ACCOUNT SHORT NAME'                  DLM
+               'CUSTOMER TYPE'                       DLM
+               'RESIDENCE COUNTRY'                   DLM
+               'CCY'                                 DLM
+               'PARENT COUNTRY'                      DLM
+               'DEAL TYPE'                           DLM
+               'DEAL REFERENCE'                      DLM
+               'START DATE'                          DLM
+               'MOVEMENT TYPE'                       DLM
+               'MOVEMENT SUB-TYPE'                   DLM
+               'CUSTFISS'                            DLM
+               'OTHER CURRENCY MNEMONIC'             DLM
+               'CURRENT BUSINESS DATE'               DLM
+          ;
+   END;
+   RECNO+1;
+   TOTAMT+AMOUNT;
+   IF DCDLP IN ('DCI','RFO','TFO','PFO') THEN
+      PUT @001 RECNO                                 DLM
+               REPTDATE      DDMMYY10.               DLM
+               DCDLP                                 DLM
+               DCDLR                                 DLM
+               DCCUS                                 DLM
+               DCCLC                                 DLM
+               DCBCCY                                DLM
+               DCIAMT         COMMA20.2              DLM
+               C8SPT               11.7              DLM
+               AMOUNT         COMMA20.2              DLM
+               DCACCY                                DLM
+               GFCTP                                 DLM
+               GFCUN                                 DLM
+               GFCNAL                                DLM
+               DCTRNT                                DLM
+               DCBSI                                 DLM
+               ODGRP                                 DLM
+               STATUS                                DLM
+               DCCTRD        DDMMYY10.               DLM
+               DCMTYD        DDMMYY10.               DLM
+               CUSTCD              Z2.               DLM
+               OPTYPE                                DLM
+               STKRATE                               DLM
+          ;
+   ELSE
+      PUT @001 RECNO                                 DLM
+               GWBALA         COMMA20.2              DLM
+               AMOUNT         COMMA20.2              DLM
+               GWSHN                                 DLM
+               GWCTP                                 DLM
+               GWCNAL                                DLM
+               GWCCY                                 DLM
+               GWCNAP                                DLM
+               GWDLP                                 DLM
+               GWDLR                                 DLM
+               GWSDT         DDMMYY10.               DLM
+               GWMVT                                 DLM
+               GWMVTS                                DLM
+               GWC2R                                 DLM
+               GWOCY                                 DLM
+               GWCBD         DDMMYY10.               DLM
+               ;
+
+   IF LAST.BNMCODE THEN DO;
+      OUTPUT;
+      IF DCDLP IN ('DCI','RFO','TFO','PFO') THEN
+         PUT @001                                       DLM
+                                                        DLM
+                                                        DLM
+                                                        DLM
+                                                        DLM
+                                                        DLM
+                                                        DLM
+                                                        DLM
+                  'TOTAL'                               DLM
+                  TOTAMT         COMMA20.2              DLM
+             /
+             ;
+      ELSE
+         PUT @001                                       DLM
+                  'TOTAL'                               DLM
+                  TOTAMT         COMMA20.2              DLM
+             /
+             ;
+   END;
+RUN;
+//*-------------------------------------------------------------------
+//* FTP TO SAS DATAWAREHOUSE
+//*-------------------------------------------------------------------
+//*%OPC SCAN
+//*%OPC SETVAR TOYY=(OYY-15CD)
+//*%OPC SETVAR TOMM=(OMM-15CD)
+//*RUNSFTP  EXEC COZBATCH
+//*CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(CSASSFTP)
+//*           DD *
+//*lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+//*lzopts linerule=$lr
+//*cd TextFile/Fin
+//*PUT //SAP.PBB.FOREX.DCI.TEXT  FOREX_DCI_%TOMM.%TOYY..XLS
+//*EOB
+/*
+//*-------------------------------------------------------------------
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//*-------------------------------------------------------------------
+//*%OPC SCAN
+//*%OPC SETVAR TOYY=(OYY-15CD)
+//*%OPC SETVAR TOMM=(OMM-15CD)
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd "FD-BNM REPORTING/PBB/BNM RPTG"
+PUT //SAP.PBB.FOREX.DCI.TEXT  FOREX_DCI_%TOMM.%TOYY..XLS
+EOB
+/*
+
+
+
+==========================================  JOB 11 : EIBMTH1A ========================================== 			
+
+//EIBMTH1A JOB MISEIS,EIBMTH1A,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,
+//         USER=OPCC
+/*JOBPARM S=S1M2
+//*
+//PRINT1    OUTPUT CLASS=X
+//PRINT10   OUTPUT CLASS=R,
+//          NAME='THE MANAGER, (PBB)',
+//          ROOM='26TH FLOOR',
+//          BUILDING='MENARA PBB',
+//          DEPT='FINANCE DIV',
+//          ADDRESS='JALAN AMPANG',
+//          DEST=S1.LOCAL
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.KAPMNI.RDAL
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.NSRS.KAPMNI.RDAL
+//*
+//EIBMTH1A  EXEC SAS609,REGION=8M,WORK='250000,200000'
+//DEPOBACK  DD DSN=SAP.PBB.DEPOSIT(+1),DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(300,50),RLSE),UNIT=(SYSDA,5)
+//LOAN      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//FD        DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//LMLOAN    DD DSN=SAP.PBB.MNILN(-4),DISP=SHR
+//LMTE      DD DSN=SAP.PBB.MNILIMT(0),DISP=SHR
+//FEE       DD DSN=SAP.PBB.MNIFEE(0),DISP=SHR
+//DEPOSIT   DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//LMDEPT    DD DSN=SAP.PBB.MNITB(-4),DISP=SHR
+//CISDP     DD DSN=RBP2.B033.CCRIS.CISDEMO.DP.GDG(0),DISP=SHR
+//BNMTBL1   DD DSN=SAP.PBB.KAPITI1(0),DISP=SHR
+//BNMTBL2   DD DSN=SAP.PBB.KAPITI2(0),DISP=SHR
+//BNMTBL3   DD DSN=SAP.PBB.KAPITI3(0),DISP=SHR
+//BNMTBLX   DD DSN=SAP.PBB.KAPITIX.TXT(0),DISP=SHR
+//DCIMTBL   DD DSN=SAP.PBB.DCIMNLY(0),DISP=SHR
+//DCIWH     DD DSN=SAP.PBB.DCIWH,DISP=SHR
+//NID       DD DSN=SAP.PBB.RNID.SASDATA,DISP=SHR
+//BNMK      DD DSN=SAP.PBB.KAPITI.SASDATA,DISP=OLD
+//EQ        DD DSN=SAP.PBB.WEQUT(0),DISP=SHR
+//DISPAY    DD DSN=SAP.PBB.DISPAY,DISP=SHR
+//DAILY     DD DSN=SAP.PBB.DISPAY.DAILY,DISP=SHR
+//LNHIST    DD DSN=SAP.PBB.LNHIST,DISP=SHR
+//FORATE    DD DSN=SAP.PBB.FCYCA,DISP=SHR
+//WOMV      DD DSN=SAP.PBB.WOF.WOMV,DISP=SHR
+//SASD      DD DSN=SAP.PBB.STORE.SASDATA,DISP=SHR
+//UMA       DD DSN=SAP.PBB.UMA.DAILY(0),DISP=SHR
+//RDALKM    DD DSN=SAP.PBB.KAPMNI.RDAL,DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//            SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
+//NSRSKM    DD DSN=SAP.PBB.NSRS.KAPMNI.RDAL,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//             SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
+//TEMP      DD DSN=SAP.TEMP,DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(100,50)),UNIT=(SYSDA,5)
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SFTP01    DD DSN=&&FTPPUT,DISP=(NEW,PASS),
+//             SPACE=(TRK,(1)),UNIT=SYSDA,RECFM=FB,LRECL=80
+//SASLIST   DD SYSOUT=(,),OUTPUT=(*.PRINT1)
+//SYSIN     DD *
+
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+
+DATA REPTDATE (KEEP=REPTDATE);
+  REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+                 PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3';
+                            WK2= '2'; WK3 = '1'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  MM2 = MM - 1;
+  IF MM2 = 0 THEN MM2 = 12;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  SDESC = 'PUBLIC BANK BERHAD';
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT('1',$1.));
+  CALL SYMPUT('NOWK2',PUT('2',$1.));
+  CALL SYMPUT('NOWK3',PUT('3',$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTMON2',PUT(MM2,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTYR',PUT(REPTDATE,YEAR2.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('TDATE',REPTDATE);
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+  CALL SYMPUT('SDESC',PUT(SDESC,$26.));
+RUN;
+
+LIBNAME BNM "SAP.PBB.D&REPTYEAR" DISP=OLD;
+LIBNAME BNM1 "SAP.PBB.SASDATA" DISP=SHR;
+  /*
+LIBNAME MIS "SAP.PBB.MIS.D&REPTYEAR" DISP=OLD;
+LIBNAME BNMCD "SAP.PBB.RPT.SASDATA" DISP=OLD;
+  */
+DATA _NULL_;
+  SET LOAN.REPTDATE(OBS=1);
+  CALL SYMPUT('LOAN', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  SET DEPOSIT.REPTDATE(OBS=1);
+  CALL SYMPUT('DEPOSIT', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  SET FD.REPTDATE(OBS=1);
+  CALL SYMPUT('FD', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  INFILE BNMTBL1 OBS=1 DELIMITER = '|' DSD MISSOVER;
+  INPUT REPTDATE : YYMMDD8.;
+  CALL SYMPUT('KAPITI1', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  INFILE BNMTBL2 OBS=1 DELIMITER = '|' DSD MISSOVER;
+  INPUT REPTDATE : YYMMDD8. ;
+  CALL SYMPUT('KAPITI2', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+DATA _NULL_;
+  INFILE BNMTBL3 OBS=1 DELIMITER = '|' DSD MISSOVER;
+  INPUT REPTDATE : YYMMDD8.;
+  CALL SYMPUT('KAPITI3', PUT(REPTDATE, DDMMYY8.));
+RUN;
+
+%MACRO PROCESS;
+  %IF "&LOAN"="&RDATE" AND
+      "&DEPOSIT"="&RDATE" AND
+      "&FD"="&RDATE" AND
+      "&KAPITI1"="&RDATE" AND
+      "&KAPITI2"="&RDATE" AND
+      "&KAPITI3"="&RDATE" %THEN %DO;
+
+      /*** REPORT ON DOMESTIC ASSETS AND LIABILITIES ***/
+      %INC PGM(DALMPBBD);
+      %INC PGM(DALWBP);
+      %INC PGM(DALMBP);
+  /*  %INC PGM(DEPMPBBD); */
+      PROC COPY IN=BNM OUT=DEPOBACK;
+        SELECT SAVG&REPTMON&NOWK
+               CURN&REPTMON&NOWK
+               DEPT&REPTMON&NOWK;
+      RUN;
+      PROC DATASETS LIB=BNM NOLIST;
+        DELETE SAVG&REPTMON&NOWK
+               CURN&REPTMON&NOWK
+               DEPT&REPTMON&NOWK;
+      RUN;
+      %INC PGM(FALMPBBD);
+      %INC PGM(FALWPBBP);
+      %INC PGM(FALMPBBP);
+      PROC COPY IN=BNM OUT=DEPOBACK;
+        SELECT FDWKLY
+               FDMTHLY;
+      RUN;
+      PROC DATASETS LIB=BNM NOLIST;
+        DELETE FDWKLY
+               FDMTHLY;
+      RUN;
+      PROC COPY IN=BNM1 OUT=BNM;
+        SELECT LOAN&REPTMON&NOWK
+               ULOAN&REPTMON&NOWK;
+      RUN;
+      PROC DATASETS LIB=WORK KILL NOLIST; RUN;
+  /*  %INC PGM(LNMHPBBD);
+      PROC DATASETS LIB=WORK KILL NOLIST; RUN;  */
+      %INC PGM(LALWPBBP);
+      %INC PGM(LALMPBBP);
+      PROC DATASETS LIB=WORK KILL NOLIST; RUN;
+      PROC DATASETS LIB=BNM NOLIST;
+        DELETE LOAN&REPTMON&NOWK
+               ULOAN&REPTMON&NOWK;
+      RUN;
+      %INC PGM(KALWPBBP);
+      %INC PGM(KALMPBBP);
+      %INC PGM(KALMSTOR);
+      %INC PGM(NALMPBBP);
+      %INC PGM(EIBRDL1A);
+      %INC PGM(EIBRDL2A);
+      %INC PGM(KALMLIFE);
+      %INC PGM(EIBMSAPC);
+      %INC PGM(EIBWRDLA);
+      PROC DATASETS LIB=WORK KILL NOLIST; RUN;
+  %END;
+  %ELSE %DO;
+        %IF "&LOAN" NE "&RDATE" %THEN
+            %PUT THE LOAN EXTRACTION IS NOT DATED &RDATE;
+        %IF "&DEPOSIT" NE "&RDATE" %THEN
+            %PUT THE DEPOSIT EXTRACTION IS NOT DATED &RDATE;
+        %IF "&FD" NE "&RDATE" %THEN
+            %PUT THE FD EXTRACTION IS NOT DATED &RDATE;
+        %IF "&KAPITI1" NE "&RDATE" %THEN
+            %PUT THE KAPITI1 EXTRACTION IS NOT DATED &RDATE;
+        %IF "&KAPITI2" NE "&RDATE" %THEN
+            %PUT THE KAPITI2 EXTRACTION IS NOT DATED &RDATE;
+        %IF "&KAPITI3" NE "&RDATE" %THEN
+            %PUT THE KAPITI3 EXTRACTION IS NOT DATED &RDATE;
+        %PUT THE JOB IS NOT DONE !!;
+        %DO;
+           DATA A;
+              ABORT 77;
+        %END;
+  %END;
+%MEND;
+%PROCESS;
+DATA _NULL_;
+   FILE SFTP01;
+   IF DAY(TODAY())>2 OR (DAY(TODAY())=2 & HOUR(TIME())>20) THEN
+      PUT @1 "PUT //SAP.PBB.KAPMNI.RDAL       ""RDAL KAPMNI EIR.TXT"""
+           / "PUT //SAP.PBB.NSRS.KAPMNI.RDAL  ""NSRS KAPMNI EIR.TXT"""
+           ;
+   ELSE
+      PUT @1 "PUT //SAP.PBB.KAPMNI.RDAL       ""RDAL KAPMNI.TXT"""
+           / "PUT //SAP.PBB.NSRS.KAPMNI.RDAL  ""NSRS KAPMNI.TXT"""
+           ;
+RUN;
+//******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd "FD-BNM REPORTING/PBB/BNM RPTG"
+//           DD DISP=SHR,DSN=&&FTPPUT
+//           DD *
+EOB
+/*
+
+
+
