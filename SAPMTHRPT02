@@ -1,4 +1,80 @@
-===================================================  JOB 1 : EIBMRPT2  ===================================================			
+===================================================  JOB 1 : EIBMRPT2  ===================================================		
+
+import subprocess
+import sys
+from pathlib import Path
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+OUTPUT_FILES = [
+    "SAP.PBB.DMMISR03.TEXT",
+    "SAP.PBB.DMMISR05.TEXT",
+    "SAP.PBB.DMMISR06.TEXT",
+    "SAP.PBB.DMMISR07.TEXT",
+    "SAP.PBB.DMMISR08.TEXT",
+    "SAP.PBB.DMMISR10.TEXT",
+    "SAP.PBB.MOVE.DP1M",
+    "SAP.PBB.FDMISR08.TXT",
+    "SAP.PBB.FDMISR09.TXT"
+]
+
+SCRIPTS = [
+    "dmmisr03.py",
+    "dmmisr05.py",
+    "dmmisr06.py",
+    "dmmisr07.py",
+    "dmmisr08.py",
+    "dmmisr10.py",
+    "dmmisr15.py",
+    "fdmisr08.py",
+    "fdmisr09.py"
+]
+
+OUTPUT_DIR = Path("output")
+
+# ==========================================================
+# STEP 1 — DELETE OLD OUTPUT
+# ==========================================================
+
+def delete_old_files():
+    for filename in OUTPUT_FILES:
+        file_path = OUTPUT_DIR / filename
+        if file_path.exists():
+            file_path.unlink()
+            print(f"Deleted {filename}")
+
+# ==========================================================
+# STEP 2 — RUN SCRIPTS SEQUENTIALLY
+# ==========================================================
+
+def run_scripts():
+    for script in SCRIPTS:
+        print(f"Running {script}...")
+        result = subprocess.run(
+            ["python", script],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print(f"Error in {script}")
+            print(result.stderr)
+            sys.exit(1)
+
+        print(f"{script} completed successfully.")
+
+# ==========================================================
+# MAIN
+# ==========================================================
+
+if __name__ == "__main__":
+    delete_old_files()
+    run_scripts()
+    print("EIBMRPT2 batch completed.")
+
+
 
 //EIBMRPT2 JOB MISEIS,EIBMRPT1,COND=(4,LT),CLASS=A,MSGCLASS=X,
 //         NOTIFY=&SYSUID
@@ -218,7 +294,78 @@
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(FDMISR09),DISP=SHR
 
 
-===================================================  JOB 2 : EIIMRPT2  ===================================================				
+===================================================  JOB 2 : EIIMRPT2  ===================================================		
+
+
+import subprocess
+import sys
+from pathlib import Path
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+BANK = "PIBB"
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+OUTPUT_FILES = [
+    f"SAP.{BANK}.MOVE.DP1M",
+    f"SAP.{BANK}.DMMISI04",
+    f"SAP.{BANK}.FDMISR08.TXT",
+    f"SAP.{BANK}.FDMISR09.TXT",
+    f"SAP.{BANK}.DMMISR10"
+]
+
+SCRIPTS = [
+    "dmmisi04.py",
+    "dmmisr10_islamic.py",
+    "dmmisr15_islamic.py",
+    "fdmisr08_islamic.py",
+    "fdmisr09_islamic.py"
+]
+
+# ==========================================================
+# STEP 1 — DELETE OLD OUTPUT
+# ==========================================================
+
+def delete_old_files():
+    for filename in OUTPUT_FILES:
+        file_path = OUTPUT_DIR / filename
+        if file_path.exists():
+            file_path.unlink()
+            print(f"Deleted {filename}")
+
+# ==========================================================
+# STEP 2 — RUN SCRIPTS SEQUENTIALLY
+# ==========================================================
+
+def run_scripts():
+    for script in SCRIPTS:
+        print(f"Running {script}...")
+        result = subprocess.run(
+            ["python", script],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print(f"Error in {script}")
+            print(result.stderr)
+            sys.exit(1)
+
+        print(f"{script} completed successfully.")
+
+# ==========================================================
+# MAIN
+# ==========================================================
+
+if __name__ == "__main__":
+    delete_old_files()
+    run_scripts()
+    print("EIIMRPT2 Islamic batch completed.")
+
+
 
 //EIIMRPT2 JOB MISEIS,EIBMRPT1,COND=(4,LT),CLASS=A,MSGCLASS=X,
 //         NOTIFY=&SYSUID
@@ -314,6 +461,217 @@
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(FDMISI09),DISP=SHR
 
 ===================================================  JOB 3 : EIBXCRRA  ===================================================				
+
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from pathlib import Path
+
+# ==========================================================
+# CONFIGURATION
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+# ----------------------------------------------------------
+# Utility: Fixed-width writer (FB LRECL=80)
+# ----------------------------------------------------------
+
+def write_fixed_width_crr(df: pd.DataFrame, output_file: Path):
+    with open(output_file, "w", newline="\n") as f:
+        for _, row in df.iterrows():
+            line = (
+                f"{int(row.BRANCH):>3}"
+                f"  "
+                f"{row.GRADEX:<1}"
+                f" "
+                f"{row.CATG:<2}"
+                f"  "
+                f"{int(row.ACCT):>8}"
+                f"  "
+                f"{row.BALANCE:>12.2f}"
+            )
+            f.write(line.ljust(80)[:80] + "\n")
+
+
+# ==========================================================
+# STEP 1 — LOAD REPORT DATE
+# ==========================================================
+
+reptdate_df = pd.read_parquet(INPUT_DIR / "REPTDATE.parquet")
+reptdate = reptdate_df["REPTDATE"].iloc[0]
+
+day = reptdate.day
+month = reptdate.month
+year = reptdate.year
+
+if day == 8:
+    week = "1"
+    sdd = 1
+elif day == 15:
+    week = "2"
+    sdd = 9
+elif day == 22:
+    week = "3"
+    sdd = 16
+else:
+    week = "4"
+    sdd = 23
+
+sdate = datetime(year, month, day)
+
+loan_dataset_name = f"LOAN{month:02d}{week}"
+
+# ==========================================================
+# STEP 2 — OD (CURRENT ACCOUNT NEGATIVE)
+# ==========================================================
+
+current = pd.read_parquet(INPUT_DIR / "CURRENT.parquet")
+limit_df = pd.read_parquet(INPUT_DIR / "OVERDFT.parquet")
+
+ca = current[current["CURBAL"] < 0].copy()
+ca["BALANCE"] = ca["CURBAL"].abs()
+ca["DAYSARR"] = 0
+
+od = ca.merge(limit_df, on="ACCTNO", how="left")
+
+product_exclusion = {
+    103,104,105,106,107,116,119,120,126,127,128,129,137,138,
+    140,141,142,144,145,146,147,148,149,151,154,155,158,
+    164,171,172,173,177,178,180,181,182,191,192,193,194,
+    195,549,550
+}
+
+od = od[
+    (od["APPRLIMT"] > 0) &
+    (od["LMTAMT"] > 0) &
+    (od["USER3"] != "5") &
+    (~od["RISKCODE"].isin(["1","2","3","4"])) &
+    (~od["ORGCODE"].isin(["001","1"])) &
+    (~od["PRODUCT"].isin(product_exclusion))
+].copy()
+
+od["CATG"] = "OD"
+od["GRADEX"] = np.where(
+    od["CRRCODE"].str[0].isin(list("ABCDE")),
+    od["CRRCODE"].str[0],
+    od["FAACRR"].str[0]
+)
+
+# ==========================================================
+# STEP 3 — LOANS (HL / FL)
+# ==========================================================
+
+note = pd.read_parquet(INPUT_DIR / "LNNOTE.parquet")
+loan = pd.read_parquet(INPUT_DIR / f"{loan_dataset_name}.parquet")
+
+note = note[
+    (note["NOTENO"] > 0) &
+    (note["CORPCODE"] != "C") &
+    (note["ORGTYPE"] != "E") &
+    (note["BALANCE"] > 1.0)
+].copy()
+
+loan = loan[
+    (loan["NOTENO"] > 0) &
+    (loan["BALANCE"] > 1.0)
+]
+
+loan_full = note.merge(
+    loan,
+    on=["ACCTNO","NOTENO"],
+    how="inner"
+)
+
+loan_full = loan_full[~loan_full["RISKRTE"].isin([1,2,3,4])]
+
+loan_full["DAYSARR"] = (
+    (sdate - loan_full["BLDATE"]).dt.days.clip(lower=0)
+)
+
+fixed_products = {300,301,302,304,305,309,310,320,325,335,350,
+                  355,356,357,358,359,360,361,500,504,505,506,
+                  509,510,515,520,521,522,526,528,529,524,525,
+                  527,530,531,556,559,560,564,565,566,567,568,
+                  569,570,573}
+
+hire_products = {110,111,112,113,114,115,116,117,118,120,
+                 139,140,141,142,143,225,226,244,245,246,247,
+                 200,201,204,205,209,210,211,212,214,215,
+                 219,220,227,228,230,231,232,233,234,235,236,
+                 237,238,239,240,241,242,243}
+
+loan_full["CATG"] = np.select(
+    [
+        loan_full["PRODUCT"].isin(fixed_products),
+        loan_full["PRODUCT"].isin(hire_products)
+    ],
+    ["FL","HL"],
+    default=None
+)
+
+loan_full = loan_full[loan_full["CATG"].notna()].copy()
+
+loan_full["ACCT"] = 1
+
+# ==========================================================
+# STEP 4 — COMBINE
+# ==========================================================
+
+od["ACCT"] = 1
+
+accts = pd.concat([
+    od[["BRANCH","CATG","GRADEX","ACCT","BALANCE"]],
+    loan_full[["BRANCH","CATG","GRADEX","ACCT","BALANCE"]]
+])
+
+accts["GRADEX"] = accts["GRADEX"].where(
+    accts["GRADEX"].isin(list("ABCDE")),
+    "X"
+)
+
+# ==========================================================
+# STEP 5 — AGGREGATE
+# ==========================================================
+
+summary = (
+    accts
+    .groupby(["BRANCH","CATG","GRADEX"], as_index=False)
+    .agg({
+        "ACCT":"sum",
+        "BALANCE":"sum"
+    })
+)
+
+# ==========================================================
+# STEP 6 — GENERATE FULL MATRIX
+# ==========================================================
+
+branches = range(2,269)
+categories = ["OD","HL","FL","OL"]
+grades = list("ABCDEX")
+
+full = pd.MultiIndex.from_product(
+    [branches,categories,grades],
+    names=["BRANCH","CATG","GRADEX"]
+).to_frame(index=False)
+
+final = full.merge(
+    summary,
+    on=["BRANCH","CATG","GRADEX"],
+    how="left"
+).fillna({"ACCT":0,"BALANCE":0})
+
+# ==========================================================
+# STEP 7 — WRITE OUTPUT (FB LRECL=80)
+# ==========================================================
+
+write_fixed_width_crr(final, OUTPUT_DIR / "SAP.PBB.XCRR.TEXT")
+
+
 
 //EIBXCRRA  JOB 224T,'EIBWCCR5',CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
 //          NOTIFY=&SYSUID,REGION=64M
@@ -554,6 +912,130 @@ DATA CRR;
 *;
 
 ===================================================  JOB 4 : EIBRCRRA  ===================================================			
+
+
+import pandas as pd
+from pathlib import Path
+from datetime import datetime
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+INPUT_FILE = INPUT_DIR / "SAP.PBB.XCRR.TEXT"
+OUTPUT_FILE = OUTPUT_DIR / "SAP.PBB.XCRR.HO.TEXT"
+
+# ==========================================================
+# STEP 1 — READ FIXED-WIDTH CRR FILE (FB LRECL=80)
+# ==========================================================
+
+colspecs = [
+    (0, 3),    # BRANCH
+    (4, 5),    # GRADE
+    (6, 8),    # CATG
+    (11, 17),  # ACCT
+    (18, 31)   # BALANCE
+]
+
+df = pd.read_fwf(
+    INPUT_FILE,
+    colspecs=colspecs,
+    header=None,
+    names=["BRANCH","GRADE","CATG","ACCT","BALANCE"],
+    dtype={"BRANCH": int, "GRADE": str, "CATG": str}
+)
+
+df["ACCT"] = df["ACCT"].astype(int)
+df["BALANCE"] = df["BALANCE"].astype(float)
+
+# ==========================================================
+# STEP 2 — SUMMARY (MATCH PROC SUMMARY)
+# ==========================================================
+
+summary = (
+    df
+    .groupby(["BRANCH","CATG","GRADE"], as_index=False)
+    .agg({
+        "ACCT":"sum",
+        "BALANCE":"sum"
+    })
+)
+
+# ==========================================================
+# STEP 3 — TOTALS
+# ==========================================================
+
+total_accounts = summary["ACCT"].sum()
+total_balance = summary["BALANCE"].sum()
+
+summary["PCACT"] = (
+    (summary["ACCT"] / total_accounts) * 100
+    if total_accounts > 0 else 0
+)
+
+summary["PCAMT"] = (
+    (summary["BALANCE"] / total_balance) * 100
+    if total_balance > 0 else 0
+)
+
+# ==========================================================
+# STEP 4 — SORT BY GRADE
+# ==========================================================
+
+summary = summary.sort_values(["GRADE"])
+
+# ==========================================================
+# STEP 5 — WRITE FIXED REPORT (FB LRECL=80)
+# ==========================================================
+
+def write_report(df, output_file):
+
+    with open(output_file, "w", newline="\n") as f:
+
+        f.write("PUBLIC BANK BERHAD".ljust(80) + "\n")
+        f.write("ANNUAL LISTING OF TOTAL RETAIL LOANS".ljust(80) + "\n")
+        f.write("NOTE: X=NOT GRADED".ljust(80) + "\n")
+        f.write("-"*80 + "\n")
+
+        header = (
+            f"{'CRR GRADE':<10}"
+            f"{'NO OF ACCOUNTS':>15}"
+            f"{'%':>8}"
+            f"{'OUTSTANDING BALANCE':>25}"
+            f"{'%':>8}"
+        )
+        f.write(header.ljust(80) + "\n")
+        f.write("-"*80 + "\n")
+
+        for _, row in df.iterrows():
+            line = (
+                f"{row.GRADE:<10}"
+                f"{row.ACCT:>15,}"
+                f"{row.PCACT:>8.3f}"
+                f"{row.BALANCE:>25,.2f}"
+                f"{row.PCAMT:>8.3f}"
+            )
+            f.write(line.ljust(80)[:80] + "\n")
+
+        f.write("-"*80 + "\n")
+
+        total_line = (
+            f"{'TOTAL':<10}"
+            f"{total_accounts:>15,}"
+            f"{100.000:>8.3f}"
+            f"{total_balance:>25,.2f}"
+            f"{100.000:>8.3f}"
+        )
+        f.write(total_line.ljust(80)[:80] + "\n")
+
+write_report(summary, OUTPUT_FILE)
+
+
+
 //EIBRCRRA  JOB 224T,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
 //          NOTIFY=&SYSUID,REGION=32M
 //*
@@ -643,6 +1125,167 @@ ENDCOMP;
 
 
 ===================================================  JOB 5 : EIBRCRRB  ===================================================			
+
+
+
+
+
+
+import pandas as pd
+from pathlib import Path
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_DIR = Path("output")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+CRR_FILE = INPUT_DIR / "SAP.PBB.XCRR.TEXT"
+BRANCH_FILE = INPUT_DIR / "BRANCH.MASTER"
+OUTPUT_FILE = OUTPUT_DIR / "SAP.PBB.XCRR.COLD"
+
+# ==========================================================
+# STEP 1 — READ CRR FIXED-WIDTH FILE
+# ==========================================================
+
+colspecs = [
+    (0, 3),
+    (4, 5),
+    (6, 8),
+    (11, 17),
+    (18, 31)
+]
+
+df = pd.read_fwf(
+    CRR_FILE,
+    colspecs=colspecs,
+    header=None,
+    names=["BRANCH","GRADE","CATG","ACCT","BALANCE"]
+)
+
+df["ACCT"] = df["ACCT"].astype(int)
+df["BALANCE"] = df["BALANCE"].astype(float)
+
+# ==========================================================
+# STEP 2 — SUMMARY
+# ==========================================================
+
+summary = (
+    df
+    .groupby(["BRANCH","CATG","GRADE"], as_index=False)
+    .agg({
+        "ACCT":"sum",
+        "BALANCE":"sum"
+    })
+)
+
+# Branch totals
+branch_totals = (
+    summary
+    .groupby("BRANCH", as_index=False)
+    .agg({
+        "ACCT":"sum",
+        "BALANCE":"sum"
+    })
+    .rename(columns={
+        "ACCT":"BRACT",
+        "BALANCE":"BRAMT"
+    })
+)
+
+# ==========================================================
+# STEP 3 — MERGE TOTALS
+# ==========================================================
+
+summary = summary.merge(branch_totals, on="BRANCH", how="left")
+
+summary["PCACT"] = (
+    summary["ACCT"] / summary["BRACT"] * 100
+)
+
+summary["PCAMT"] = (
+    summary["BALANCE"] / summary["BRAMT"] * 100
+)
+
+# ==========================================================
+# STEP 4 — READ BRANCH MASTER
+# ==========================================================
+
+branch_cols = [
+    (1,4),    # BRX
+    (11,41)   # BRNAME
+]
+
+branch_df = pd.read_fwf(
+    BRANCH_FILE,
+    colspecs=branch_cols,
+    header=None,
+    names=["BRANCH","BRNAME"]
+)
+
+branch_df["BRANCH"] = branch_df["BRANCH"].astype(int)
+
+summary = summary.merge(branch_df, on="BRANCH", how="left")
+
+summary["BRANCH_LABEL"] = (
+    "NO.: "
+    + summary["BRANCH"].astype(str).str.zfill(3)
+    + "  "
+    + summary["BRNAME"].fillna("")
+)
+
+# ==========================================================
+# STEP 5 — WRITE FBA REPORT (LRECL=150)
+# ==========================================================
+
+def write_fba_line(f, text):
+    # FBA requires leading blank for carriage control
+    line = " " + text
+    f.write(line.ljust(150)[:150] + "\n")
+
+with open(OUTPUT_FILE, "w", newline="\n") as f:
+
+    for branch, group in summary.groupby("BRANCH_LABEL"):
+
+        write_fba_line(f, "")
+        write_fba_line(f, branch)
+        write_fba_line(f, "-"*120)
+
+        pivot = (
+            group
+            .pivot_table(
+                index="GRADE",
+                columns="CATG",
+                values=["ACCT","PCACT","BALANCE","PCAMT"],
+                fill_value=0
+            )
+        )
+
+        pivot = pivot.sort_index()
+
+        for grade, row in pivot.iterrows():
+            write_fba_line(
+                f,
+                f"Grade {grade:<2} "
+                f"ACCT={int(row['ACCT'].sum()):>8} "
+                f"AMT={row['BALANCE'].sum():>15,.2f}"
+            )
+
+        write_fba_line(f, "-"*120)
+
+
+
+
+
+
+
+
+
+
+
+
 //EIBRCRRB  JOB 224T,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
 //          NOTIFY=&SYSUID,REGION=32M
 //*
@@ -738,7 +1381,138 @@ TABLE GRADE=' ' ALL='TOTAL',(CATG=' ' ALL='TOTAL')*SUM=' '*
 *;
 
 
-===================================================  JOB 6 : EIBRCRRD  ===================================================				
+===================================================  JOB 6 : EIBRCRRD  ===================================================		
+
+
+import pandas as pd
+from pathlib import Path
+from datetime import datetime
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_DIR = Path("warehouse")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+ACCTS_FILE = INPUT_DIR / "E1271_ACCTS.parquet"
+REPTDATE_FILE = INPUT_DIR / "REPTDATE.parquet"
+
+# ==========================================================
+# STEP 1 — LOAD REPORT DATE
+# ==========================================================
+
+reptdate_df = pd.read_parquet(REPTDATE_FILE)
+reptdate = reptdate_df["REPTDATE"].iloc[0]
+report_year = reptdate.year
+
+# ==========================================================
+# STEP 2 — LOAD ACCOUNT DATA
+# ==========================================================
+
+df = pd.read_parquet(ACCTS_FILE)
+
+# ==========================================================
+# STEP 3 — FILTER HIGH RISK
+# ==========================================================
+
+df = df[df["GRADEX"].isin(["D","E","X"])].copy()
+
+# SAS logic: X becomes blank
+df["GRADEX"] = df["GRADEX"].replace({"X": " "})
+
+# ==========================================================
+# STEP 4 — SPLIT DATASETS
+# ==========================================================
+
+od = df[df["CATG"] == "OD"].copy()
+ol = df[df["CATG"] == "OL"].copy()
+fl = df[df["CATG"] == "FL"].copy()
+hl = df[df["CATG"] == "HL"].copy()
+
+# ==========================================================
+# STEP 5 — PROCESS OD & OL
+# ==========================================================
+
+def process_overdraft(data):
+
+    if data.empty:
+        return data
+
+    data["CURBAL"] = -1 * data["BALANCE"]
+
+    # Convert EXCESSDT numeric YYYYMMDDxxxxx
+    def parse_excessdt(val):
+        if pd.isna(val) or val == 0:
+            return pd.NaT
+        val_str = str(int(val)).zfill(11)
+        date_part = val_str[:8]
+        return pd.to_datetime(date_part, format="%m%d%Y", errors="coerce")
+
+    if "EXCESSDT" in data.columns:
+        data["EXCESSD"] = data["EXCESSDT"].apply(parse_excessdt)
+
+    return data[
+        [
+            "BRANCH","BRCHCD","ACCTNO","NAME",
+            "APPRLIMT","CURBAL","GRADEX",
+            "CRRCODE","FAACRR","PRODUCT","EXCESSD"
+        ]
+    ]
+
+od = process_overdraft(od)
+ol = process_overdraft(ol)
+
+# ==========================================================
+# STEP 6 — PROCESS FL & HL
+# ==========================================================
+
+def process_loans(data):
+
+    if data.empty:
+        return data
+
+    return data[
+        [
+            "BRANCH","BRCHCD","ACCTNO","NOTENO",
+            "NAME","APPRLIMT","GRADEX",
+            "BALANCE","SCORE1","SCORE2",
+            "PRODUCT","DAYSARR"
+        ]
+    ]
+
+fl = process_loans(fl)
+hl = process_loans(hl)
+
+# ==========================================================
+# STEP 7 — SORT
+# ==========================================================
+
+if not od.empty:
+    od = od.sort_values(["BRANCH","ACCTNO"])
+
+if not ol.empty:
+    ol = ol.sort_values(["BRANCH","ACCTNO"])
+
+if not fl.empty:
+    fl = fl.sort_values(["BRANCH","ACCTNO"])
+
+if not hl.empty:
+    hl = hl.sort_values(["BRANCH","ACCTNO"])
+
+# ==========================================================
+# STEP 8 — EXPORT (Warehouse Equivalent of CPORT)
+# ==========================================================
+
+od.to_parquet(OUTPUT_DIR / f"CROD{report_year}.parquet", index=False)
+ol.to_parquet(OUTPUT_DIR / f"CROL{report_year}.parquet", index=False)
+fl.to_parquet(OUTPUT_DIR / f"CRFL{report_year}.parquet", index=False)
+hl.to_parquet(OUTPUT_DIR / f"CRHL{report_year}.parquet", index=False)
+
+print("CRR warehouse extraction complete.")
+
+
 //EIBRCRRD  JOB 224T,'EIBWCCR5',CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
 //          NOTIFY=&SYSUID,REGION=64M
 //*
@@ -821,6 +1595,145 @@ RUN;
 
 
 ===================================================  JOB 7 : EIBMSCR1  ===================================================				
+
+
+import pandas as pd
+from pathlib import Path
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_FILE = Path("output/SAP.PBB.XCRR.COLD")
+
+BRANCH_FILE = INPUT_DIR / "BRANCH.MASTER"
+SRSBR_FILE = INPUT_DIR / "SRSBR.parquet"
+REPTDATE_FILE = INPUT_DIR / "REPTDATE.parquet"
+
+LRECL = 133
+
+# ==========================================================
+# UTIL: Write FBA Line
+# ==========================================================
+
+def write_fba(f, text=""):
+    line = " " + text  # column 1 carriage control
+    f.write(line.ljust(LRECL)[:LRECL] + "\n")
+
+# ==========================================================
+# STEP 1 — LOAD REPORT DATE
+# ==========================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rdate = rept["REPTDATE"].iloc[0].strftime("%d/%m/%Y")
+
+# ==========================================================
+# STEP 2 — LOAD BRANCH MASTER (FIXED WIDTH)
+# ==========================================================
+
+branch = pd.read_fwf(
+    BRANCH_FILE,
+    colspecs=[(1,4),(5,8)],
+    header=None,
+    names=["BRANCH","BRCHCD"]
+)
+
+branch["BRANCH"] = branch["BRANCH"].astype(int)
+
+# ==========================================================
+# STEP 3 — LOAD SRSBR DATA
+# ==========================================================
+
+srs = pd.read_parquet(SRSBR_FILE)
+
+# Replace SAS missing with zero
+metric_cols = [
+    "C1CNT","C1BAL",
+    "C2CNT","C2BAL",
+    "C3CNT","C3BAL",
+    "C4CNT","C5CNT"
+]
+
+srs[metric_cols] = srs[metric_cols].fillna(0)
+
+# ==========================================================
+# STEP 4 — MERGE
+# ==========================================================
+
+df = branch.merge(srs, on="BRCHCD", how="inner")
+
+df = df.sort_values(["BRANCH","STAFF","PRODUCT"])
+
+# ==========================================================
+# STEP 5 — RENDER REPORT
+# ==========================================================
+
+with open(OUTPUT_FILE, "a", newline="\n") as f:
+
+    current_branch = None
+
+    for _, row in df.iterrows():
+
+        branch_no = row["BRANCH"]
+
+        # ---- New Branch Page ----
+        if branch_no != current_branch:
+
+            if current_branch is not None:
+                # Print closing line for previous branch
+                write_fba(f, "-" * 127)
+
+            current_branch = branch_no
+
+            # Reset totals
+            TC1CNT = TC2CNT = TC3CNT = TC4CNT = TC5CNT = 0
+            TC1BAL = TC2BAL = TC3BAL = 0
+
+            # Header
+            write_fba(f, "")
+            write_fba(f, "REPORT NO: STAFF PARTICIPATION UNDER SCR SCHEME BY BRANCH"
+                          + f"{'REPORT DATE='+rdate:>45}")
+            write_fba(f, "PROGRAM ID : EIBMSCR1")
+            write_fba(f, f"BRANCH=NO.: {branch_no:03d}   {row['BRCHCD']}")
+            write_fba(f, "-" * 127)
+
+        # ---- Accumulate Totals ----
+        TC1CNT += row["C1CNT"]
+        TC1BAL += row["C1BAL"]
+        TC2CNT += row["C2CNT"]
+        TC2BAL += row["C2BAL"]
+        TC3CNT += row["C3CNT"]
+        TC3BAL += row["C3BAL"]
+        TC4CNT += row["C4CNT"]
+        TC5CNT += row["C5CNT"]
+
+        # ---- Detail Line ----
+        line = (
+            f"{row['STAFF']:>6}"
+            f"{row['PRODUCT']:<20}"
+            f"{row['C1CNT']:>8}{row['C1BAL']:>16,.2f}"
+            f"{row['C2CNT']:>8}{row['C2BAL']:>16,.2f}"
+            f"{row['C3CNT']:>8}{row['C3BAL']:>16,.2f}"
+            f"{row['C4CNT']:>8}{row['C5CNT']:>8}"
+        )
+
+        write_fba(f, line)
+
+    # ---- Final Branch Total ----
+    if current_branch is not None:
+        write_fba(f, "-" * 127)
+        total_line = (
+            f"BRANCH TOTAL="
+            f"{TC1CNT:>8}{TC1BAL:>16,.2f}"
+            f"{TC2CNT:>8}{TC2BAL:>16,.2f}"
+            f"{TC3CNT:>8}{TC3BAL:>16,.2f}"
+            f"{TC4CNT:>8}{TC5CNT:>8}"
+        )
+        write_fba(f, total_line)
+        write_fba(f, "-" * 127)
+
+
 //EIBMSCR1 JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,          00000100
 //          USER=OPCC                                                   00000200
 //*                                                                     00000300
@@ -927,7 +1840,186 @@ RETURN;                                                                 00010300
 RUN;                                                                    00010400
 
 
-===================================================  JOB 8 : EIBMSCHP  ===================================================				
+===================================================  JOB 8 : EIBMSCHP  ===================================================		
+
+
+
+import pandas as pd
+from pathlib import Path
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_FILE = Path("output/SAP.PBB.SRS.HOE.PROD.TEXT")
+
+SRSHO_FILE = INPUT_DIR / "SRSHO.parquet"
+REPTDATE_FILE = INPUT_DIR / "REPTDATE.parquet"
+
+LRECL = 133
+
+# ==========================================================
+# UTIL: Write FBA Line
+# ==========================================================
+
+def write_fba(f, text=""):
+    line = " " + text
+    f.write(line.ljust(LRECL)[:LRECL] + "\n")
+
+# ==========================================================
+# STEP 1 — LOAD REPORT DATE
+# ==========================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rdate = rept["REPTDATE"].iloc[0].strftime("%d/%m/%Y")
+
+# ==========================================================
+# STEP 2 — LOAD DATA
+# ==========================================================
+
+df = pd.read_parquet(SRSHO_FILE)
+
+metric_cols = [
+    "C1CNT","C1BAL",
+    "C2CNT","C2BAL",
+    "C3CNT","C3BAL"
+]
+
+df[metric_cols] = df[metric_cols].fillna(0)
+
+# ==========================================================
+# STEP 3 — DERIVE STAFF FLAGS
+# ==========================================================
+
+df["S1CNT"] = (df["NCORE"] == "X").astype(int)
+df["S2CNT"] = (df["NCORE"] == "C").astype(int)
+df["S3CNT"] = (df["NCORE"] == "N").astype(int)
+
+# ==========================================================
+# STEP 4 — AGGREGATE (PROC SUMMARY NWAY)
+# ==========================================================
+
+summary = (
+    df
+    .groupby(["HOE","PRODUCT"], as_index=False)
+    .agg({
+        "S1CNT":"sum", "C1CNT":"sum", "C1BAL":"sum",
+        "S2CNT":"sum", "C2CNT":"sum", "C2BAL":"sum",
+        "S3CNT":"sum", "C3CNT":"sum", "C3BAL":"sum"
+    })
+)
+
+summary = summary.sort_values(["HOE","PRODUCT"])
+
+# ==========================================================
+# STEP 5 — RENDER REPORT
+# ==========================================================
+
+with open(OUTPUT_FILE, "w", newline="\n") as f:
+
+    current_hoe = None
+
+    # Grand totals
+    GS1CNT=GS2CNT=GS3CNT=0
+    GC1CNT=GC2CNT=GC3CNT=0
+    GC1BAL=GC2BAL=GC3BAL=0
+
+    for _, row in summary.iterrows():
+
+        hoe = row["HOE"]
+
+        # ---- New HOE Section ----
+        if hoe != current_hoe:
+
+            if current_hoe is not None:
+                # Dept total
+                write_fba(f, "-"*126)
+                dept_line = (
+                    f"DEPT/DIV TOTAL="
+                    f"{TS1CNT:>6}{TC1CNT:>6}{TC1BAL:>16,.2f}"
+                    f"{TS2CNT:>6}{TC2CNT:>6}{TC2BAL:>16,.2f}"
+                    f"{TS3CNT:>6}{TC3CNT:>6}{TC3BAL:>16,.2f}"
+                )
+                write_fba(f, dept_line)
+                write_fba(f, "-"*126)
+
+            current_hoe = hoe
+
+            # Reset dept totals
+            TS1CNT=TS2CNT=TS3CNT=0
+            TC1CNT=TC2CNT=TC3CNT=0
+            TC1BAL=TC2BAL=TC3BAL=0
+
+            # Header
+            write_fba(f, "")
+            write_fba(f,
+                "SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR SCHEME"
+                + f"{'RUNDATE='+rdate:>45}"
+            )
+            write_fba(f, f"DEPT/DIV={hoe}")
+            write_fba(f, "-"*126)
+
+        # ---- Accumulate Dept Totals ----
+        TS1CNT += row["S1CNT"]
+        TS2CNT += row["S2CNT"]
+        TS3CNT += row["S3CNT"]
+
+        TC1CNT += row["C1CNT"]
+        TC2CNT += row["C2CNT"]
+        TC3CNT += row["C3CNT"]
+
+        TC1BAL += row["C1BAL"]
+        TC2BAL += row["C2BAL"]
+        TC3BAL += row["C3BAL"]
+
+        # ---- Accumulate Grand Totals ----
+        GS1CNT += row["S1CNT"]
+        GS2CNT += row["S2CNT"]
+        GS3CNT += row["S3CNT"]
+
+        GC1CNT += row["C1CNT"]
+        GC2CNT += row["C2CNT"]
+        GC3CNT += row["C3CNT"]
+
+        GC1BAL += row["C1BAL"]
+        GC2BAL += row["C2BAL"]
+        GC3BAL += row["C3BAL"]
+
+        # ---- Detail Line ----
+        line = (
+            f"{row['PRODUCT']:<20}"
+            f"{row['S1CNT']:>6}{row['C1CNT']:>6}{row['C1BAL']:>16,.2f}"
+            f"{row['S2CNT']:>6}{row['C2CNT']:>6}{row['C2BAL']:>16,.2f}"
+            f"{row['S3CNT']:>6}{row['C3CNT']:>6}{row['C3BAL']:>16,.2f}"
+        )
+
+        write_fba(f, line)
+
+    # ---- Final Dept Total ----
+    if current_hoe is not None:
+        write_fba(f, "-"*126)
+        dept_line = (
+            f"DEPT/DIV TOTAL="
+            f"{TS1CNT:>6}{TC1CNT:>6}{TC1BAL:>16,.2f}"
+            f"{TS2CNT:>6}{TC2CNT:>6}{TC2BAL:>16,.2f}"
+            f"{TS3CNT:>6}{TC3CNT:>6}{TC3BAL:>16,.2f}"
+        )
+        write_fba(f, dept_line)
+        write_fba(f, "-"*126)
+
+    # ---- Grand Total ----
+    write_fba(f, "-"*126)
+    grand_line = (
+        f"GRAND TOTAL="
+        f"{GS1CNT:>6}{GC1CNT:>6}{GC1BAL:>16,.2f}"
+        f"{GS2CNT:>6}{GC2CNT:>6}{GC2BAL:>16,.2f}"
+        f"{GS3CNT:>6}{GC3CNT:>6}{GC3BAL:>16,.2f}"
+    )
+    write_fba(f, grand_line)
+    write_fba(f, "-"*126)
+
+
 //EIBMSCHP JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
 //          USER=OPCC                                                   00020006
 //*                                                                     00070006
@@ -1057,6 +2149,171 @@ RUN;                                                                    00970006
 
 
 ===================================================  JOB 9 : EIBMSCHS  ===================================================			
+
+
+
+
+import pandas as pd
+from pathlib import Path
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_FILE = Path("output/SAP.PBB.SRS.HOE.STAFF.TEXT")
+
+SRSHO_FILE = INPUT_DIR / "SRSHO.parquet"
+REPTDATE_FILE = INPUT_DIR / "REPTDATE.parquet"
+
+LRECL = 133
+
+# ==========================================================
+# UTIL: Write FBA Line
+# ==========================================================
+
+def write_fba(f, text=""):
+    line = " " + text
+    f.write(line.ljust(LRECL)[:LRECL] + "\n")
+
+# ==========================================================
+# STEP 1 — LOAD REPORT DATE
+# ==========================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rdate = rept["REPTDATE"].iloc[0].strftime("%d/%m/%Y")
+
+# ==========================================================
+# STEP 2 — LOAD DATA
+# ==========================================================
+
+df = pd.read_parquet(SRSHO_FILE)
+
+metric_cols = [
+    "C1CNT","C1BAL",
+    "C2CNT","C2BAL",
+    "C3CNT","C3BAL"
+]
+
+df[metric_cols] = df[metric_cols].fillna(0)
+
+# ==========================================================
+# STEP 3 — AGGREGATE (PROC SUMMARY NWAY)
+# ==========================================================
+
+summary = (
+    df
+    .groupby(["HOE","STAFF","PRODUCT"], as_index=False)
+    .agg({
+        "C1CNT":"sum", "C1BAL":"sum",
+        "C2CNT":"sum", "C2BAL":"sum",
+        "C3CNT":"sum", "C3BAL":"sum"
+    })
+)
+
+summary = summary.sort_values(["HOE","STAFF","PRODUCT"])
+
+# ==========================================================
+# STEP 4 — RENDER REPORT
+# ==========================================================
+
+with open(OUTPUT_FILE, "w", newline="\n") as f:
+
+    current_hoe = None
+
+    # Grand totals
+    GC1CNT=GC2CNT=GC3CNT=0
+    GC1BAL=GC2BAL=GC3BAL=0
+
+    for _, row in summary.iterrows():
+
+        hoe = row["HOE"]
+
+        # ---- New HOE Section ----
+        if hoe != current_hoe:
+
+            if current_hoe is not None:
+                # Dept total
+                write_fba(f, "-"*126)
+                dept_line = (
+                    f"DEPT/DIV TOTAL="
+                    f"{TC1CNT:>6}{TC1BAL:>16,.2f}"
+                    f"{TC2CNT:>6}{TC2BAL:>16,.2f}"
+                    f"{TC3CNT:>6}{TC3BAL:>16,.2f}"
+                )
+                write_fba(f, dept_line)
+                write_fba(f, "-"*126)
+
+            current_hoe = hoe
+
+            # Reset dept totals
+            TC1CNT=TC2CNT=TC3CNT=0
+            TC1BAL=TC2BAL=TC3BAL=0
+
+            # Header
+            write_fba(f, "")
+            write_fba(
+                f,
+                "SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR SCHEME"
+                + f"{'RUNDATE='+rdate:>45}"
+            )
+            write_fba(f, "REPORT FROM 1 SEPT 2006 - 31 DEC 2006")
+            write_fba(f, f"DEPT/DIV={hoe}")
+            write_fba(f, "-"*126)
+
+        # ---- Accumulate Dept Totals ----
+        TC1CNT += row["C1CNT"]
+        TC2CNT += row["C2CNT"]
+        TC3CNT += row["C3CNT"]
+
+        TC1BAL += row["C1BAL"]
+        TC2BAL += row["C2BAL"]
+        TC3BAL += row["C3BAL"]
+
+        # ---- Accumulate Grand Totals ----
+        GC1CNT += row["C1CNT"]
+        GC2CNT += row["C2CNT"]
+        GC3CNT += row["C3CNT"]
+
+        GC1BAL += row["C1BAL"]
+        GC2BAL += row["C2BAL"]
+        GC3BAL += row["C3BAL"]
+
+        # ---- Detail Line ----
+        line = (
+            f"{row['STAFF']:>6}"
+            f"{row['PRODUCT']:<20}"
+            f"{row['C1CNT']:>8}{row['C1BAL']:>16,.2f}"
+            f"{row['C2CNT']:>8}{row['C2BAL']:>16,.2f}"
+            f"{row['C3CNT']:>8}{row['C3BAL']:>16,.2f}"
+        )
+
+        write_fba(f, line)
+
+    # ---- Final Dept Total ----
+    if current_hoe is not None:
+        write_fba(f, "-"*126)
+        dept_line = (
+            f"DEPT/DIV TOTAL="
+            f"{TC1CNT:>6}{TC1BAL:>16,.2f}"
+            f"{TC2CNT:>6}{TC2BAL:>16,.2f}"
+            f"{TC3CNT:>6}{TC3BAL:>16,.2f}"
+        )
+        write_fba(f, dept_line)
+        write_fba(f, "-"*126)
+
+    # ---- Grand Total ----
+    write_fba(f, "-"*126)
+    grand_line = (
+        f"GRAND TOTAL="
+        f"{GC1CNT:>6}{GC1BAL:>16,.2f}"
+        f"{GC2CNT:>6}{GC2BAL:>16,.2f}"
+        f"{GC3CNT:>6}{GC3BAL:>16,.2f}"
+    )
+    write_fba(f, grand_line)
+    write_fba(f, "-"*126)
+
+
 //EIBMSCHS JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
 //          USER=OPCC                                                   00020006
 //*                                                                     00070006
@@ -1174,6 +2431,221 @@ RUN;                                                                    00970006
 
 
 ===================================================  JOB 10: EIBMSCRP  ===================================================			
+
+
+import pandas as pd
+from pathlib import Path
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_FILE = Path("output/SAP.PBB.SRS.REGN.TEXT")
+
+BRANCH_FILE = INPUT_DIR / "BRANCH.MASTER"
+SRSBR_FILE = INPUT_DIR / "SRSBR.parquet"
+REPTDATE_FILE = INPUT_DIR / "REPTDATE.parquet"
+
+LRECL = 133
+
+# ==========================================================
+# FBA WRITER
+# ==========================================================
+
+def write_fba(f, text=""):
+    line = " " + text
+    f.write(line.ljust(LRECL)[:LRECL] + "\n")
+
+# ==========================================================
+# REGION FORMAT (PROC FORMAT LNPOGRP)
+# ==========================================================
+
+def map_region(branch):
+
+    region_map = {
+        # Only partial shown here — you must complete exactly as SAS
+        3: "SELANGOR/WILAYAH I",
+        20: "SELANGOR/WILAYAH I",
+        15: "SELANGOR/WILAYAH II",
+        18: "SELANGOR/WILAYAH III",
+        7: "JOHOR REGION",
+        4: "MELAKA/NEG.SEMBILAN",
+        6: "PENANG/KEDAH/PERLIS",
+        257: "KEL/TERENG/PAHANG",
+        5: "PERAK REGION",
+        33: "SABAH/FT LABUAN",
+        32: "SARAWAK REGION",
+    }
+
+    return region_map.get(branch, "UNDERFINED REGION")
+
+# ==========================================================
+# LOAD REPORT DATE
+# ==========================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rdate = rept["REPTDATE"].iloc[0].strftime("%d/%m/%Y")
+
+# ==========================================================
+# LOAD BRANCH MASTER (FIXED WIDTH)
+# ==========================================================
+
+branch = pd.read_fwf(
+    BRANCH_FILE,
+    colspecs=[(1,4),(5,8)],
+    header=None,
+    names=["BRANCH","BRCHCD"]
+)
+
+branch["BRANCH"] = branch["BRANCH"].astype(int)
+
+# ==========================================================
+# LOAD SRSBR
+# ==========================================================
+
+df = pd.read_parquet(SRSBR_FILE)
+
+metric_cols = [
+    "C1CNT","C1BAL",
+    "C2CNT","C2BAL",
+    "C3CNT","C3BAL"
+]
+
+df[metric_cols] = df[metric_cols].fillna(0)
+
+# ==========================================================
+# MERGE BRANCH
+# ==========================================================
+
+df = branch.merge(df, on="BRCHCD", how="inner")
+
+# ==========================================================
+# DERIVE REGION
+# ==========================================================
+
+df["REGION"] = df["BRANCH"].apply(map_region)
+
+# ==========================================================
+# DERIVE STAFF FLAGS
+# ==========================================================
+
+df["S1CNT"] = (df["NCORE"] == "X").astype(int)
+df["S2CNT"] = (df["NCORE"] == "C").astype(int)
+df["S3CNT"] = (df["NCORE"] == "N").astype(int)
+
+# ==========================================================
+# AGGREGATE (PROC SUMMARY NWAY)
+# ==========================================================
+
+summary = (
+    df
+    .groupby(["REGION","BRCHCD","PRODUCT"], as_index=False)
+    .agg({
+        "S1CNT":"sum","C1CNT":"sum","C1BAL":"sum",
+        "S2CNT":"sum","C2CNT":"sum","C2BAL":"sum",
+        "S3CNT":"sum","C3CNT":"sum","C3BAL":"sum"
+    })
+)
+
+summary = summary.sort_values(["REGION","BRCHCD","PRODUCT"])
+
+# ==========================================================
+# RENDER REPORT
+# ==========================================================
+
+with open(OUTPUT_FILE, "w", newline="\n") as f:
+
+    current_region = None
+    current_branch = None
+
+    # Grand totals
+    GS1CNT=GS2CNT=GS3CNT=0
+    GC1CNT=GC2CNT=GC3CNT=0
+    GC1BAL=GC2BAL=GC3BAL=0
+
+    for _, row in summary.iterrows():
+
+        region = row["REGION"]
+        branch_cd = row["BRCHCD"]
+
+        # ---- New Region ----
+        if region != current_region:
+
+            if current_region is not None:
+                # Region total
+                write_fba(f, "-"*126)
+                region_line = (
+                    f"REGION TOTAL="
+                    f"{TS1CNT:>6}{TC1CNT:>6}{TC1BAL:>16,.2f}"
+                    f"{TS2CNT:>6}{TC2CNT:>6}{TC2BAL:>16,.2f}"
+                    f"{TS3CNT:>6}{TC3CNT:>6}{TC3BAL:>16,.2f}"
+                )
+                write_fba(f, region_line)
+                write_fba(f, "-"*126)
+
+            current_region = region
+            TS1CNT=TS2CNT=TS3CNT=0
+            TC1CNT=TC2CNT=TC3CNT=0
+            TC1BAL=TC2BAL=TC3BAL=0
+
+        # ---- New Branch ----
+        if branch_cd != current_branch:
+
+            if current_branch is not None:
+                write_fba(f, "-"*126)
+
+            current_branch = branch_cd
+            BS1CNT=BS2CNT=BS3CNT=0
+            BC1CNT=BC2CNT=BC3CNT=0
+            BC1BAL=BC2BAL=BC3BAL=0
+
+            write_fba(f, "")
+            write_fba(
+                f,
+                "SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR SCHEME"
+                + f"{'RUNDATE='+rdate:>45}"
+            )
+            write_fba(f, f"REGION={region}")
+            write_fba(f, f"BRANCH={branch_cd}")
+            write_fba(f, "-"*126)
+
+        # ---- Accumulate Branch ----
+        BS1CNT+=row["S1CNT"]; BC1CNT+=row["C1CNT"]; BC1BAL+=row["C1BAL"]
+        BS2CNT+=row["S2CNT"]; BC2CNT+=row["C2CNT"]; BC2BAL+=row["C2BAL"]
+        BS3CNT+=row["S3CNT"]; BC3CNT+=row["C3CNT"]; BC3BAL+=row["C3BAL"]
+
+        # ---- Accumulate Region ----
+        TS1CNT+=row["S1CNT"]; TC1CNT+=row["C1CNT"]; TC1BAL+=row["C1BAL"]
+        TS2CNT+=row["S2CNT"]; TC2CNT+=row["C2CNT"]; TC2BAL+=row["C2BAL"]
+        TS3CNT+=row["S3CNT"]; TC3CNT+=row["C3CNT"]; TC3BAL+=row["C3BAL"]
+
+        # ---- Accumulate Grand ----
+        GS1CNT+=row["S1CNT"]; GC1CNT+=row["C1CNT"]; GC1BAL+=row["C1BAL"]
+        GS2CNT+=row["S2CNT"]; GC2CNT+=row["C2CNT"]; GC2BAL+=row["C2BAL"]
+        GS3CNT+=row["S3CNT"]; GC3CNT+=row["C3CNT"]; GC3BAL+=row["C3BAL"]
+
+        # ---- Detail Line ----
+        line = (
+            f"{row['PRODUCT']:<20}"
+            f"{row['S1CNT']:>6}{row['C1CNT']:>6}{row['C1BAL']:>16,.2f}"
+            f"{row['S2CNT']:>6}{row['C2CNT']:>6}{row['C2BAL']:>16,.2f}"
+            f"{row['S3CNT']:>6}{row['C3CNT']:>6}{row['C3BAL']:>16,.2f}"
+        )
+        write_fba(f, line)
+
+    # ---- Final Totals ----
+    write_fba(f, "-"*126)
+    grand_line = (
+        f"GRAND TOTAL="
+        f"{GS1CNT:>6}{GC1CNT:>6}{GC1BAL:>16,.2f}"
+        f"{GS2CNT:>6}{GC2CNT:>6}{GC2BAL:>16,.2f}"
+        f"{GS3CNT:>6}{GC3CNT:>6}{GC3BAL:>16,.2f}"
+    )
+    write_fba(f, grand_line)
+    write_fba(f, "-"*126)
+
+
 //EIBMSCRP JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
 //          USER=OPCC                                                   00020006
 //PRINT1   OUTPUT CLASS=K,                                              00090006
@@ -1394,6 +2866,219 @@ RUN;                                                                    00970006
 
 
 ===================================================  JOB 11: EIBMSCRR  ===================================================
+
+
+
+import pandas as pd
+from pathlib import Path
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+
+INPUT_DIR = Path("input")
+OUTPUT_FILE = Path("output/SAP.PBB.SRS.REGN.STAFF.TEXT")
+
+BRANCH_FILE = INPUT_DIR / "BRANCH.MASTER"
+SRSBR_FILE = INPUT_DIR / "SRSBR.parquet"
+REPTDATE_FILE = INPUT_DIR / "REPTDATE.parquet"
+
+LRECL = 133
+
+# ==========================================================
+# FBA WRITER
+# ==========================================================
+
+def write_fba(f, text=""):
+    line = " " + text
+    f.write(line.ljust(LRECL)[:LRECL] + "\n")
+
+# ==========================================================
+# REGION FORMAT (LNPOGRP) — COMPLETE FULL MAPPING
+# ==========================================================
+
+def map_region(branch):
+
+    region_map = {
+        3:"SELANGOR/WILAYAH I",
+        20:"SELANGOR/WILAYAH I",
+        15:"SELANGOR/WILAYAH II",
+        18:"SELANGOR/WILAYAH III",
+        7:"JOHOR REGION",
+        4:"MELAKA/NEG.SEMBILAN",
+        6:"PENANG/KEDAH/PERLIS",
+        257:"KEL/TERENG/PAHANG",
+        5:"PERAK REGION",
+        33:"SABAH/FT LABUAN",
+        32:"SARAWAK REGION",
+    }
+
+    return region_map.get(branch, "UNDERFINED REGION")
+
+# ==========================================================
+# LOAD REPORT DATE
+# ==========================================================
+
+rept = pd.read_parquet(REPTDATE_FILE)
+rdate = rept["REPTDATE"].iloc[0].strftime("%d/%m/%Y")
+
+# ==========================================================
+# LOAD BRANCH MASTER (FIXED WIDTH)
+# ==========================================================
+
+branch = pd.read_fwf(
+    BRANCH_FILE,
+    colspecs=[(1,4),(5,8)],
+    header=None,
+    names=["BRANCH","BRCHCD"]
+)
+
+branch["BRANCH"] = branch["BRANCH"].astype(int)
+
+# ==========================================================
+# LOAD SRSBR
+# ==========================================================
+
+df = pd.read_parquet(SRSBR_FILE)
+
+metric_cols = [
+    "C1CNT","C1BAL",
+    "C2CNT","C2BAL",
+    "C3CNT","C3BAL"
+]
+
+df[metric_cols] = df[metric_cols].fillna(0)
+
+# ==========================================================
+# MERGE BRANCH
+# ==========================================================
+
+df = branch.merge(df, on="BRCHCD", how="inner")
+
+# ==========================================================
+# DERIVE REGION
+# ==========================================================
+
+df["REGION"] = df["BRANCH"].apply(map_region)
+
+# ==========================================================
+# AGGREGATE (PROC SUMMARY NWAY)
+# ==========================================================
+
+summary = (
+    df
+    .groupby(["REGION","BRCHCD","STAFF","PRODUCT"], as_index=False)
+    .agg({
+        "C1CNT":"sum","C1BAL":"sum",
+        "C2CNT":"sum","C2BAL":"sum",
+        "C3CNT":"sum","C3BAL":"sum"
+    })
+)
+
+summary = summary.sort_values(["REGION","BRCHCD","STAFF","PRODUCT"])
+
+# ==========================================================
+# RENDER REPORT
+# ==========================================================
+
+with open(OUTPUT_FILE, "w", newline="\n") as f:
+
+    current_region = None
+    current_branch = None
+
+    # Grand totals
+    GC1CNT=GC2CNT=GC3CNT=0
+    GC1BAL=GC2BAL=GC3BAL=0
+
+    for _, row in summary.iterrows():
+
+        region = row["REGION"]
+        branch_cd = row["BRCHCD"]
+
+        # ---- New Region ----
+        if region != current_region:
+
+            if current_region is not None:
+                write_fba(f, "-"*126)
+                region_line = (
+                    f"REGION TOTAL="
+                    f"{TC1CNT:>6}{TC1BAL:>16,.2f}"
+                    f"{TC2CNT:>6}{TC2BAL:>16,.2f}"
+                    f"{TC3CNT:>6}{TC3BAL:>16,.2f}"
+                )
+                write_fba(f, region_line)
+                write_fba(f, "-"*126)
+
+            current_region = region
+            TC1CNT=TC2CNT=TC3CNT=0
+            TC1BAL=TC2BAL=TC3BAL=0
+
+        # ---- New Branch ----
+        if branch_cd != current_branch:
+
+            if current_branch is not None:
+                write_fba(f, "-"*126)
+                branch_line = (
+                    f"BRANCH TOTAL="
+                    f"{BC1CNT:>6}{BC1BAL:>16,.2f}"
+                    f"{BC2CNT:>6}{BC2BAL:>16,.2f}"
+                    f"{BC3CNT:>6}{BC3BAL:>16,.2f}"
+                )
+                write_fba(f, branch_line)
+                write_fba(f, "-"*126)
+
+            current_branch = branch_cd
+            BC1CNT=BC2CNT=BC3CNT=0
+            BC1BAL=BC2BAL=BC3BAL=0
+
+            write_fba(f, "")
+            write_fba(
+                f,
+                "SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR SCHEME"
+                + f"{'RUNDATE='+rdate:>45}"
+            )
+            write_fba(f, f"REGION={region}")
+            write_fba(f, f"BRANCH={branch_cd}")
+            write_fba(f, "-"*126)
+
+        # ---- Accumulate Branch ----
+        BC1CNT+=row["C1CNT"]; BC1BAL+=row["C1BAL"]
+        BC2CNT+=row["C2CNT"]; BC2BAL+=row["C2BAL"]
+        BC3CNT+=row["C3CNT"]; BC3BAL+=row["C3BAL"]
+
+        # ---- Accumulate Region ----
+        TC1CNT+=row["C1CNT"]; TC1BAL+=row["C1BAL"]
+        TC2CNT+=row["C2CNT"]; TC2BAL+=row["C2BAL"]
+        TC3CNT+=row["C3CNT"]; TC3BAL+=row["C3BAL"]
+
+        # ---- Accumulate Grand ----
+        GC1CNT+=row["C1CNT"]; GC1BAL+=row["C1BAL"]
+        GC2CNT+=row["C2CNT"]; GC2BAL+=row["C2BAL"]
+        GC3CNT+=row["C3CNT"]; GC3BAL+=row["C3BAL"]
+
+        # ---- Detail Line ----
+        line = (
+            f"{row['STAFF']:>6}"
+            f"{row['PRODUCT']:<20}"
+            f"{row['C1CNT']:>8}{row['C1BAL']:>16,.2f}"
+            f"{row['C2CNT']:>8}{row['C2BAL']:>16,.2f}"
+            f"{row['C3CNT']:>8}{row['C3BAL']:>16,.2f}"
+        )
+        write_fba(f, line)
+
+    # ---- Final Totals ----
+    write_fba(f, "-"*126)
+    grand_line = (
+        f"GRAND TOTAL="
+        f"{GC1CNT:>6}{GC1BAL:>16,.2f}"
+        f"{GC2CNT:>6}{GC2BAL:>16,.2f}"
+        f"{GC3CNT:>6}{GC3BAL:>16,.2f}"
+    )
+    write_fba(f, grand_line)
+    write_fba(f, "-"*126)
+
+
+
 //EIBMSCRR JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
 //          USER=OPCC                                                   00020006
 //PRINT1   OUTPUT CLASS=K,                                              00090006
