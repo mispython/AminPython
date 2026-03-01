@@ -1,0 +1,90 @@
+============================================ JOB 1 : EIBWREPL   ===========================================================
+
+
+
+//EIBWREPL  JOB 224T,'REPROCORPDAT',CLASS=A,MSGCLASS=X,
+//     NOTIFY=&SYSUID
+//*******************************************************************
+//* REPRO THE CORDATA RPB2
+//*******************************************************************
+//REPROUNP EXEC PGM=IDCAMS
+//SYSPRINT DD SYSOUT=X
+//IN1      DD DSN=RBP2.B033.DPSRS.CORDATAI,DISP=SHR
+//OUT1     DD DSN=SAP.PBB.CORDATA,DISP=OLD
+//*           DISP=(NEW,CATLG,DELETE),
+//*           UNIT=(SYSDA,5),SPACE=(TRK,(5,60),RLSE),
+//*           DCB=(SYS2.DSCB,LRECL=51,RECFM=FB,BUFNO=2)
+//SYSIN DD *
+   REPRO INFILE(IN1) OUTFILE(OUT1)
+/*
+//******************************************************************
+//* SFTP RAW FILES TO EDW SERVER
+//******************************************************************
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary
+lzopts linerule=$lr
+cd /sasdata/rawdata/deposit
+PUT //SAP.PBB.CORDATA             CORDATA_%OYYYY.%OMM.%ODD
+lzopts mode=text
+cd /stgsrcsys/host/control/
+put //SAP.DAY.CONTROL             TRIGGER_DP_CORDATA.txt
+EOB
+
+
+============================================ JOB 2 : EIBWLNW2   ===========================================================
+
+
+
+//EIBWLNW2 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M
+/*JOBPARM S=S1M1
+//SAS609    EXEC SAS609
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*****************************************************************/
+//*  EIBWLNW2 HAS BEEN COMBINED INTO EIBWLNW1,
+//*  BUT STILL MAINTAIN AS JOB WITH DEPENDENCY.
+//*****************************************************************/
+//SYSIN     DD *
+
+
+
+
+
+
+
+============================================ JOB 1 : EIBWREPL   ===========================================================
+
+//EIBWREPL  JOB 224T,'REPROCORPDAT',CLASS=A,MSGCLASS=X,
+//     NOTIFY=&SYSUID
+//*******************************************************************
+//* REPRO THE CORDATA RPB2
+//*******************************************************************
+//REPROUNP EXEC PGM=IDCAMS
+//SYSPRINT DD SYSOUT=X
+//IN1      DD DSN=RBP2.B033.DPSRS.CORDATAI,DISP=SHR
+//OUT1     DD DSN=SAP.PBB.CORDATA,DISP=OLD
+//*           DISP=(NEW,CATLG,DELETE),
+//*           UNIT=(SYSDA,5),SPACE=(TRK,(5,60),RLSE),
+//*           DCB=(SYS2.DSCB,LRECL=51,RECFM=FB,BUFNO=2)
+//SYSIN DD *
+   REPRO INFILE(IN1) OUTFILE(OUT1)
+/*
+//******************************************************************
+//* SFTP RAW FILES TO EDW SERVER
+//******************************************************************
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(EDW#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=binary
+lzopts linerule=$lr
+cd /sasdata/rawdata/deposit
+PUT //SAP.PBB.CORDATA             CORDATA_%OYYYY.%OMM.%ODD
+lzopts mode=text
+cd /stgsrcsys/host/control/
+put //SAP.DAY.CONTROL             TRIGGER_DP_CORDATA.txt
+EOB
+
+
