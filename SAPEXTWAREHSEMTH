@@ -1,0 +1,70 @@
+============================================  JOB 1 : EIBWLNW2  ==============================================
+
+//EIBWLNW2 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M
+/*JOBPARM S=S1M1
+//SAS609    EXEC SAS609
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*****************************************************************/
+//*  EIBWLNW2 HAS BEEN COMBINED INTO EIBWLNW1,
+//*  BUT STILL MAINTAIN AS JOB WITH DEPENDENCY.
+//*****************************************************************/
+//SYSIN     DD *
+
+============================================  JOB 2 : EIWLNZIP  ==============================================
+
+//EIWLNZIP JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M,USER=OPCC            JOB02003
+/*JOBPARM S=S1M2
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL02    DD DSN=SAP.PBB.HPDATAWH.FTP.ZIP,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL13    DD DSN=SAP.PBB.WOF.ZIP,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//*
+//******************************************************************
+//* COMPRESS HOST DATASETS (HP)
+//******************************************************************
+//STPZIP   EXEC PGM=PKZIP,REGION=8M
+//STEPLIB  DD DISP=SHR,DSN=SYS2.PKZIP.LOADLIB1
+//SYSPRINT DD SYSOUT=*
+//SYSUDUMP DD SYSOUT=*
+//SYSIN    DD *
+-ECHO
+-OVERWRITE=Y
+MODE=BINARY
+-ARCHIVE(SAP.PBB.HPDATAWH.FTP.ZIP)
+-ARCHVOL(NULL)
+-ARCHPRIMARY(300)
+-ARCHSECONDARY(200)
+-ARCHSPACE(CYL)
+-TEMPPRIMARY(300)
+-TEMPSECONDARY(200)
+-TEMPSPACE(CYL)
+-TEMPVOL(NULL)
+-DELIM(CRLF)
+SAP.PBB.HPDATAWH.HPFTP
+//******************************************************************
+//* COMPRESS HOST DATASETS (WRITE-OFF)
+//******************************************************************
+//STPZIP   EXEC PGM=PKZIP,REGION=8M
+//STEPLIB  DD DISP=SHR,DSN=SYS2.PKZIP.LOADLIB1
+//SYSPRINT DD SYSOUT=*
+//SYSUDUMP DD SYSOUT=*
+//SYSIN    DD *
+-ECHO
+-OVERWRITE=Y
+MODE=BINARY
+-ARCHIVE(SAP.PBB.WOF.ZIP)
+-ARCHVOL(NULL)
+-ARCHPRIMARY(200)
+-ARCHSECONDARY(100)
+-ARCHSPACE(CYL)
+-TEMPPRIMARY(200)
+-TEMPSECONDARY(100)
+-TEMPSPACE(CYL)
+-TEMPVOL(NULL)
+-DELIM(CRLF)
+SAP.PBB.WOF.WOMVFTP
+
