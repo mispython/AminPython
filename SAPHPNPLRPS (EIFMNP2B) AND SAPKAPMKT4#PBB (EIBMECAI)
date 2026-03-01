@@ -1,0 +1,470 @@
+=============================================== JOB 1 : EIFMNP2B ========================================
+
+//EIFMNP2B JOB MISEIS,EIFMNPOL,COND=(0,LT),CLASS=A,MSGCLASS=X,          JOB39911
+//         NOTIFY=&SYSUID
+//*********************************************************************
+//* MODIFY       : 01 MAR 2006 ESMR 2005-610
+//*              : 13 APR 2006 ESMR 2006-0396
+//*              : 01 JUL 2008 ESMR 2008-0796
+//*********************************************************************
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.NPLHP2N.TXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(10,20))
+//DD2      DD DSN=SAP.PBB.NPLHP2N.RPS,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(10,20))
+//*
+//CREATE   EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.PBB.NPLHP2N.TXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=265,BLKSIZE=26500),
+//             SPACE=(CYL,(10,20),RLSE),UNIT=SYSDA
+//CRT02    DD DSN=SAP.PBB.NPLHP2N.RPS,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=138,BLKSIZE=13800),
+//             SPACE=(CYL,(10,20),RLSE),UNIT=SYSDA
+//EIFMNP2M EXEC SAS609,REGION=6M,WORK='120000,8000'
+//RPS      DD DSN=SAP.PBB.NPLHP2N.RPS,DISP=OLD
+//LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//OUTFILE  DD DSN=SAP.PBB.NPLHP2N.TXT,DISP=OLD
+//NPL6     DD DSN=SAP.PBB.NPL.NEW.SASDATA,DISP=OLD
+//SYSIN    DD *
+OPTIONS MISSING=' ';
+*;
+%INC PGM(PBBLNFMT,PBBELF);
+PROC FORMAT;
+   VALUE LNTYP 128,130,131,132         = 'HPD AITAB'
+               700,705,380,381,720,725 = 'HPD CONVENTIONAL'
+               OTHER                   = 'OTHERS';
+*;
+DATA REPTDATE;
+   SET LOAN.REPTDATE;
+   MM = MONTH(REPTDATE);
+   MM1 = MM - 1;
+   IF MM1 = 0 THEN MM1 = 12;
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+ *------------------------------------------------*
+ *  MACRO FOR CALCULATING NEXT BLDATE             *
+ *------------------------------------------------*;
+PROC SORT DATA=NPL6.LOAN2M&REPTMON OUT=THISMTH; BY ACCTNO;
+PROC SORT DATA=NPL6.LOAN2M&REPTMON1 OUT=LASTMTH; BY ACCTNO;
+DATA NEWCA;
+   MERGE LASTMTH(IN=A) THISMTH(IN=B);
+   BY ACCTNO;
+   IF B AND NOT A;
+   MAKE = SUBSTR(COLLDESC,1,14);
+   MODEL = SUBSTR(COLLDESC,14,21);
+RUN;
+PROC SORT DATA=NEWCA; BY GUAREND;
+PROC SUMMARY DATA=NEWCA NWAY;
+   CLASS GUAREND;
+   VAR NETBAL;
+OUTPUT OUT=TOTNAME SUM=TOTNET ;
+RUN;
+PROC SUMMARY DATA=TOTNAME NWAY;
+   VAR TOTNET;
+OUTPUT OUT=GRAND SUM=GRANDTOT ;
+RUN;
+DATA TOTNAME;
+   SET TOTNAME;
+   SUBTOT = 'SUB-TOTAL';
+   NETBAL = TOTNET;
+*;
+RUN;
+DATA GRAND;
+   SET GRAND;
+   SUBTOT = 'GRAND TOTAL';
+   NETBAL = GRANDTOT;
+*;
+DATA LOANNAME;
+   MERGE NEWCA TOTNAME(IN=A DROP=SUBTOT NETBAL);
+   BY GUAREND;
+  ISSDTE = PUT(INPUT(SUBSTR(PUT(ISSUEDT,Z11.),1,8),MMDDYY8.),DDMMYY10.);
+   CACNAME = PUT(NTBRCH,CACNAME.);
+   MAKE = SUBSTR(COLLDESC,1,14);
+   MODEL = SUBSTR(COLLDESC,14,21);
+   REGION = PUT(NTBRCH,REGIOFF.);
+RUN;
+DATA TOTNAME;
+   SET LOANNAME(IN=A) TOTNAME(IN=B);
+   IF A OR (B &_FREQ_ > 1);
+RUN;
+PROC SORT; BY DESCENDING TOTNET GUAREND SUBTOT;
+DATA TOTNAME;
+   SET TOTNAME GRAND;
+   REPTDATE = "&RDATE";
+RUN;
+OPTIONS MISSING=' ';
+DATA _NULL_;
+  SET TOTNAME;
+  FILE OUTFILE;
+  IF _N_ = 1 THEN DO;
+    PUT @1 'PUBLIC BANK - (NEWLY SURFACE CA) AS AT ' @40 REPTDATE;
+    PUT @1   'A/C NO.'
+        @19  'NOTE NO.'
+        @29  'NAME'
+        @65  'BRANCH'
+        @74  'DAYS'
+        @80  'BORSTAT'
+        @91  'ISSUE DATE'
+        @115 'NETBAL'
+        @130 'CAC NAME'
+        @150 'REGION OFF'
+        @170 'MAKE'
+        @184 'MODEL'
+        @205 'DEALER NO'    /* ESMR: 2009-387  */
+        @218 'DEALER NAME'  /* ESMR: 2009-387  */
+        @244 'ORI BRANCH'   /* ESMR: 2009-387  */
+        @255 'CUSTFISS'     /* ESMR: 2009-387  */
+        ;
+  END;
+  PUT @1 ACCTNO 12. @19 NOTENO 8. @29 NAME
+      @65 BRANCH  @74 DAYS 4. @83 BORSTAT $
+      @91 ISSDTE  @110 NETBAL COMMA13.2  @130 CACNAME
+      @150 REGION @170 MAKE @184 MODEL @205 DEALERNO
+      @218 COMPNAME @244 PRIMOFHP @255 CUSTFISS;
+RUN;  /*
+PROC PRINT LABEL N ;
+     FORMAT NETBAL COMMA14.2;
+      LABEL ACCTNO   = 'MNI ACCOUNT NO'
+            NOTENO   = 'NOTE NO'
+            NAME     = 'NAME'
+            SUBTOT   = '  -   '
+            BRANCH   = 'BRANCH'
+            DAYS     = 'NO OF DAYS PAST DUE'
+            BORSTAT  = 'BORROWER''S STATUS'
+            ISSDTE   = 'ISSUE DATE'
+            NETBAL   = 'NET BAL'
+            MAKE     = 'MAKE'
+            MODEL    = 'MODEL';
+      VAR NAME ACCTNO NOTENO BRANCH SUBTOT DAYS BORSTAT ISSDTE NETBAL
+      MAKE MODEL;
+        BY NAME;
+      SUMBY NAME;
+      SUM NETBAL; */
+RUN;
+  /********* TO RPS  ***********/
+OPTIONS MISSING=' ' NOCENTER NODATE NONUMBER;
+RUN;
+DATA RPS2M;
+   SET NEWCA;
+   * CAC = 'B'||TRIM(PUT(NTBRCH,CACBRCH.));
+   * CACNAME = PUT(NTBRCH,CACNAME.);
+  ISSDTE = PUT(INPUT(SUBSTR(PUT(ISSUEDT,Z11.),1,8),MMDDYY8.),DDMMYY10.);
+  MAKE = SUBSTR(COLLDESC,1,14);
+  MODEL = SUBSTR(COLLDESC,14,21);
+  REPTDATE = "&RDATE";
+RUN;
+PROC SORT DATA=RPS2M;
+   BY BRANCH DESCENDING NETBAL;
+RUN;
+DATA _NULL_;
+  SET RPS2M;
+  BY BRANCH;
+  * IF CAC NE 'B000';
+  FILE RPS;
+  RETAIN LINECNT PAGECNT;
+  IF FIRST.BRANCH THEN DO;
+     PAGECNT=0;
+     BRCHAMT=0;
+     LINK NEWPAGE;
+  END;
+
+  BRCHAMT+NETBAL;
+  BNMAMT+NETBAL;
+
+  PUT @1 '    '
+      @5 ACCTNO 12. @19 NOTENO 8. @29 NAME
+      @65 BRANCH  @74 DAYS 4. @83 BORSTAT $
+      @91 ISSDTE  @110 NETBAL COMMA13.2 @170 MAKE @184 MODEL;
+  LINECNT +1;
+
+  IF LINECNT > 55 THEN DO;
+     LINK NEWPAGE;
+  END;
+
+  RETURN;
+
+  NEWPAGE:
+    PAGECNT+1;
+    PUT @1   'BRANCH    :  ' @14 BRANCH
+        @44  'P U B L I C   B A N K   B E R H A D'
+        @122 'PAGE NO : ' PAGECNT;
+    PUT @1   'REPORT NO :  2MTHNPLNEW'
+        @42  "NEWLY SURFACE CLOSE ATTENTION" @72 REPTDATE;
+    PUT @1   '    ';
+    PUT @1   '    ';
+    PUT @1   '    '
+        @10  'A/C NO.'
+        @19  'NOTE NO.'
+        @29  'NAME'
+        @65  'BRANCH'
+        @74  'DAYS'
+        @80  'BORSTAT'
+        @91  'ISSUE DATE'
+        @115 'NETBAL'
+        @170 'MAKE'
+        @184 'MODEL';
+    PUT @1   '    '
+        @5   '----------------------------------------'
+        @45  '----------------------------------------'
+        @85  '----------------------------------------';
+    PUT @1   '    ';
+    PUT @1   '    ';
+    LINECNT = 7;
+  RETURN;
+RUN;
+
+=============================================== JOB 2 : EIBMECAI ========================================
+
+//EIBMECAI  JOB 224T,'EIBMECAI',CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//          NOTIFY=&SYSUID,REGION=48M
+/*JOBPARM S=S1M1
+//*%OPC SCAN
+//*%OPC SETVAR TODD=(ODD - 1CD)
+//*%OPC SETVAR TOMM=(OMM - 1CD)
+//*%OPC SETVAR TOYYYY=(OYYYY - 1CD)
+//******************************************************************
+//* SFTP FROM WEBNOTES SERVER
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD *
+export PASSWD_DSN='OPER.PBB.CONTROL(PAS#LTS)'
+$coz_bin/cozsftp  $ssh_opts -b- ftpprod@192.168.68.150 <<EOB
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+lzopts lrecl=400,recfm=fb,blksize=0,space=cyl.10.2
+CD \ECAI
+GET ECAI_Rating_%TOYYYY.%TOMM.%TODD..txt //!SAP.ECAIRATE.TXT(+1)
+EOB
+/*
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.ECAI.SASDATA,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DEL02    DD DSN=SAP.ECAI.SASFTP,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//*
+//CREATE  EXEC PGM=IEFBR14
+//CRT01    DD DSN=SAP.ECAI.SASFTP,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),
+//            SPACE=(CYL,(500,200),RLSE),UNIT=(SYSDA,5)
+//*
+//SAS6094  EXEC SAS609
+//ECAIRATE DD DSN=SAP.ECAIRATE.TXT(+1),DISP=SHR
+//ECAI     DD DSN=SAP.ECAI.SASDATA,DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(50,50),RLSE),UNIT=SYSDA
+//*%OPC BEGIN ACTION=NOSCAN
+//SASLIST  DD SYSOUT=A
+//*
+DATA REPTDATE;
+   REPTDATE = TODAY()-1;
+   SELECT;
+      WHEN(1<= DAY(REPTDATE)<= 8) DO;
+         WK = '1'; WK1= '4'; WK2 = '1'; END;
+      WHEN(9<= DAY(REPTDATE)<= 15) DO;
+         WK = '2'; WK1= '1'; WK2 = '2'; END;
+      WHEN(16<= DAY(REPTDATE)<= 22) DO;
+         WK = '3'; WK1= '2'; WK2 = '3'; END;
+      OTHERWISE DO; WK = '4';WK1= '3'; WK2 = '4'; END;
+   END;
+   MM = MONTH(REPTDATE);
+   MM1 = MM;
+   YY1 = Year(reptdate);
+CALL SYMPUT('REPTMON',put(mm1,z2.));
+CALL SYMPUT('REPTYR',PUT(REPTDATE,YEAR2.));
+CALL SYMPUT('NOWK', PUT(WK, $1.));
+run;
+PROC FORMAT;
+   VALUE $RATINGB
+   'AAA','AA+','AA','AA-','Aaa','Aa1',
+   'Aa2','Aa3','AA1','AA2','AA3'          = 1
+   'A+','A','A-','A1','A2','A3'           = 2
+   'BBB+','BBB','BBB-','Baa1','Baa2',
+   'Baa3','BBB1','BBB2','BBB3'            = 3
+   'BB+','BB','BB-','Ba1','Ba2','Ba3',
+   'BB1','BB2','BB3'                      = 4
+   'B+','B','B-','B1','B2','B3'           = 5
+   'CCC+','CCC','CCC-','CC','C','D',
+   'Caa1','Caa2','Caa3','Ca',
+   'DDD','DD','C1','C2','C3'              = 6
+   OTHER                                  = 99;
+
+VALUE $RATINGC
+
+    'A-1+','A-1','P-1','F1+','F1','P1','MARC-1'  = 1
+    'A-2','P-2','F2','P2','MARC-2'               = 2
+    'A-3','P-3','F3','P3','MARC-3'               = 3
+    'B','B-1','B-2','B-3','C','D','NP','MARC-4'  = 4
+    OTHER                                        = 99;
+
+DATA ECAI.MS (KEEP=CUSTID CUSTNAME CUSTFISS CUSTCD
+                   COUNTRY CNAME COMPTYPE
+                   LSTMODDT TABLETYP SECID AGENCYCD AGNAME TYPERATE
+                   MATURITY CUR RATING)
+     ECAI.COUNTER (KEEP=CUSTID CUSTNAME CUSTFISS CUSTCD
+                        COUNTRY CNAME COMPTYPE LSTMODDT TABLETYP
+	                       AGENCYCD AGNAME DIRECT CSTLC
+                        CSTFC CLTLC CLTFC CSTLCI CSTFCI CLTLCI CLTFCI
+                        DRCSTLC DRCSTFC DRCLTLC DRCLTFC
+                        IRCSTLC IRCSTFC IRCLTLC IRCLTFC
+                        CSTLCD CSTFCD CLTLCD CLTFCD
+                        CSTLCID CSTFCID CLTLCID CLTFCID)
+     ECAI.COUNTRY (KEEP=CUSTID CUSTNAME CUSTFISS
+                        CUSTCD COUNTRY CNAME COMPTYPE
+                        LSTMODDT TABLETYP COUNTRY
+                        CNAME AGENCYCD AGNAME SOVLTFC);
+
+   INFILE ECAIRATE   LRECL=400 ;
+   INPUT  @1	CUSTID	 	     $15.
+          @16   CUSTNAME  	$40.
+          @56   CUSTFISS   	$50.
+		        @106  CUSTCD      $5.
+          @111  COUNTRY     $2.
+		        @113  CNAME       $30.
+          @143  COMPTYPE    $1.
+		        @144  LSTMODDT    $10.
+          @154  TABLETYP    $1. @;
+    IF TABLETYP = 'a' THEN DO;
+       INPUT @155  SECID      $16.
+             @171  AGENCYCD    $10.
+             @181  AGNAME      $30.
+             @211  TYPERATE     $1.
+             @212  RATING      $20.
+             @232  MATURITY    $10.
+             @242  CUR          $3.
+             @245  CURDESC     $30.
+             @275  LSTMODDT    $10.;
+       OUTPUT ECAI.MS;
+    END;
+	/** COUNTERPART/CUSTOMER RATING  **/
+    IF TABLETYP = 'b' THEN DO;
+    INPUT @155  AGENCYCD   	$10.
+		        @165  AGNAME       $30.
+          @195  DIRECT      $1. @;
+	   IF DIRECT = 1 THEN DO;
+	   INPUT @196  CSTLC      $20.
+          @216  CSTFC      $20.
+          @236  CLTLC      $20.
+		        @256  CLTFC      $20.
+          @276  CSTLCD     $20.
+          @296  CSTFCD     $20.
+		        @316  CLTLCD     $20.
+          @336  CLTFCD     $20.
+          @356  LSTMODDT   $10.;
+	END;
+    ELSE IF DIRECT = 2 THEN DO;
+	   INPUT @196  CSTLCI     $20.
+          @216  CSTFCI     $20.
+          @236  CLTLCI     $20.
+		        @256  CLTFCI     $20.
+          @276  CSTLCID    $20.
+          @296  CSTFCID    $20.
+		        @316  CLTLCID    $20.
+          @336  CLTFCID    $20.
+          @356  LSTMODDT   $10.;
+	    END;
+
+     OUTPUT ECAI.COUNTER;
+	    END;
+
+RUN;
+
+DATA ECAI.COUNTERKAP;
+   SET ECAI.COUNTER(KEEP=CUSTID AGENCYCD AGNAME
+                         CUSTNAME CNAME LSTMODDT CSTLC CLTLC);
+   FORMAT DRCSTLC DRCLTLC 2.;
+   DRCSTLC = PUT(CSTLC,$RATINGC.);
+   DRCLTLC = PUT(CLTLC,$RATINGB.);
+RUN;
+
+PROC SORT DATA=ECAI.COUNTERKAP OUT=DRCSTLC ;
+   BY CUSTID DESCENDING DRCSTLC;
+   WHERE DRCSTLC NE 99;
+RUN;
+PROC SORT DATA=ECAI.COUNTERKAP OUT=DRCLTLC ;
+   BY CUSTID DESCENDING DRCLTLC;
+   WHERE DRCLTLC NE 99;
+RUN;
+DATA DRCSTLC;
+   SET DRCSTLC(KEEP=CUSTID CUSTNAME CNAME DRCSTLC CSTLC);
+   BY CUSTID;
+   IF FIRST.CUSTID THEN OUTPUT DRCSTLC;
+RUN;
+PROC SORT DATA=DRCSTLC NODUPKEYS; BY CUSTID;
+RUN;
+
+DATA DRCLTLC;
+   SET DRCLTLC(KEEP=CUSTID CUSTNAME CNAME DRCLTLC CLTLC);
+   BY CUSTID;
+   IF FIRST.CUSTID THEN OUTPUT DRCLTLC;
+RUN;
+
+DATA RAM;
+   SET ECAI.COUNTER(KEEP=CUSTID AGENCYCD CSTLC CLTLC);
+   IF AGENCYCD = 'RAM' AND (CSTLC NE ' ' OR  CLTLC NE ' ');
+RUN;
+PROC SORT DATA=RAM;BY CUSTID;RUN;
+
+DATA ECAI.COUNTERKAP2;
+   MERGE DRCSTLC DRCLTLC;
+   BY CUSTID;
+	  IF CUSTID = ' ' THEN DELETE;
+	  * DROP DRCSTLC DRCLTLC;
+RUN;
+PROC SORT DATA=ECAI.COUNTERKAP2 NODUP; BY CUSTID;
+RUN;
+
+DATA ECAI.BEST;
+   MERGE ECAI.COUNTERKAP2(IN=A) RAM(IN=B);BY CUSTID;
+   IF A;
+RUN;
+
+DATA ECAI.COUNTERKAP&REPTMON&REPTYR;
+   SET ECAI.COUNTERKAP2;
+RUN;
+
+FILENAME TRANFILE 'SAP.ECAI.SASFTP' DISP=OLD;
+PROC CPORT LIBRARY=ECAI FILE=TRANFILE;
+RUN;
+PROC SORT DATA=ECAI.MS; BY CUSTID TYPERATE RATING;
+RUN;
+DATA ECAI.MS;
+   SET ECAI.MS;
+   FORMAT RRATING 2.;
+   IF TYPERATE IN (1,2) THEN RRATING = PUT(RATING,$RATINGC.);
+   IF TYPERATE IN (3,4) THEN RRATING = PUT(RATING,$RATINGB.);
+RUN;
+PROC SORT DATA=ECAI.MS OUT=MS; BY SECID RRATING;
+WHERE RRATING NE 99;
+RUN;
+DATA RRATING1 RRATING2;
+   SET MS;
+   BY SECID;
+   IF FIRST.SECID THEN OUTPUT RRATING1;
+   ELSE OUTPUT RRATING2;
+RUN;
+PROC SORT DATA=RRATING2 NODUPKEYS; BY SECID;
+RUN;
+DATA ECAI.MS;
+   MERGE RRATING1(IN=A) RRATING2(IN=B);
+   BY SECID;
+   IF TYPERATE = 1 THEN CSTLC = RATING;
+   ELSE IF TYPERATE = 2 THEN CSTFC = RATING;
+   ELSE IF TYPERATE = 3 THEN CLTLC = RATING;
+   ELSE IF TYPERATE = 4 THEN CLTFC = RATING;
+RUN;
+//*%OPC END   ACTION=NOSCAN
+
+
+
