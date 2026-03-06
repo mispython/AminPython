@@ -674,3 +674,63 @@ MISSTEXT='0'
 RUN;
 
 ODS HTML CLOSE;
+
+
+/* ================================================= */
+/* NEW BLOCK : HIGH RISK EKYC SAVINGS ACCOUNT        */
+/* ================================================= */
+
+/* Identify eKYC Savings Accounts */
+
+DATA EKYC_SA_BASE;
+SET PBB_SA PIBB_SA;
+
+NOACCT = 1;
+
+/* APPENDIX 3 PRODUCT CODES */
+IF PRODUCT IN (/* PUT EKYC PRODUCT CODE HERE */)
+THEN EKYC_RISK='H';
+
+RUN;
+
+PROC SORT DATA=EKYC_SA_BASE NODUPKEY;
+BY ACCTNO;
+RUN;
+
+
+/* Merge with transactions */
+
+DATA DPBTRAN_EKYC;
+
+MERGE DPBTRAN(IN=A) EKYC_SA_BASE(IN=B);
+BY ACCTNO;
+
+IF A AND B;
+IF EKYC_RISK='H';
+
+RUN;
+
+
+/* Summarise */
+
+PROC SUMMARY DATA=DPBTRAN_EKYC NWAY;
+
+CLASS ENTITY;
+VAR TRANAMT NOACCT;
+
+OUTPUT OUT=HG_EKYC
+(DROP=_TYPE_
+RENAME=(_FREQ_=NOTRX))
+SUM=;
+
+RUN;
+
+
+DATA HG_EKYC;
+
+SET HG_EKYC;
+
+ITEM = 5;
+TRXAMT = TRANAMT;
+
+RUN;
