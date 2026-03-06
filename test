@@ -379,4 +379,298 @@ All Deposit Products
 All Loan Products						
 						
 						
+/*LIBNAME DP      '/dwh/cmsbdptr';*/
+/*LIBNAME LNTRAN  '/dwh/cmsblntr';*/
+/*LIBNAME LN      '/dwh/ln_ln';*/
+/*LIBNAME ILN     '/dwh/iln_ln';*/
+/*LIBNAME CA      '/dwh/dp_ca';*/
+/*LIBNAME ICA     '/dwh/idp_ca';*/
+/*LIBNAME SA      '/dwh/dp_sa';*/
+/*LIBNAME ISA     '/dwh/idp_sa';*/
+/*LIBNAME FD      '/dwh/dp_fd';*/
+/*LIBNAME IFD     '/dwh/idp_fd';*/
+/*LIBNAME FCY     '/dwh/dp_fcy';*/
+/*LIBNAME IFCY    '/dwh/idp_fcy';*/
+/*LIBNAME GOLD    '/dwh/dp_gold';*/
+/*LIBNAME TEMP    '/dwh/dwh_m/tempsource/qrf';*/
+/*FILENAME BNM    '/sasdata/dwh/logs';*/
 
+
+LIBNAME DP      '/stgsrcsys/host/uat/2026-307';
+LIBNAME LNTRAN  '/stgsrcsys/host/uat/2026-307';
+LIBNAME LN      '/stgsrcsys/host/uat/2026-307';
+LIBNAME ILN     '/stgsrcsys/host/uat/2026-307';
+LIBNAME CA      '/stgsrcsys/host/uat/2026-307';
+LIBNAME ICA     '/stgsrcsys/host/uat/2026-307';
+LIBNAME SA      '/stgsrcsys/host/uat/2026-307';
+LIBNAME ISA     '/stgsrcsys/host/uat/2026-307';
+LIBNAME FD      '/stgsrcsys/host/uat/2026-307';
+LIBNAME IFD     '/stgsrcsys/host/uat/2026-307';
+LIBNAME FCY     '/stgsrcsys/host/uat/2026-307';
+LIBNAME IFCY    '/stgsrcsys/host/uat/2026-307';
+LIBNAME GOLD    '/stgsrcsys/host/uat/2026-307';
+LIBNAME TEMP    '/stgsrcsys/host/uat/2026-307';
+FILENAME BNM    '/stgsrcsys/host/uat/2026-307';
+
+
+PROC FORMAT;
+
+   VALUE COLINFO
+      1 = 'High Risk Deposit Products'
+      5 = 'High Risk eKYC Products (Savings Account only - Refer to Appendix 3)'
+      2 = 'All Deposit Products'
+      3 = 'High Risk Loan Products'
+      4 = 'All Loan Products'
+      ;
+RUN;
+
+
+DATA REPTDATE;
+
+	%let SAS_DT_SASDLY = '01MAR26'D;
+
+  REPTDATE = &SAS_DT_SASDLY - DAY(&SAS_DT_SASDLY);
+  STARTDT  = MDY(MONTH(REPTDATE),1,YEAR(REPTDATE)); 
+
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+  CALL SYMPUT('REPTMON' ,PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('NOWK' ,PUT(4,1.));
+  CALL SYMPUT('TDATE',REPTDATE);
+  CALL SYMPUT('REPTYR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('DAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('STARTDT',STARTDT);
+
+RUN;
+
+%put &REPTMON;
+
+
+/* ========================= */
+/* CURRENT ACCOUNT DATA     */
+/* ========================= */
+
+DATA PBB_CA;
+  SET CA.CA&REPTMON.1&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      CA.CA&REPTMON.2&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      CA.CA&REPTMON.3&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      CA.CA&REPTMON.4&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      CA.CACLOSE&REPTMON&REPTYEAR(KEEP=ACCTNO PRODUCT);
+  ENTITY = 'PBB ';
+RUN;
+
+DATA PIBB_CA;
+  SET ICA.ICA&REPTMON.1&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      ICA.ICA&REPTMON.2&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      ICA.ICA&REPTMON.3&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      ICA.ICA&REPTMON.4&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      ICA.ICACLOSE&REPTMON&REPTYEAR(KEEP=ACCTNO PRODUCT);
+  ENTITY = 'PIBB';
+RUN;
+
+
+/* ========================= */
+/* SAVINGS ACCOUNT DATA     */
+/* ========================= */
+
+DATA PBB_SA;
+  SET SA.SA&REPTMON.1&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      SA.SA&REPTMON.2&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      SA.SA&REPTMON.3&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      SA.SA&REPTMON.4&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      SA.SACLOSE&REPTMON&REPTYEAR(KEEP=ACCTNO PRODUCT);
+  ENTITY = 'PBB ';
+RUN;
+
+DATA PIBB_SA;
+  SET ISA.ISA&REPTMON.1&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      ISA.ISA&REPTMON.2&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      ISA.ISA&REPTMON.3&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      ISA.ISA&REPTMON.4&REPTYEAR(KEEP=ACCTNO PRODUCT)
+      ISA.ISACLOSE&REPTMON&REPTYEAR(KEEP=ACCTNO PRODUCT);
+  ENTITY = 'PIBB';
+RUN;
+
+
+/* ===== NEW EKYC SECTION ===== */
+
+DATA FULL_BASE_EKYC_SA;
+  SET PBB_SA PIBB_SA;
+  NOACCT = 1;
+
+  /* APPENDIX 3 PRODUCT CODES HERE */
+  IF PRODUCT IN (/* EKYC PRODUCT CODES */)
+  THEN EKYC_RISK='H';
+
+RUN;
+
+PROC SORT DATA=FULL_BASE_EKYC_SA NODUPKEY;
+BY ACCTNO;
+RUN;
+
+
+/* ========================= */
+/* DEPOSIT TRANSACTIONS     */
+/* ========================= */
+
+DATA DPBTRAN;
+
+   SET DP.DPBTRAN&REPTYEAR&REPTMON.01(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD)
+       DP.DPBTRAN&REPTYEAR&REPTMON.02(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD)
+       DP.DPBTRAN&REPTYEAR&REPTMON.03(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD)
+       DP.DPBTRAN&REPTYEAR&REPTMON.04(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD);
+
+   IF ORITXNCD NE . THEN TRANCD = ORITXNCD;
+   ELSE TRANCD = TRANCODE;
+
+RUN;
+
+PROC SORT DATA=DPBTRAN;
+BY ACCTNO;
+RUN;
+
+
+/* ===== NEW EKYC TRANSACTION ===== */
+
+DATA DPBTRAN_EKYC;
+MERGE DPBTRAN(IN=A) FULL_BASE_EKYC_SA(IN=B);
+BY ACCTNO;
+
+IF A AND B;
+IF EKYC_RISK='H';
+
+RUN;
+
+
+/* ========================= */
+/* TOTAL DEPOSIT SUMMARY    */
+/* ========================= */
+
+PROC SUMMARY DATA=DPBTRAN NWAY;
+
+CLASS ENTITY;
+VAR TRANAMT NOACCT;
+
+OUTPUT OUT=ALL_DPBTRAN
+(DROP=_TYPE_
+RENAME=(_FREQ_=NOTRX))
+SUM=;
+
+RUN;
+
+
+DATA ALL_DPBTRAN;
+
+SET ALL_DPBTRAN;
+
+ITEM = 2;
+TRXAMT = TRANAMT;
+
+RUN;
+
+
+/* ========================= */
+/* HIGH RISK DEPOSIT        */
+/* ========================= */
+
+PROC SUMMARY DATA=DPBTRAN NWAY;
+
+WHERE RISK='H';
+
+CLASS ENTITY;
+
+VAR TRANAMT NOACCT;
+
+OUTPUT OUT=HG_DPBTRAN
+(DROP=_TYPE_
+RENAME=(_FREQ_=NOTRX))
+SUM=;
+
+RUN;
+
+
+DATA HG_DPBTRAN;
+
+SET HG_DPBTRAN;
+
+ITEM = 1;
+TRXAMT = TRANAMT;
+
+RUN;
+
+
+/* ===== NEW EKYC SUMMARY ===== */
+
+PROC SUMMARY DATA=DPBTRAN_EKYC NWAY;
+
+CLASS ENTITY;
+
+VAR TRANAMT NOACCT;
+
+OUTPUT OUT=HG_EKYC
+(DROP=_TYPE_
+RENAME=(_FREQ_=NOTRX))
+SUM=;
+
+RUN;
+
+
+DATA HG_EKYC;
+
+SET HG_EKYC;
+
+ITEM = 5;
+TRXAMT = TRANAMT;
+
+RUN;
+
+
+/* ========================= */
+/* FINAL DATASET            */
+/* ========================= */
+
+DATA TOT_ITEM;
+
+SET ALL_DPBTRAN
+    HG_DPBTRAN
+    HG_EKYC;
+
+MONTH = &REPTMON;
+REPTYEAR = &REPTYEAR;
+
+RUN;
+
+
+/* ========================= */
+/* REPORT                   */
+/* ========================= */
+
+ODS HTML CLOSE;
+
+ODS HTML FILE="/dwh/ftp/drr/QRF_DP_LN_&REPTYR&REPTMON..XLS";
+
+PROC TABULATE DATA=TOT_ITEM MISSING;
+
+FORMAT ITEM COLINFO.;
+
+CLASS ITEM ENTITY;
+
+VAR NOTRX TRXAMT NOACCT;
+
+TABLE ITEM='',
+(ENTITY='')*
+(
+NOTRX='No. of Transactions'*(SUM=' ')*FORMAT=COMMA20.
+TRXAMT='Amount (RM)'*(SUM=' ')*FORMAT=COMMA20.2
+NOACCT='Number of account'*(SUM=' ')*FORMAT=COMMA20.
+)
+
+/
+BOX='Information required'
+RTS=60
+CONDENSE
+MISSTEXT='0'
+;
+
+RUN;
+
+ODS HTML CLOSE;
