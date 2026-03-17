@@ -215,3 +215,11 @@ os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 with open(OUTPUT_FILE, "w") as f:
     for line in lines:
         f.write(line[:133].ljust(133) + "\n")  # enforce LRECL=133
+
+
+Dear Hui Wen,
+
+Our findings show that the source file contains hexadecimal value instead of character only data.
+
+Therefore, the dataset is unable to produce readable output.
+
