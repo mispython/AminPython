@@ -87,3 +87,131 @@ TABLE BRANCHX=' ' ALL='TOTAL ',
       /BOX='BRANCH ' RTS=30;
       KEYLABEL SUM=' ';
 *;
+
+
+import pandas as pd
+from datetime import datetime
+import os
+
+# =========================
+# CONFIG
+# =========================
+DATA_DIR = "./data"
+OUTPUT_FILE = "./output/SAP.PIBB.BT.LIMIT.REPORT.txt"
+
+# =========================
+# LOAD REPTDATE
+# =========================
+reptdate_df = pd.read_csv(f"{DATA_DIR}/REPTDATE.csv")  # Replace with actual loader
+reptdate = pd.to_datetime(reptdate_df['REPTDATE'].iloc[0])
+
+day = reptdate.day
+month = reptdate.month
+year = reptdate.year
+
+# =========================
+# DETERMINE WEEK LOGIC
+# =========================
+if day == 8:
+    SDD, WK, WK1 = 1, '1', '4'
+elif day == 15:
+    SDD, WK, WK1 = 9, '2', '1'
+elif day == 22:
+    SDD, WK, WK1 = 16, '3', '2'
+else:
+    SDD, WK, WK1, WK2, WK3 = 23, '4', '3', '2', '1'
+
+if WK == '1':
+    MM1 = month - 1 if month > 1 else 12
+else:
+    MM1 = month
+
+# =========================
+# BUILD DATASET NAME
+# =========================
+REPTMON = f"{month:02d}"
+dataset_name = f"IBTMAST{REPTMON}{WK}"
+
+# =========================
+# LOAD MAIN DATA
+# =========================
+df = pd.read_csv(f"{DATA_DIR}/{dataset_name}.csv")  # Replace with proper loader
+
+# =========================
+# FILTERING
+# =========================
+df = df[
+    (df['LEVELS'] == 1) &
+    (df['D'] == 1) &
+    (df['ACCTNO'].astype(str).str[:2] == '28')
+].copy()
+
+# =========================
+# CATEGORY MAPPING
+# =========================
+df['CATEGORY'] = df['RETAILID'].map({
+    'C': 'CORPORATE',
+    'R': 'RETAIL'
+})
+
+# =========================
+# AGGREGATION
+# =========================
+agg = (
+    df.groupby(['BRANCH', 'CATEGORY'], dropna=False)
+    .agg(
+        ACCT=('ACCTNO', 'count'),
+        APPRLIMT=('APPRLIMT', 'sum')
+    )
+    .reset_index()
+)
+
+# =========================
+# BRANCH TRANSFORMATION
+# =========================
+agg = agg[agg['BRANCH'] > 0]
+
+agg.loc[agg['BRANCH'] >= 3000, 'BRANCH'] -= 3000
+
+# Dummy branch name lookup (replace with real mapping)
+def get_branch_name(branch):
+    return f"BR_{branch}"
+
+agg['BRHNAME'] = agg['BRANCH'].apply(get_branch_name)
+agg['BRANCHX'] = agg['BRANCH'].astype(str).str.zfill(3) + "-" + agg['BRHNAME']
+
+# =========================
+# SORT (SAS default behavior)
+# =========================
+agg = agg.sort_values(['BRANCHX', 'CATEGORY'])
+
+# =========================
+# FORMAT OUTPUT (FIXED WIDTH)
+# =========================
+def format_row(row):
+    return (
+        f"{row['BRANCHX']:<30}"
+        f"{row['CATEGORY']:<12}"
+        f"{int(row['ACCT']):>10}"
+        f"{row['APPRLIMT']:>20,.2f}"
+    )
+
+lines = []
+
+# HEADER
+lines.append("PUBLIC BANK BERHAD. REPORT-ID: EIIMBTMY")
+lines.append(f"MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS {reptdate.strftime('%d/%m/%Y')}")
+lines.append("")
+
+# DATA
+for _, row in agg.iterrows():
+    lines.append(format_row(row))
+
+# =========================
+# WRITE FIXED WIDTH FILE
+# =========================
+os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+
+with open(OUTPUT_FILE, "w") as f:
+    for line in lines:
+        f.write(line[:133].ljust(133) + "\n")  # enforce LRECL=133
