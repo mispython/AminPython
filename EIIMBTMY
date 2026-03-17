@@ -223,3 +223,7 @@ Our findings show that the source file contains hexadecimal value instead of cha
 
 Therefore, the dataset is unable to produce readable output.
 
+The file is not in normal readable text.
+It is stored in a special system format, so when we open it, it looks like random characters.
+That’s why we can’t produce a readable output from it.
+
