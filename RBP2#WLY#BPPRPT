@@ -620,7 +620,172 @@ RUN;
 
 
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
 
+# =========================
+# CONFIG (replace with real paths)
+# =========================
+LNFL_PATH = "lnfl.txt"
+HPFL_PATH = "hpfl.txt"
+BRFL_PATH = "branch.txt"
+OUTPUT_PATH = "output_report.txt"
+
+# =========================
+# PURPOSE MAPPING
+# =========================
+PURPOSE_MAP = {
+    'FEE EXPENSE/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 1,
+    'DEVELOPER SALE (REDEMPTION)': 2,
+    'DEVELOPER SALE/CONSTRUCTION LOAN (PROGRESSIVE RELEASE)': 3,
+    'DEVELOPER SALE (FULL RELEASE)': 4,
+    'SUBSALE/AUCTION PURCHASED (REDEMPTION)': 5,
+    'SUBSALE (BALANCE OF LOAN RELEASE)': 6,
+    'SUBSALE (FULL RELEASE)': 7,
+    'REFINANCING (REDEMPTION)': 8,
+    'REFINANCING (BALANCE OF LOAN RELEASE)': 9,
+    'ADDITIONAL LOAN (SECURED BY THE EXISTING PROPERTY)/REINSTATEMENT': 10,
+    'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)': 11,
+    'OTHERS - LEGAL FEES': 12,
+    'OTHERS - TAKAFUL CONTRIBUTION (APPLICABLE TO PIBB)': 13,
+    'OTHERS - LIFE INSURANCE PREMIUM (APPLICABLE TO PBB)': 14,
+    'FEE EXPENSES/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 15,
+    'DISBURSEMENT': 16
+}
+
+# =========================
+# READ FIXED WIDTH FILE
+# =========================
+def read_remittance_file(path, purpose_len):
+    colspecs = [
+        (0, 4),    # BRCH
+        (5, 15),   # ISSUDT
+        (16, 56),  # CUSTNAME
+        (57, 68),  # ACCTNO
+        (69, 85),  # BNKCHQ
+        (86, 94),  # CNT
+        (95, 109), # AMN
+        (110, 110 + purpose_len) # PURPOSE
+    ]
+
+    df = pd.read_fwf(
+        path,
+        colspecs=colspecs,
+        skiprows=4,
+        dtype=str
+    )
+
+    df.columns = [
+        "BRCH","ISSUDT","CUSTNAME","ACCTNO",
+        "BNKCHQ","CNT","AMN","PURPOSE"
+    ]
+
+    # Clean numeric fields
+    df["CNT"] = pd.to_numeric(df["CNT"], errors="coerce").fillna(0)
+    df["AMT"] = (
+        df["AMN"]
+        .str.replace(",", "", regex=False)
+        .astype(float)
+    )
+
+    # Map purpose
+    df["PURP"] = df["PURPOSE"].str.strip().map(PURPOSE_MAP).fillna(0)
+
+    # Filter
+    df = df[~df["PURP"].isin([0, 13])]
+
+    return df
+
+# =========================
+# READ FILES
+# =========================
+ln_df = read_remittance_file(LNFL_PATH, 70)
+hp_df = read_remittance_file(HPFL_PATH, 60)
+
+remal = pd.concat([ln_df, hp_df], ignore_index=True)
+
+# =========================
+# CREATE CATEGORY COLUMNS
+# =========================
+for i in range(1, 17):
+    remal[f"CNT{i}"] = np.where(remal["PURP"] == i, remal["CNT"], 0)
+    remal[f"AMT{i}"] = np.where(remal["PURP"] == i, remal["AMT"], 0)
+
+# =========================
+# AGGREGATION
+# =========================
+group_cols = ["BRCH"]
+
+agg_cols = {f"CNT{i}":"sum" for i in range(1,17)}
+agg_cols.update({f"AMT{i}":"sum" for i in range(1,17)})
+
+sublh = remal.groupby(group_cols).agg(agg_cols).reset_index()
+
+sumlh = remal.groupby("BRCH").agg(
+    SUMCNT=("CNT","sum"),
+    SUMAMT=("AMT","sum")
+).reset_index()
+
+sumln = remal[~remal["PURP"].isin([15,16])].groupby("BRCH").agg(
+    LNCNT=("CNT","sum"),
+    LNAMT=("AMT","sum")
+).reset_index()
+
+sumhp = remal[remal["PURP"].isin([15,16])].groupby("BRCH").agg(
+    HPCNT=("CNT","sum"),
+    HPAMT=("AMT","sum")
+).reset_index()
+
+# =========================
+# READ BRANCH
+# =========================
+br_cols = [(1,4),(5,8),(11,41),(49,50)]
+
+br_df = pd.read_fwf(
+    BRFL_PATH,
+    colspecs=br_cols,
+    names=["BRCH","BRCODE","BRNAME","BRSTAT"],
+    dtype=str
+)
+
+br_df = br_df[br_df["BRSTAT"] != "C"]
+
+# =========================
+# MERGE
+# =========================
+df = br_df.merge(sublh, on="BRCH", how="left") \
+          .merge(sumln, on="BRCH", how="left") \
+          .merge(sumhp, on="BRCH", how="left") \
+          .merge(sumlh, on="BRCH", how="left")
+
+df = df.fillna(0)
+
+# =========================
+# PERCENTAGES
+# =========================
+for i in range(1,17):
+    df[f"PCNT{i}"] = (df[f"CNT{i}"] / df["SUMCNT"]) * 100
+    df[f"PAMT{i}"] = (df[f"AMT{i}"] / df["SUMAMT"]) * 100
+
+df["PHPCNT"] = (df["HPCNT"] / df["SUMCNT"]) * 100
+df["PHPAMT"] = (df["HPAMT"] / df["SUMAMT"]) * 100
+df["PLNCNT"] = (df["LNCNT"] / df["SUMCNT"]) * 100
+df["PLNAMT"] = (df["LNAMT"] / df["SUMAMT"]) * 100
+
+df = df.replace([np.inf, -np.inf], 0).fillna(0)
+
+# =========================
+# OUTPUT (SIMPLIFIED TEXT)
+# =========================
+with open(OUTPUT_PATH, "w") as f:
+    f.write("PUBLIC BANK REPORT\n")
+    f.write(f"DATE: {datetime.today().strftime('%d/%m/%Y')}\n\n")
+
+    for i, row in df.iterrows():
+        f.write(f"{int(row['BRCH']):03} {row['BRNAME'].strip()}\n")
+        f.write(f"TOTAL CNT: {row['SUMCNT']:.0f}  TOTAL AMT: {row['SUMAMT']:.2f}\n")
+        f.write("\n")
 
 
  ========================================== EIIWRMPU ========================================== 		
@@ -1931,6 +2096,101 @@ DATA _NULL_;
 RUN;
 
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# =========================
+# CONFIG (CHANGE PER JOB)
+# =========================
+CONFIG = {
+    "bank_name": "PUBLIC ISLAMIC BANK",
+    "exclude_purpose": [0, 14],   # <-- KEY DIFFERENCE
+    "lnfl_path": "lnfl.txt",
+    "hpfl_path": "hpfl.txt",
+    "brfl_path": "branch.txt",
+    "output_path": "output.txt"
+}
+
+# =========================
+# PURPOSE MAP (SHARED)
+# =========================
+PURPOSE_MAP = {
+    'FEE EXPENSE/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 1,
+    'DEVELOPER SALE (REDEMPTION)': 2,
+    'DEVELOPER SALE/CONSTRUCTION LOAN (PROGRESSIVE RELEASE)': 3,
+    'DEVELOPER SALE (FULL RELEASE)': 4,
+    'SUBSALE/AUCTION PURCHASED (REDEMPTION)': 5,
+    'SUBSALE (BALANCE OF LOAN RELEASE)': 6,
+    'SUBSALE (FULL RELEASE)': 7,
+    'REFINANCING (REDEMPTION)': 8,
+    'REFINANCING (BALANCE OF LOAN RELEASE)': 9,
+    'ADDITIONAL LOAN (SECURED BY THE EXISTING PROPERTY)/REINSTATEMENT': 10,
+    'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)': 11,
+    'OTHERS - LEGAL FEES': 12,
+    'OTHERS - TAKAFUL CONTRIBUTION (APPLICABLE TO PIBB)': 13,
+    'OTHERS - LIFE INSURANCE PREMIUM (APPLICABLE TO PBB)': 14,
+    'FEE EXPENSES/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 15,
+    'DISBURSEMENT': 16
+}
+
+# =========================
+# READ FIXED WIDTH
+# =========================
+def read_remittance(path, purpose_len):
+    colspecs = [
+        (0, 4),(5, 15),(16, 56),(57, 68),
+        (69, 85),(86, 94),(95, 109),(110, 110 + purpose_len)
+    ]
+
+    df = pd.read_fwf(path, colspecs=colspecs, skiprows=4, dtype=str)
+    df.columns = ["BRCH","ISSUDT","CUSTNAME","ACCTNO","BNKCHQ","CNT","AMN","PURPOSE"]
+
+    df["CNT"] = pd.to_numeric(df["CNT"], errors="coerce").fillna(0)
+    df["AMT"] = df["AMN"].str.replace(",", "", regex=False).astype(float)
+
+    df["PURP"] = df["PURPOSE"].str.strip().map(PURPOSE_MAP).fillna(0)
+
+    df = df[~df["PURP"].isin(CONFIG["exclude_purpose"])]
+
+    return df
+
+# =========================
+# PROCESS
+# =========================
+ln_df = read_remittance(CONFIG["lnfl_path"], 70)
+hp_df = read_remittance(CONFIG["hpfl_path"], 60)
+
+df = pd.concat([ln_df, hp_df])
+
+# category pivot
+for i in range(1,17):
+    df[f"CNT{i}"] = np.where(df["PURP"]==i, df["CNT"], 0)
+    df[f"AMT{i}"] = np.where(df["PURP"]==i, df["AMT"], 0)
+
+# aggregation
+agg = df.groupby("BRCH").sum(numeric_only=True).reset_index()
+
+agg["SUMCNT"] = df.groupby("BRCH")["CNT"].sum().values
+agg["SUMAMT"] = df.groupby("BRCH")["AMT"].sum().values
+
+# percentages
+for i in range(1,17):
+    agg[f"PCNT{i}"] = (agg[f"CNT{i}"] / agg["SUMCNT"]) * 100
+    agg[f"PAMT{i}"] = (agg[f"AMT{i}"] / agg["SUMAMT"]) * 100
+
+agg = agg.replace([np.inf, -np.inf], 0).fillna(0)
+
+# =========================
+# OUTPUT
+# =========================
+with open(CONFIG["output_path"], "w") as f:
+    f.write(CONFIG["bank_name"] + "\n")
+    f.write("SUMMARY REPORT\n\n")
+
+    for _, row in agg.iterrows():
+        f.write(f"{int(row['BRCH']):03} TOTAL CNT={row['SUMCNT']:.0f} AMT={row['SUMAMT']:.2f}\n")
+
 
 
 				
@@ -3150,6 +3410,162 @@ DATA _NULL_;
 RUN;
 
 
+import pandas as pd
+import numpy as np
+
+# =========================
+# CONFIG
+# =========================
+CONFIG = {
+    "category_count": 21,
+    "paths": {
+        "HP": "mchp.txt",
+        "LN": "mcln.txt",
+        "OT": "mcot.txt",
+        "TF": "mctf.txt"
+    }
+}
+
+# =========================
+# PURPOSE MAP (PBB VERSION)
+# =========================
+PURPOSE_MAP = {
+    'HOSPITALS AND CLINICS': 1,
+    'UTILITIES': 2,
+    'VENDOR AND SUPPLIERS': 3,
+    'TRADE FINANCE': 4,
+    'GOVERNMENT AGENCIES': 5,
+    'FEE EXPENSES/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 6,
+    'DISBURSEMENT': 7,
+    'FEE EXPENSE/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 8,
+    'DEVELOPER SALE (REDEMPTION)': 9,
+    'DEVELOPER SALE/CONSTRUCTION LOAN (PROGRESSIVE RELEASE)': 10,
+    'DEVELOPER SALE (FULL RELEASE)': 11,
+    'SUBSALE/AUCTION PURCHASED (REDEMPTION)': 12,
+    'SUBSALE (BALANCE OF LOAN RELEASE)': 13,
+    'SUBSALE (FULL RELEASE)': 14,
+    'REFINANCING (REDEMPTION)': 15,
+    'REFINANCING (BALANCE OF LOAN RELEASE)': 16,
+    'ADDITIONAL LOAN (SECURED BY THE EXISTING PROPERTY)/REINSTATEMENT': 17,
+    'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)': 18,
+    'OTHERS - LEGAL FEES': 19,
+    'OTHERS - LIFE INSURANCE PREMIUM (APPLICABLE TO PBB)': 20,
+    'OTHERS': 21
+}
+
+# =========================
+# READ STANDARD FILE
+# =========================
+def read_standard(path, typ):
+    colspecs = [
+        (0,4),(5,15),(16,56),(57,68),
+        (69,85),(86,99),(102,172)
+    ]
+
+    df = pd.read_fwf(path, colspecs=colspecs, skiprows=4, dtype=str)
+    df.columns = ["BRCH","ISSUDT","CUSTNAME","ACCTNO","BNKCHQ","AMN","PURPOSE"]
+
+    df["TYP"] = typ
+    df["CNT"] = 1
+    df["AMT"] = df["AMN"].str.replace(",", "", regex=False).astype(float)
+
+    df["PURP"] = df["PURPOSE"].str.strip().map(PURPOSE_MAP).fillna(0)
+
+    # Special rule
+    df.loc[df["PURPOSE"].str.startswith("OTHER -"), "PURP"] = 21
+
+    df = df[df["PURP"] != 0]
+
+    return df
+
+# =========================
+# READ LN WITH CONDITIONAL PARSING
+# =========================
+def read_ln(path):
+    rows = []
+
+    with open(path) as f:
+        lines = f.readlines()[4:]
+
+    for line in lines:
+        ch = line[102:114].strip()
+
+        if ch == "DISBURSEMENT":
+            purpose = line[117:187]
+        else:
+            purpose = line[102:172]
+
+        row = {
+            "BRCH": line[0:4],
+            "AMT": float(line[86:99].replace(",", "")),
+            "PURPOSE": purpose.strip(),
+            "TYP": "LN",
+            "CNT": 1
+        }
+
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    df["PURP"] = df["PURPOSE"].map(PURPOSE_MAP).fillna(0)
+    df = df[df["PURP"] != 0]
+
+    return df
+
+# =========================
+# LOAD DATA
+# =========================
+df_hp = read_standard(CONFIG["paths"]["HP"], "HP")
+df_ln = read_ln(CONFIG["paths"]["LN"])
+df_ot = read_standard(CONFIG["paths"]["OT"], "OT")
+df_tf = read_standard(CONFIG["paths"]["TF"], "TF")
+
+df = pd.concat([df_hp, df_ln, df_ot, df_tf], ignore_index=True)
+
+# =========================
+# PIVOT
+# =========================
+for i in range(1, CONFIG["category_count"] + 1):
+    df[f"CNT{i}"] = np.where(df["PURP"] == i, df["CNT"], 0)
+    df[f"AMT{i}"] = np.where(df["PURP"] == i, df["AMT"], 0)
+
+# =========================
+# AGGREGATION
+# =========================
+agg = df.groupby("BRCH").sum(numeric_only=True).reset_index()
+
+# totals
+totals = df.groupby("BRCH").agg(
+    SUMCNT=("CNT","sum"),
+    SUMAMT=("AMT","sum")
+).reset_index()
+
+ln_tot = df[df["TYP"]=="LN"].groupby("BRCH").agg(
+    LNCNT=("CNT","sum"),
+    LNAMT=("AMT","sum")
+).reset_index()
+
+hp_tot = df[df["TYP"]=="HP"].groupby("BRCH").agg(
+    HPCNT=("CNT","sum"),
+    HPAMT=("AMT","sum")
+).reset_index()
+
+agg = agg.merge(totals, on="BRCH") \
+         .merge(ln_tot, on="BRCH", how="left") \
+         .merge(hp_tot, on="BRCH", how="left") \
+         .fillna(0)
+
+# =========================
+# PERCENTAGES
+# =========================
+for i in range(1, CONFIG["category_count"] + 1):
+    agg[f"PCNT{i}"] = (agg[f"CNT{i}"] / agg["SUMCNT"]) * 100
+    agg[f"PAMT{i}"] = (agg[f"AMT{i}"] / agg["SUMAMT"]) * 100
+
+agg["PHPCNT"] = (agg["HPCNT"] / agg["SUMCNT"]) * 100
+agg["PLNCNT"] = (agg["LNCNT"] / agg["SUMCNT"]) * 100
+
+agg = agg.replace([np.inf, -np.inf], 0).fillna(0)
 
 			
  ========================================== EIWRMPU2 ========================================== 		
@@ -3882,7 +4298,151 @@ RUN;
 
 
 
+import pandas as pd
+import numpy as np
 
+CATEGORY_COUNT = 22
+
+# =========================
+# PURPOSE MAP (COMBINED)
+# =========================
+PURPOSE_MAP = {
+    'HOSPITALS AND CLINICS': 1,
+    'UTILITIES': 2,
+    'VENDOR AND SUPPLIERS': 3,
+    'TRADE FINANCE': 4,
+    'GOVERNMENT AGENCIES': 5,
+    'FEE EXPENSES/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 6,
+    'DISBURSEMENT': 7,
+    'FEE EXPENSE/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 8,
+    'DEVELOPER SALE (REDEMPTION)': 9,
+    'DEVELOPER SALE/CONSTRUCTION LOAN (PROGRESSIVE RELEASE)': 10,
+    'DEVELOPER SALE (FULL RELEASE)': 11,
+    'SUBSALE/AUCTION PURCHASED (REDEMPTION)': 12,
+    'SUBSALE (BALANCE OF LOAN RELEASE)': 13,
+    'SUBSALE (FULL RELEASE)': 14,
+    'REFINANCING (REDEMPTION)': 15,
+    'REFINANCING (BALANCE OF LOAN RELEASE)': 16,
+    'ADDITIONAL LOAN (SECURED BY THE EXISTING PROPERTY)/REINSTATEMENT': 17,
+    'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)': 18,
+    'OTHERS - LEGAL FEES': 19,
+    'OTHERS - TAKAFUL CONTRIBUTION (APPLICABLE TO PIBB)': 20,
+    'OTHERS - LIFE INSURANCE PREMIUM (APPLICABLE TO PBB)': 21,
+    'OTHERS': 22
+}
+
+# =========================
+# LN READER WITH RULES
+# =========================
+def read_ln(path, exclude):
+    rows = []
+    with open(path) as f:
+        lines = f.readlines()[4:]
+
+    for line in lines:
+        ch = line[102:114].strip()
+
+        if ch == "DISBURSEMENT":
+            purpose = line[117:187]
+        else:
+            purpose = line[102:172]
+
+        purp = PURPOSE_MAP.get(purpose.strip(), 0)
+
+        if purp in exclude:
+            continue
+
+        rows.append({
+            "BRCH": line[0:4],
+            "AMT": float(line[86:99].replace(",", "")),
+            "PURP": purp,
+            "TYP": "LN",
+            "CNT": 1
+        })
+
+    return pd.DataFrame(rows)
+
+# =========================
+# STANDARD READER
+# =========================
+def read_standard(path, typ):
+    df = pd.read_fwf(
+        path,
+        colspecs=[(0,4),(86,99),(102,172)],
+        skiprows=4,
+        dtype=str
+    )
+
+    df.columns = ["BRCH","AMN","PURPOSE"]
+    df["CNT"] = 1
+    df["AMT"] = df["AMN"].str.replace(",", "", regex=False).astype(float)
+    df["PURP"] = df["PURPOSE"].str.strip().map(PURPOSE_MAP).fillna(0)
+    df["TYP"] = typ
+
+    # OTHER rule
+    df.loc[df["PURPOSE"].str.startswith("OTHER -"), "PURP"] = 22
+
+    return df[df["PURP"] != 0]
+
+# =========================
+# LOAD DATA
+# =========================
+# HP (combined)
+hp_pbb = read_standard("pbb_mchp.txt", "HP")
+hp_pibb = read_standard("pibb_mchp.txt", "HP")
+df_hp = pd.concat([hp_pbb, hp_pibb])
+
+# LN (separate rules)
+ln_pbb = read_ln("pbb_mcln.txt", exclude=[0,20])
+ln_pibb = read_ln("pibb_mcln.txt", exclude=[0,21])
+df_ln = pd.concat([ln_pbb, ln_pibb])
+
+# OT + TF (PBB only)
+df_ot = read_standard("mcot.txt", "OT")
+df_tf = read_standard("mctf.txt", "TF")
+
+df = pd.concat([df_hp, df_ln, df_ot, df_tf], ignore_index=True)
+
+# =========================
+# PIVOT
+# =========================
+for i in range(1, CATEGORY_COUNT + 1):
+    df[f"CNT{i}"] = np.where(df["PURP"] == i, df["CNT"], 0)
+    df[f"AMT{i}"] = np.where(df["PURP"] == i, df["AMT"], 0)
+
+# =========================
+# AGGREGATION
+# =========================
+agg = df.groupby("BRCH").sum(numeric_only=True).reset_index()
+
+totals = df.groupby("BRCH").agg(
+    SUMCNT=("CNT","sum"),
+    SUMAMT=("AMT","sum")
+).reset_index()
+
+ln_tot = df[df["TYP"]=="LN"].groupby("BRCH").agg(
+    LNCNT=("CNT","sum"),
+    LNAMT=("AMT","sum")
+).reset_index()
+
+hp_tot = df[df["TYP"]=="HP"].groupby("BRCH").agg(
+    HPCNT=("CNT","sum"),
+    HPAMT=("AMT","sum")
+).reset_index()
+
+agg = agg.merge(totals, on="BRCH") \
+         .merge(ln_tot, on="BRCH", how="left") \
+         .merge(hp_tot, on="BRCH", how="left") \
+         .fillna(0)
+
+# =========================
+# PERCENTAGE
+# =========================
+for i in range(1, CATEGORY_COUNT + 1):
+    agg[f"PCNT{i}"] = (agg[f"CNT{i}"] / agg["SUMCNT"]) * 100
+    agg[f"PAMT{i}"] = (agg[f"AMT{i}"] / agg["SUMAMT"]) * 100
+
+agg = agg.replace([np.inf, -np.inf], 0).fillna(0)
 			
  ========================================== EIWRMPU3 ========================================== 			
 
