@@ -2026,6 +2026,269 @@ PROC TABULATE DATA=SUPPL MISSING NOSEPS;
    TITLE4 'CUSTOMER DEPOSITS >= 1% OF TOTAL (PART 3)';
 
 
+
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+# ======================================================
+# CONFIG
+# ======================================================
+
+REPORT_DATE = datetime.today()
+
+# ======================================================
+# REMFMT (Maturity Bucket)
+# ======================================================
+
+def remfmt(remmth):
+    if remmth <= 0.1:
+        return "01"
+    elif remmth <= 1:
+        return "02"
+    elif remmth <= 3:
+        return "03"
+    elif remmth <= 6:
+        return "04"
+    elif remmth <= 12:
+        return "05"
+    else:
+        return "06"
+
+# ======================================================
+# REMAINING MONTH CALC
+# ======================================================
+
+def calc_rem_month(matdt, rptdate):
+    if pd.isna(matdt):
+        return 13
+    return max((matdt - rptdate).days / 30.0, 0)
+
+# ======================================================
+# BNM CODE BUILDER
+# ======================================================
+
+def build_bnm(prefix, item, cust, remmth):
+    bucket = remfmt(remmth)
+    return f"{prefix}{item}{cust}{bucket}0000Y"
+
+# ======================================================
+# LOAD DATA (REPLACE WITH REAL SOURCES)
+# ======================================================
+
+def load_data():
+    loan = pd.read_csv("loan.csv", parse_dates=["EXPRDATE","ISSDTE"])
+    fd   = pd.read_csv("fd.csv", parse_dates=["MATDATE"])
+    sa   = pd.read_csv("savings.csv")
+    ca   = pd.read_csv("current.csv")
+    fcy  = pd.read_csv("fcy.csv")
+    undrawn = pd.read_csv("undrawn.csv", parse_dates=["EXPRDATE","APPRDATE"])
+
+    return loan, fd, sa, ca, fcy, undrawn
+
+# ======================================================
+# LOAN PROCESSING
+# ======================================================
+
+def process_loans(df):
+
+    rows = []
+
+    for _, r in df.iterrows():
+
+        if r.get("AMTIND") != "I":
+            continue
+        if r.get("PAIDIND") in ["P","C"]:
+            continue
+
+        cust = "08" if r.get("CUSTCD") in ["77","78","95","96"] else "09"
+
+        balance = r.get("BALANCE", 0)
+
+        # OD
+        if r.get("ACCTYPE") == "OD":
+            remmth = 0.1
+            code = build_bnm("95213", "", cust, remmth)
+
+            rows.append([code, balance, 0, 0])
+            continue
+
+        # LN
+        matdt = r.get("EXPRDATE")
+        remmth = calc_rem_month(matdt, REPORT_DATE)
+
+        code = build_bnm("95", "211", cust, remmth)
+
+        rows.append([code, balance, 0, 0])
+
+    return pd.DataFrame(rows, columns=["BNMCODE","AMOUNT","AMTUSD","AMTSGD"])
+
+# ======================================================
+# FD PROCESSING
+# ======================================================
+
+def process_fd(df):
+
+    rows = []
+
+    for _, r in df.iterrows():
+
+        if r.get("CURBAL",0) <= 0:
+            continue
+
+        cust = "08" if r.get("CUSTCD") in [77,78,95,96] else "09"
+
+        matdt = r.get("MATDATE")
+        remmth = calc_rem_month(matdt, REPORT_DATE)
+
+        code = build_bnm("95311", "", cust, remmth)
+
+        rows.append([code, r["CURBAL"], 0, 0])
+
+    return pd.DataFrame(rows, columns=["BNMCODE","AMOUNT","AMTUSD","AMTSGD"])
+
+# ======================================================
+# SAVINGS
+# ======================================================
+
+def process_sa(df):
+
+    rows = []
+
+    for _, r in df.iterrows():
+
+        if r.get("AMTIND") != "I":
+            continue
+
+        cust = "08" if r.get("CUSTCD") in ["77","78","95","96"] else "09"
+
+        code = f"95312{cust}010000Y"
+
+        rows.append([code, r.get("CURBAL",0), 0, 0])
+
+    return pd.DataFrame(rows, columns=["BNMCODE","AMOUNT","AMTUSD","AMTSGD"])
+
+# ======================================================
+# CURRENT
+# ======================================================
+
+def process_ca(df):
+
+    rows = []
+
+    for _, r in df.iterrows():
+
+        if r.get("AMTIND") != "I":
+            continue
+
+        cust = "08" if r.get("CUSTCD") in ["77","78","95","96"] else "09"
+
+        code = f"95313{cust}010000Y"
+
+        rows.append([code, r.get("CURBAL",0), 0, 0])
+
+    return pd.DataFrame(rows, columns=["BNMCODE","AMOUNT","AMTUSD","AMTSGD"])
+
+# ======================================================
+# FCY CURRENT
+# ======================================================
+
+def process_fcy(df):
+
+    rows = []
+
+    for _, r in df.iterrows():
+
+        cust = "08" if r.get("CUSTCODE") in [77,78,95,96] else "09"
+
+        code = f"96313{cust}010000Y"
+
+        usd = r["CURBAL"] if r.get("PRODUCT") == 400 else 0
+        sgd = r["CURBAL"] if r.get("PRODUCT") == 403 else 0
+
+        rows.append([code, r["CURBAL"], usd, sgd])
+
+    return pd.DataFrame(rows, columns=["BNMCODE","AMOUNT","AMTUSD","AMTSGD"])
+
+# ======================================================
+# UNDRAWN
+# ======================================================
+
+def process_undrawn(df):
+
+    rows = []
+
+    for _, r in df.iterrows():
+
+        matdt = r.get("EXPRDATE") or (r.get("APPRDATE") + timedelta(days=365))
+
+        remmth = calc_rem_month(matdt, REPORT_DATE)
+
+        code = build_bnm("95", "429", "00", remmth)
+
+        rows.append([code, r.get("UNDRAWN",0), 0, 0])
+
+    return pd.DataFrame(rows, columns=["BNMCODE","AMOUNT","AMTUSD","AMTSGD"])
+
+# ======================================================
+# FINAL AGGREGATION
+# ======================================================
+
+def aggregate_all(dfs):
+
+    df = pd.concat(dfs, ignore_index=True)
+
+    result = (
+        df.groupby("BNMCODE")
+        .agg({
+            "AMOUNT":"sum",
+            "AMTUSD":"sum",
+            "AMTSGD":"sum"
+        })
+        .reset_index()
+    )
+
+    return result
+
+# ======================================================
+# MAIN
+# ======================================================
+
+def run():
+
+    loan, fd, sa, ca, fcy, undrawn = load_data()
+
+    loan_df = process_loans(loan)
+    fd_df   = process_fd(fd)
+    sa_df   = process_sa(sa)
+    ca_df   = process_ca(ca)
+    fcy_df  = process_fcy(fcy)
+    und_df  = process_undrawn(undrawn)
+
+    final = aggregate_all([
+        loan_df,
+        fd_df,
+        sa_df,
+        ca_df,
+        fcy_df,
+        und_df
+    ])
+
+    # filter large exposures
+    suppl = final[final["AMOUNT"].abs() >= 5_000_000]
+
+    # output
+    final.to_csv("fiss_output.csv", index=False)
+    suppl.to_csv("fiss_large_exposure.csv", index=False)
+
+# ======================================================
+# EXECUTE
+# ======================================================
+
+if __name__ == "__main__":
+    run()
+
+
 	
 ==========================================  JOB 7 : EIBMP124 ========================================== 		
 
