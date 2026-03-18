@@ -136,3 +136,96 @@ PROC PRINT DATA=TEMP.FD LABEL;
    TITLE3 'REPORT ID: EIBMFD03';
 RUN;
 //
+
+
+
+import pandas as pd
+import numpy as np
+
+# =========================
+# LOAD DATA
+# =========================
+prev_df = pd.read_parquet("fd_previous.parquet")  # FD1
+curr_df = pd.read_parquet("fd_current.parquet")   # FD
+
+# =========================
+# FILTER OPENIND
+# =========================
+prev_df = prev_df[prev_df["OPENIND"].isin(["O", "D"])]
+curr_df = curr_df[curr_df["OPENIND"].isin(["O", "D"])]
+
+# =========================
+# AGGREGATE PREVIOUS
+# =========================
+prev_agg = (
+    prev_df
+    .groupby(["BRANCH", "ACCTNO", "INTPLAN"], as_index=False)
+    .agg(PREVBAL=("CURBAL", "sum"))
+)
+
+# =========================
+# AGGREGATE CURRENT
+# =========================
+curr_agg = (
+    curr_df
+    .groupby(["BRANCH", "ACCTNO", "INTPLAN"], as_index=False)
+    .agg(CURRBAL=("CURBAL", "sum"))
+)
+
+# =========================
+# MERGE
+# =========================
+df = pd.merge(curr_agg, prev_agg,
+              on=["BRANCH", "ACCTNO", "INTPLAN"],
+              how="outer")
+
+# =========================
+# HANDLE MISSING
+# =========================
+df["PREVBAL"] = df["PREVBAL"].fillna(0)
+df["CURRBAL"] = df["CURRBAL"].fillna(0)
+
+# =========================
+# CALCULATE MOVEMENT
+# =========================
+df["MOVEMENT"] = df["CURRBAL"] - df["PREVBAL"]
+
+# =========================
+# FILTER >= 1M
+# =========================
+df = df[df["MOVEMENT"].abs() >= 1_000_000]
+
+# =========================
+# LOAD CUSTOMER
+# =========================
+cust = pd.read_parquet("cissafd.parquet")
+cust = cust[cust["SECCUST"] == 901][["ACCTNO", "CUSTNAME"]]
+
+df = df.merge(cust, on="ACCTNO", how="left")
+
+# =========================
+# LOAD BRANCH
+# =========================
+branch = pd.read_fwf(
+    "branch.txt",
+    colspecs=[(1,4),(5,8)],
+    names=["BRANCH","BRABBR"]
+)
+
+df = df.merge(branch, on="BRANCH", how="left")
+
+# =========================
+# FINAL OUTPUT
+# =========================
+df = df[[
+    "BRANCH","BRABBR","ACCTNO","CUSTNAME",
+    "INTPLAN","CURRBAL","PREVBAL","MOVEMENT"
+]]
+
+# optional sort like SAS
+df = df.sort_values("ACCTNO")
+
+# =========================
+# EXPORT
+# =========================
+df.to_csv("fd_movement_report.csv", index=False)
