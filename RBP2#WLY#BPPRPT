@@ -5749,6 +5749,235 @@ RUN;
 
 
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# ======================================================
+# UTILITIES
+# ======================================================
+
+def safe_float(x):
+    try:
+        return float(str(x).replace(",", "").strip())
+    except:
+        return 0.0
+
+def read_lines(path):
+    with open(path) as f:
+        return f.readlines()[4:]  # FIRSTOBS=5
+
+
+# ======================================================
+# PARSERS
+# ======================================================
+
+def parse_standard(lines, purpose_map, typ, has_cnt=True, other_override=None):
+    rows = []
+
+    for line in lines:
+        purpose = line[102:172].strip()
+        purp = purpose_map.get(purpose, 0)
+
+        if other_override and purpose.startswith("OTHER -"):
+            purp = other_override
+
+        if purp == 0:
+            continue
+
+        rows.append({
+            "BRCH": line[0:4].strip(),
+            "CNT": int(line[86:94]) if has_cnt else 1,
+            "AMT": safe_float(line[95:109] if has_cnt else line[86:99]),
+            "PURP": purp,
+            "TYP": typ
+        })
+
+    return pd.DataFrame(rows)
+
+
+def parse_mcln(lines, purpose_map):
+    rows = []
+
+    for line in lines:
+        ch = line[102:114].strip()
+
+        if ch == "DISBURSEMENT":
+            purpose = line[117:187]
+        else:
+            purpose = line[102:172]
+
+        purp = purpose_map.get(purpose.strip(), 0)
+
+        if purp == 0:
+            continue
+
+        rows.append({
+            "BRCH": line[0:4].strip(),
+            "CNT": 1,
+            "AMT": safe_float(line[86:99]),
+            "PURP": purp,
+            "TYP": "LN"
+        })
+
+    return pd.DataFrame(rows)
+
+
+# ======================================================
+# AGGREGATION
+# ======================================================
+
+def aggregate(df, category_count):
+    for i in range(1, category_count + 1):
+        df[f"CNT{i}"] = np.where(df["PURP"] == i, df["CNT"], 0)
+        df[f"AMT{i}"] = np.where(df["PURP"] == i, df["AMT"], 0)
+
+    agg = df.groupby("BRCH").sum(numeric_only=True).reset_index()
+
+    totals = df.groupby("BRCH").agg(
+        SUMCNT=("CNT","sum"),
+        SUMAMT=("AMT","sum")
+    ).reset_index()
+
+    ln = df[df["TYP"]=="LN"].groupby("BRCH").agg(
+        LNCNT=("CNT","sum"),
+        LNAMT=("AMT","sum")
+    ).reset_index()
+
+    hp = df[df["TYP"]=="HP"].groupby("BRCH").agg(
+        HPCNT=("CNT","sum"),
+        HPAMT=("AMT","sum")
+    ).reset_index()
+
+    agg = agg.merge(totals, on="BRCH") \
+             .merge(ln, on="BRCH", how="left") \
+             .merge(hp, on="BRCH", how="left") \
+             .fillna(0)
+
+    for i in range(1, category_count + 1):
+        agg[f"PCNT{i}"] = (agg[f"CNT{i}"] / agg["SUMCNT"]) * 100
+        agg[f"PAMT{i}"] = (agg[f"AMT{i}"] / agg["SUMAMT"]) * 100
+
+    return agg.replace([np.inf, -np.inf], 0).fillna(0)
+
+
+# ======================================================
+# REPORT WRITER (EXACT STYLE)
+# ======================================================
+
+Z = chr(5)  # SAS '05'x
+
+def put_at(line, pos, text):
+    for i, ch in enumerate(str(text)):
+        if pos + i < len(line):
+            line[pos + i] = ch
+
+
+def build_line(width=1600):
+    return [" "] * width
+
+
+def write_header(f, title):
+    f.write("P U B L I C   " + title + "\n")
+    f.write("SUMMARY REPORT - PURPOSE/REASON OF ISSUING BANKER'S CHEQUE\n")
+    f.write("\n")
+    f.write(f"DATE OF EXTRACTION : {datetime.today().strftime('%d/%m/%Y')}\n")
+    f.write("\n\n")
+
+
+def write_detail(f, df, category_count):
+    for idx, row in df.iterrows():
+        line = build_line()
+
+        put_at(line, 0, idx + 1)
+        put_at(line, 5, row["BRCH"])
+
+        pos = 50
+
+        for i in range(1, category_count + 1):
+            put_at(line, pos, int(row[f"CNT{i}"]))
+            put_at(line, pos+15, round(row[f"PCNT{i}"],2))
+            put_at(line, pos+30, round(row[f"AMT{i}"],2))
+            put_at(line, pos+45, round(row[f"PAMT{i}"],2))
+            pos += 60
+
+        put_at(line, 1430, int(row["SUMCNT"]))
+        put_at(line, 1450, round(row["SUMAMT"],2))
+
+        f.write("".join(line).rstrip() + "\n")
+
+
+def write_grand_total(f, df, category_count):
+    row = df.sum(numeric_only=True)
+
+    line = build_line()
+
+    put_at(line, 0, "GRAND TOTAL")
+
+    pos = 50
+
+    for i in range(1, category_count + 1):
+        put_at(line, pos, int(row[f"CNT{i}"]))
+        put_at(line, pos+15, round(row[f"PCNT{i}"],2))
+        put_at(line, pos+30, round(row[f"AMT{i}"],2))
+        put_at(line, pos+45, round(row[f"PAMT{i}"],2))
+        pos += 60
+
+    put_at(line, 1430, int(row["SUMCNT"]))
+    put_at(line, 1450, round(row["SUMAMT"],2))
+
+    f.write("".join(line).rstrip() + "\n")
+
+
+# ======================================================
+# PURPOSE MAPS
+# ======================================================
+
+PBB_PURPOSE_MAP = { ... }  # keep same as before
+PIBB_PURPOSE_MAP = { ... }
+
+
+# ======================================================
+# MAIN
+# ======================================================
+
+def run():
+
+    # ---------------- PBB ----------------
+    pbb_df = pd.concat([
+        parse_standard(read_lines("pbb_hp.txt"), PBB_PURPOSE_MAP, "HP", True),
+        parse_standard(read_lines("pbb_mchp.txt"), PBB_PURPOSE_MAP, "HP", False),
+        parse_standard(read_lines("pbb_ln.txt"), PBB_PURPOSE_MAP, "LN", True),
+        parse_mcln(read_lines("pbb_mcln.txt"), PBB_PURPOSE_MAP),
+        parse_standard(read_lines("pbb_mcot.txt"), PBB_PURPOSE_MAP, "OT", False, 21),
+        parse_standard(read_lines("pbb_mctf.txt"), PBB_PURPOSE_MAP, "TF", False)
+    ])
+
+    pbb_res = aggregate(pbb_df, 21)
+
+    with open("pbb_report.txt", "w") as f:
+        write_header(f, "BANK BERHAD")
+        write_detail(f, pbb_res, 21)
+        write_grand_total(f, pbb_res, 21)
+
+    # ---------------- PIBB ----------------
+    pibb_df = pd.concat([
+        parse_standard(read_lines("pibb_hp.txt"), PIBB_PURPOSE_MAP, "HP", True),
+        parse_standard(read_lines("pibb_mchp.txt"), PIBB_PURPOSE_MAP, "HP", False),
+        parse_standard(read_lines("pibb_ln.txt"), PIBB_PURPOSE_MAP, "LN", True),
+        parse_mcln(read_lines("pibb_mcln.txt"), PIBB_PURPOSE_MAP)
+    ])
+
+    pibb_res = aggregate(pibb_df, 15)
+
+    with open("pibb_report.txt", "w") as f:
+        write_header(f, "ISLAMIC BANK BERHAD")
+        write_detail(f, pibb_res, 15)
+        write_grand_total(f, pibb_res, 15)
+
+
+if __name__ == "__main__":
+    run()
 		
  ========================================== EIWRMPU4 ========================================== 			
 
@@ -6538,5 +6767,142 @@ DATA _NULL_;
 RUN;
 
 
+
+import pandas as pd
+import numpy as np
+
+CATEGORY_COUNT = 22
+
+# =========================
+# PURPOSE MAP
+# =========================
+PURPOSE_MAP = {
+    # same mapping as Job 4
+}
+
+# =========================
+# LN PARSER
+# =========================
+def parse_ln(lines, exclude):
+    rows = []
+
+    for line in lines:
+        ch = line[102:114].strip()
+
+        if ch == "DISBURSEMENT":
+            purpose = line[117:187]
+        else:
+            purpose = line[102:172]
+
+        purp = PURPOSE_MAP.get(purpose.strip(), 0)
+
+        if purp in exclude:
+            continue
+
+        rows.append({
+            "BRCH": line[0:4],
+            "AMT": float(line[86:99].replace(",", "")),
+            "PURP": purp,
+            "CNT": 1,
+            "TYP": "LN"
+        })
+
+    return pd.DataFrame(rows)
+
+# =========================
+# STANDARD READER
+# =========================
+def read_standard(lines, typ):
+    rows = []
+
+    for line in lines:
+        purpose = line[102:172]
+        purp = PURPOSE_MAP.get(purpose.strip(), 0)
+
+        if purpose.startswith("OTHER -"):
+            purp = 22
+
+        if purp == 0:
+            continue
+
+        rows.append({
+            "BRCH": line[0:4],
+            "AMT": float(line[86:99].replace(",", "")),
+            "PURP": purp,
+            "CNT": 1,
+            "TYP": typ
+        })
+
+    return pd.DataFrame(rows)
+
+# =========================
+# LOAD FILES
+# =========================
+def read_file(path):
+    with open(path) as f:
+        return f.readlines()[4:]
+
+# HP (multi bank)
+hp = pd.concat([
+    read_standard(read_file("pbb_hp.txt"), "HP"),
+    read_standard(read_file("pibb_hp.txt"), "HP"),
+    read_standard(read_file("pbb_mchp.txt"), "HP"),
+    read_standard(read_file("pibb_mchp.txt"), "HP"),
+])
+
+# LN (bank-specific rules)
+ln = pd.concat([
+    parse_ln(read_file("pbb_ln.txt"), exclude=[0,20]),
+    parse_ln(read_file("pibb_ln.txt"), exclude=[0,21]),
+    parse_ln(read_file("pbb_mcln.txt"), exclude=[0,20]),
+    parse_ln(read_file("pibb_mcln.txt"), exclude=[0,21]),
+])
+
+# OT + TF
+ot = read_standard(read_file("mcot.txt"), "OT")
+tf = read_standard(read_file("mctf.txt"), "TF")
+
+df = pd.concat([hp, ln, ot, tf], ignore_index=True)
+
+# =========================
+# PIVOT
+# =========================
+for i in range(1, CATEGORY_COUNT + 1):
+    df[f"CNT{i}"] = np.where(df["PURP"] == i, df["CNT"], 0)
+    df[f"AMT{i}"] = np.where(df["PURP"] == i, df["AMT"], 0)
+
+# =========================
+# AGGREGATION
+# =========================
+agg = df.groupby("BRCH").sum(numeric_only=True).reset_index()
+
+tot = df.groupby("BRCH").agg(
+    SUMCNT=("CNT","sum"),
+    SUMAMT=("AMT","sum")
+).reset_index()
+
+ln_tot = df[df["TYP"]=="LN"].groupby("BRCH").agg(
+    LNCNT=("CNT","sum"),
+    LNAMT=("AMT","sum")
+).reset_index()
+
+hp_tot = df[df["TYP"]=="HP"].groupby("BRCH").agg(
+    HPCNT=("CNT","sum"),
+    HPAMT=("AMT","sum")
+).reset_index()
+
+agg = agg.merge(tot, on="BRCH") \
+         .merge(ln_tot, on="BRCH", how="left") \
+         .merge(hp_tot, on="BRCH", how="left") \
+         .fillna(0)
+
+# =========================
+# PERCENTAGE
+# =========================
+for i in range(1, CATEGORY_COUNT + 1):
+    agg[f"PCNT{i}"] = (agg[f"CNT{i}"] / agg["SUMCNT"]) * 100
+    agg[f"PAMT{i}"] = (agg[f"AMT{i}"] / agg["SUMAMT"]) * 100
+
+agg = agg.replace([np.inf, -np.inf], 0).fillna(0)
 
 
