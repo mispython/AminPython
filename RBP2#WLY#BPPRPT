@@ -1412,7 +1412,175 @@ DATA _NULL_;
 RUN;
 
 
+import pandas as pd
+import numpy as np
 
+Z = chr(5)
+
+# ======================================================
+# PURPOSE MAP
+# ======================================================
+PURPOSE_MAP = {
+    'FEE EXPENSE/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 1,
+    'DEVELOPER SALE (REDEMPTION)': 2,
+    'DEVELOPER SALE/CONSTRUCTION LOAN (PROGRESSIVE RELEASE)': 3,
+    'DEVELOPER SALE (FULL RELEASE)': 4,
+    'SUBSALE/AUCTION PURCHASED (REDEMPTION)': 5,
+    'SUBSALE (BALANCE OF LOAN RELEASE)': 6,
+    'SUBSALE (FULL RELEASE)': 7,
+    'REFINANCING (REDEMPTION)': 8,
+    'REFINANCING (BALANCE OF LOAN RELEASE)': 9,
+    'ADDITIONAL LOAN (SECURED BY THE EXISTING PROPERTY)/REINSTATEMENT': 10,
+    'NEW LOAN (PROPERTY FREE FROM ENCUMBRANCES)': 11,
+    'OTHERS - LEGAL FEES': 12,
+    'OTHERS - TAKAFUL CONTRIBUTION (APPLICABLE TO PIBB)': 13,
+    'OTHERS - LIFE INSURANCE PREMIUM (APPLICABLE TO PBB)': 14,
+    'FEE EXPENSES/INSURANCE PREMIUM (BORNE BY CUSTOMERS)': 15,
+    'DISBURSEMENT': 16
+}
+
+# ======================================================
+# PARSER
+# ======================================================
+def parse_file(path):
+    rows = []
+    with open(path) as f:
+        lines = f.readlines()[4:]
+
+    for line in lines:
+        purpose = line[110:180].strip()
+        purp = PURPOSE_MAP.get(purpose, 0)
+
+        if purp in (0, 14):
+            continue
+
+        rows.append({
+            "BRCH": line[0:4].strip(),
+            "CNT": int(line[86:94]),
+            "AMT": float(line[95:109].replace(",", "").strip()),
+            "PURP": purp
+        })
+
+    return pd.DataFrame(rows)
+
+# ======================================================
+# AGGREGATION
+# ======================================================
+def build(df):
+
+    for i in range(1,17):
+        df[f"CNT{i}"] = np.where(df["PURP"]==i, df["CNT"], 0)
+        df[f"AMT{i}"] = np.where(df["PURP"]==i, df["AMT"], 0)
+
+    agg = df.groupby("BRCH").sum(numeric_only=True).reset_index()
+
+    total = df.groupby("BRCH").agg(
+        SUMCNT=("CNT","sum"),
+        SUMAMT=("AMT","sum")
+    ).reset_index()
+
+    ln = df[~df["PURP"].isin([15,16])].groupby("BRCH").agg(
+        LNCNT=("CNT","sum"),
+        LNAMT=("AMT","sum")
+    ).reset_index()
+
+    hp = df[df["PURP"].isin([15,16])].groupby("BRCH").agg(
+        HPCNT=("CNT","sum"),
+        HPAMT=("AMT","sum")
+    ).reset_index()
+
+    df = agg.merge(total, on="BRCH") \
+            .merge(ln, on="BRCH") \
+            .merge(hp, on="BRCH") \
+            .fillna(0)
+
+    for i in range(1,17):
+        df[f"PCNT{i}"] = (df[f"CNT{i}"]/df["SUMCNT"])*100
+        df[f"PAMT{i}"] = (df[f"AMT{i}"]/df["SUMAMT"])*100
+
+    df["PHPCNT"] = df["HPCNT"]/df["SUMCNT"]*100
+    df["PHPAMT"] = df["HPAMT"]/df["SUMAMT"]*100
+    df["PLNCNT"] = df["LNCNT"]/df["SUMCNT"]*100
+    df["PLNAMT"] = df["LNAMT"]/df["SUMAMT"]*100
+
+    return df.fillna(0)
+
+# ======================================================
+# REPORT WRITER (MATCH SAS ORDER)
+# ======================================================
+def write_report(df, out):
+
+    def put(line,pos,val):
+        s=str(val)
+        for i,c in enumerate(s):
+            if pos+i<len(line):
+                line[pos+i]=c
+
+    with open(out,"w") as f:
+
+        for i,row in df.iterrows():
+            line = [" "]*1200
+
+            put(line,0,i+1)
+            put(line,5,row["BRCH"])
+
+            # SPECIAL ORDER
+            order = [15,16]
+
+            pos = 50
+
+            # 15,16 first
+            for i in order:
+                put(line,pos,row[f"CNT{i}"])
+                put(line,pos+15,round(row[f"PCNT{i}"],2))
+                put(line,pos+30,round(row[f"AMT{i}"],2))
+                put(line,pos+45,round(row[f"PAMT{i}"],2))
+                pos+=60
+
+            # HP TOTAL
+            put(line,pos,row["HPCNT"])
+            put(line,pos+15,row["PHPCNT"])
+            put(line,pos+30,row["HPAMT"])
+            put(line,pos+45,row["PHPAMT"])
+            pos+=60
+
+            # categories 1–13
+            for i in range(1,14):
+                put(line,pos,row[f"CNT{i}"])
+                put(line,pos+15,row[f"PCNT{i}"])
+                put(line,pos+30,row[f"AMT{i}"])
+                put(line,pos+45,row[f"PAMT{i}"])
+                pos+=60
+
+            # LN TOTAL
+            put(line,pos,row["LNCNT"])
+            put(line,pos+15,row["PLNCNT"])
+            put(line,pos+30,row["LNAMT"])
+            put(line,pos+45,row["PLNAMT"])
+            pos+=60
+
+            # GRAND TOTAL
+            put(line,pos,row["SUMCNT"])
+            put(line,pos+20,row["SUMAMT"])
+
+            f.write("".join(line).rstrip()+"\n")
+
+# ======================================================
+# MAIN
+# ======================================================
+def run():
+    df = pd.concat([
+        parse_file("ln.txt"),
+        parse_file("hp.txt")
+    ])
+
+    result = build(df)
+
+    write_report(result, "output.txt")
+
+
+if __name__ == "__main__":
+    run()
 
 
 
