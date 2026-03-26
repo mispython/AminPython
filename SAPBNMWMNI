@@ -119,6 +119,117 @@ PROC PRINT DATA=REPTDATE;
 FORMAT REPTDATE MMWYY; RUN;
 
 
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# ==============================
+# CONFIG (simulate SAS datasets)
+# ==============================
+FCY_PRODUCTS = {"FCY1", "FCY2", "FCY3"}  # replace with real values
+
+# ==============================
+# LOAD DATA (replace with real loaders)
+# ==============================
+deposit_reptdate = pd.read_parquet("DEPOSIT_REPTDATE.parquet")
+deposit_fd = pd.read_parquet("DEPOSIT_FD.parquet")
+mnifd_fd = pd.read_parquet("MNIFD_FD.parquet")
+signa = pd.read_parquet("SIGNA_SMSACC.parquet")
+mismtd = pd.read_parquet("MISMTD_FAVG.parquet")
+
+# ==============================
+# STEP 1 — REPORT DATE LOGIC
+# ==============================
+reptdate = deposit_reptdate["REPTDATE"].iloc[0]
+
+day = reptdate.day
+if 1 <= day <= 8:
+    NOWK = "1"
+elif 9 <= day <= 15:
+    NOWK = "2"
+elif 16 <= day <= 22:
+    NOWK = "3"
+else:
+    NOWK = "4"
+
+REPTYEAR = reptdate.strftime("%y")
+REPTMON = reptdate.strftime("%m")
+
+# ==============================
+# STEP 2 — FD BASE
+# ==============================
+depo_fd = deposit_fd.rename(columns={"PURPOSE": "CLASSIFI"})
+depo_fd = depo_fd.sort_values("ACCTNO")
+
+fd = depo_fd.copy()
+fd["PURPOSE"] = fd["SECTOR"]
+fd["PURPOSEM"] = fd["SECTOR"]
+fd["INTYTD"] = fd["INTPD"]
+
+# Filter FCY
+fd = fd[fd["PRODUCT"].isin(FCY_PRODUCTS)]
+
+# ==============================
+# STEP 3 — INTEREST AGG
+# ==============================
+fdcd = (
+    mnifd_fd.groupby("ACCTNO", as_index=False)["INTPAY"]
+    .sum()
+    .rename(columns={"INTPAY": "INTPD"})
+)
+
+# ==============================
+# STEP 4 — MERGE
+# ==============================
+fcyfd = fd.merge(fdcd, on="ACCTNO", how="left")
+fcyfd = fcyfd.merge(signa, on="ACCTNO", how="left")
+fcyfd = fcyfd.merge(mismtd, on="ACCTNO", how="left")
+
+# ==============================
+# STEP 5 — TRANSFORMATIONS
+# ==============================
+
+# Rename
+if "PSREASON" in fcyfd.columns:
+    fcyfd = fcyfd.rename(columns={"PSREASON": "REASON"})
+
+# Status split
+for i in range(4, 11):
+    fcyfd[f"ACSTATUS{i}"] = fcyfd["STATCD"].astype(str).str[i-1:i]
+
+# Date conversion helper
+def convert_mainframe_date(val, length):
+    if pd.isna(val) or val == 0:
+        return pd.NaT
+    s = str(int(val)).zfill(length)
+    try:
+        return pd.to_datetime(s[:8], format="%m%d%Y", errors="coerce")
+    except:
+        return pd.NaT
+
+fcyfd["OPENDT"] = fcyfd["OPENDT"].apply(lambda x: convert_mainframe_date(x, 11))
+fcyfd["REOPENDT"] = fcyfd["REOPENDT"].apply(lambda x: convert_mainframe_date(x, 11))
+fcyfd["CLOSEDT"] = fcyfd["CLOSEDT"].apply(lambda x: convert_mainframe_date(x, 11))
+fcyfd["DTLSTCUST"] = fcyfd["DTLSTCUST"].apply(lambda x: convert_mainframe_date(x, 9))
+
+# Default ESIGNATURE
+fcyfd["ESIGNATURE"] = fcyfd["ESIGNATURE"].fillna("N")
+fcyfd.loc[fcyfd["ESIGNATURE"] == "", "ESIGNATURE"] = "N"
+
+# ==============================
+# STEP 6 — OUTPUT
+# ==============================
+dataset_name = f"FCYFD{REPTMON}{NOWK}{REPTYEAR}"
+
+# Save main dataset
+fcyfd.to_parquet(f"{dataset_name}.parquet", index=False)
+
+# Simulate transport file (binary)
+fcyfd.to_pickle(f"{dataset_name}.pkl")
+
+print(f"Job EIBWFCFD completed: {dataset_name}")
+
+
 ==================================================================  EIBWWKLY  ==================================================================
 
 
