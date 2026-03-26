@@ -34,6 +34,89 @@ put //SAP.DAY.CONTROL             TRIGGER_DP_CORDATA.txt
 EOB
 
 
+
+
+import os
+from datetime import datetime
+import paramiko
+
+# ==============================
+# CONFIGURATION
+# ==============================
+INPUT_FILE = "RBP2_B033_DPSRS_CORDATAI.dat"   # extracted mainframe file
+OUTPUT_FILE = "SAP_PBB_CORDATA.dat"
+
+RECORD_LENGTH = 51
+
+SFTP_HOST = "your_sftp_host"
+SFTP_PORT = 22
+SFTP_USER = "your_user"
+SFTP_PASSWORD = "your_password"
+
+REMOTE_DATA_DIR = "/sasdata/rawdata/deposit"
+REMOTE_CTRL_DIR = "/stgsrcsys/host/control"
+
+CONTROL_FILE_LOCAL = "SAP_DAY_CONTROL.txt"
+
+
+# ==============================
+# STEP 1 — REPRO (BINARY COPY)
+# ==============================
+def repro_copy(input_path, output_path):
+    with open(input_path, "rb") as fin, open(output_path, "wb") as fout:
+        while True:
+            record = fin.read(RECORD_LENGTH)
+            if not record:
+                break
+
+            # Ensure exact length (pad if needed)
+            if len(record) < RECORD_LENGTH:
+                record = record.ljust(RECORD_LENGTH, b' ')
+
+            fout.write(record)
+
+
+# ==============================
+# STEP 2 — SFTP UPLOAD
+# ==============================
+def sftp_upload(local_file, remote_file):
+    transport = paramiko.Transport((SFTP_HOST, SFTP_PORT))
+    transport.connect(username=SFTP_USER, password=SFTP_PASSWORD)
+
+    sftp = paramiko.SFTPClient.from_transport(transport)
+    sftp.put(local_file, remote_file)
+
+    sftp.close()
+    transport.close()
+
+
+# ==============================
+# MAIN PROCESS
+# ==============================
+def main():
+    # Step 1: Copy file (REPRO equivalent)
+    repro_copy(INPUT_FILE, OUTPUT_FILE)
+
+    # Step 2: Generate filename with date
+    today = datetime.now()
+    filename = f"CORDATA_{today:%Y.%m.%d}"
+
+    remote_data_path = os.path.join(REMOTE_DATA_DIR, filename)
+    remote_ctrl_path = os.path.join(REMOTE_CTRL_DIR, "TRIGGER_DP_CORDATA.txt")
+
+    # Step 3: Upload data file (binary safe)
+    sftp_upload(OUTPUT_FILE, remote_data_path)
+
+    # Step 4: Upload control/trigger file
+    sftp_upload(CONTROL_FILE_LOCAL, remote_ctrl_path)
+
+    print("Job EIBWREPL completed successfully.")
+
+
+if __name__ == "__main__":
+    main()
+
+
 ============================================ JOB 2 : EIBWLNW2   ===========================================================
 
 
