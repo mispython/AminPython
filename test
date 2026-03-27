@@ -9,6 +9,11 @@ Currently. STRAIL and LTRAIL fields are stored as character values only in SAS D
 The hexadecimal values captured in the source file result in unreadable symbol in the SAS output (refer to the sample attached). Hence, to retrieve the data correctly, this eSMR is raised to store hexadecimal values in the mentioned fields.
 
 
+Background
+Currently, the STRAIL and LTRAIL fields are extracted by MIS from the source file (DBLGS) as character data based on position. However, these fields are actually stored in hexadecimal format in the source file. As a result, the extracted output appears as unreadable or incorrect symbols in the SAS Data Warehouse (refer to attached sample).
+
+This eSMR is raised to enhance the extraction logic so that the hexadecimal values are handled correctly and the data can be read properly.
+
 
 /*LIBNAME DP      '/dwh/cmsbdptr';*
 /*FILENAME BNM    '/sasdata/dwh/logs';*/
