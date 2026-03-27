@@ -71,6 +71,110 @@
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP1D),DISP=SHR
 
 
+import os
+import pandas as pd
+
+# ==========================================
+# CONFIG (DD mapping)
+# ==========================================
+CONFIG = {
+    "CCRIS": "data/CCRIS.parquet",
+    "LN": "data/MNILN.parquet",
+    "DBRANCH": "data/BRANCH.txt",   # likely fixed-width
+    "ELDS": "data/ELDS.txt",        # likely fixed-width
+    "LIST": "data/TEMP_COLDRPT.parquet",
+}
+
+OUTPUT = {
+    "RPT1A": "EIIMRP1A.txt",
+    "RPT1B": "EIIMRP1B.txt",
+    "RPT1C": "EIIMRP1C.txt",
+    "RPT1D": "EIIMRP1D.txt",
+}
+
+RECORD_LENGTH = 220
+
+
+# ==========================================
+# UTIL
+# ==========================================
+def safe_delete(path):
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def write_fixed_width(df, filepath, length=220):
+    with open(filepath, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(x).ljust(20) for x in row)
+            line = line[:length].ljust(length)
+            f.write(line + "\n")
+
+
+# ==========================================
+# STEP 1 — BUILD BASE DATASET (EIIMRP1A)
+# ==========================================
+def build_base_dataset():
+
+    ccris = pd.read_parquet(CONFIG["CCRIS"])
+    loan = pd.read_parquet(CONFIG["LN"])
+
+    # ⚠️ PLACEHOLDER — real SAS logic needed
+    df = ccris.merge(loan, on="ACCTNO", how="inner")
+
+    # Example assumption (NOT FINAL):
+    df = df[df["ARREARS"] == 0]
+
+    return df
+
+
+# ==========================================
+# REPORT GENERATORS
+# ==========================================
+def report_1a(df):
+    return df
+
+
+def report_1b(df):
+    return df.sort_values(by=["BRANCH"])
+
+
+def report_1c(df):
+    return df.sort_values(by=["REGION"])
+
+
+def report_1d(df):
+    return df.sort_values(by=["REGION", "BRANCH"])
+
+
+# ==========================================
+# MAIN JOB
+# ==========================================
+def main():
+
+    # ---- DELETE OLD FILES
+    for path in OUTPUT.values():
+        safe_delete(path)
+
+    # ---- BUILD BASE (TEMP.COLDRPT)
+    base_df = build_base_dataset()
+
+    # Save temp (like LIST DD)
+    base_df.to_parquet(CONFIG["LIST"], index=False)
+
+    # ---- GENERATE REPORTS
+    write_fixed_width(report_1a(base_df), OUTPUT["RPT1A"])
+    write_fixed_width(report_1b(base_df), OUTPUT["RPT1B"])
+    write_fixed_width(report_1c(base_df), OUTPUT["RPT1C"])
+    write_fixed_width(report_1d(base_df), OUTPUT["RPT1D"])
+
+    print("EIIELRP1 job completed.")
+
+
+if __name__ == "__main__":
+    main()
+
+
 ===================================================  EIIELRP2 ===================================================  
 //EIIELRP2 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M
 //**********************************************************************
@@ -137,6 +241,107 @@
 //            UNIT=SYSDA,
 //            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP2D),DISP=SHR
+
+import os
+import pandas as pd
+
+# ==========================================
+# DATASET (DD mapping)
+# ==========================================
+TEMP_DATASET = "data/TEMP_COLDRPT.parquet"
+
+# OUTPUT DATASETS (same naming style)
+OUT_2A = "EIIMRP2A.COLD"
+OUT_2B = "EIIMRP2B.COLD"
+OUT_2C = "EIIMRP2C.COLD"
+OUT_2D = "EIIMRP2D.COLD"
+
+LRECL = 220
+
+
+# ==========================================
+# DELETE STEP (IEFBR14 equivalent)
+# ==========================================
+def delete_datasets():
+    for f in [OUT_2A, OUT_2B, OUT_2C, OUT_2D]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ==========================================
+# WRITE FB (Fixed Block 220)
+# ==========================================
+def write_fb_220(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(v).ljust(20) for v in row)
+            line = line[:LRECL].ljust(LRECL)
+            f.write(line + "\n")
+
+
+# ==========================================
+# EIIMRP2A (ALL BRANCHES)
+# ==========================================
+def EIIMRP2A():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    # no sort (as-is)
+    write_fb_220(df, OUT_2A)
+
+
+# ==========================================
+# EIIMRP2B (BY BRANCH)
+# ==========================================
+def EIIMRP2B():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["BRANCH"])
+
+    write_fb_220(df, OUT_2B)
+
+
+# ==========================================
+# EIIMRP2C (BY REGION)
+# ==========================================
+def EIIMRP2C():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["REGION"])
+
+    write_fb_220(df, OUT_2C)
+
+
+# ==========================================
+# EIIMRP2D (BRANCH + REGION)
+# ==========================================
+def EIIMRP2D():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["REGION", "BRANCH"])
+
+    write_fb_220(df, OUT_2D)
+
+
+# ==========================================
+# MAIN JOB (MATCH JCL ORDER)
+# ==========================================
+def main():
+
+    # DELETE
+    delete_datasets()
+
+    # EXEC STEPS
+    EIIMRP2A()
+    EIIMRP2B()
+    EIIMRP2C()
+    EIIMRP2D()
+
+    print("EIIELRP2 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()
+
 
 ===================================================  EIIELRP3 ===================================================  
 //EIIELRP3 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
@@ -206,6 +411,109 @@
 //            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP3D),DISP=SHR
 
+
+import os
+import pandas as pd
+
+# ==========================================
+# DATASETS (DD mapping)
+# ==========================================
+LIST_DATASET = "data/PIBB_TEMP_COLDRPT.parquet"
+LT_DATASET   = "data/PBB_TEMP_COLDRPT.parquet"
+
+# OUTPUT
+OUT_3A = "EIIMRP3A.COLD"
+OUT_3B = "EIIMRP3B.COLD"
+OUT_3C = "EIIMRP3C.COLD"
+OUT_3D = "EIIMRP3D.COLD"
+
+LRECL = 220
+
+
+# ==========================================
+# DELETE STEP
+# ==========================================
+def delete_datasets():
+    for f in [OUT_3A, OUT_3B, OUT_3C, OUT_3D]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ==========================================
+# WRITE FIXED BLOCK (FB 220)
+# ==========================================
+def write_fb_220(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(v).ljust(20) for v in row)
+            line = line[:LRECL].ljust(LRECL)
+            f.write(line + "\n")
+
+
+# ==========================================
+# EIIMRP3A (ALL BRANCHES — COMBINED DATA)
+# ==========================================
+def EIIMRP3A():
+    df1 = pd.read_parquet(LIST_DATASET)
+    df2 = pd.read_parquet(LT_DATASET)
+
+    # SAS SET LIST LT;
+    df = pd.concat([df1, df2], ignore_index=True)
+
+    write_fb_220(df, OUT_3A)
+
+
+# ==========================================
+# EIIMRP3B (BY BRANCH)
+# ==========================================
+def EIIMRP3B():
+    df = pd.read_parquet(LIST_DATASET)
+
+    df = df.sort_values(by=["BRANCH"])
+
+    write_fb_220(df, OUT_3B)
+
+
+# ==========================================
+# EIIMRP3C (BY REGION)
+# ==========================================
+def EIIMRP3C():
+    df = pd.read_parquet(LIST_DATASET)
+
+    df = df.sort_values(by=["REGION"])
+
+    write_fb_220(df, OUT_3C)
+
+
+# ==========================================
+# EIIMRP3D (REGION + BRANCH)
+# ==========================================
+def EIIMRP3D():
+    df = pd.read_parquet(LIST_DATASET)
+
+    df = df.sort_values(by=["REGION", "BRANCH"])
+
+    write_fb_220(df, OUT_3D)
+
+
+# ==========================================
+# MAIN (MATCH JCL ORDER)
+# ==========================================
+def main():
+
+    delete_datasets()
+
+    EIIMRP3A()
+    EIIMRP3B()
+    EIIMRP3C()
+    EIIMRP3D()
+
+    print("EIIELRP3 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()
+
 ===================================================  EIIELRP4 ===================================================  
 //EIIELRP4 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
@@ -272,6 +580,105 @@
 //            UNIT=SYSDA,
 //            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP4D),DISP=SHR
+
+
+
+import os
+import pandas as pd
+
+# ==========================================
+# DATASET
+# ==========================================
+TEMP_DATASET = "data/TEMP_COLDRPT.parquet"
+
+# OUTPUT
+OUT_4A = "EIIMRP4A.COLD"
+OUT_4B = "EIIMRP4B.COLD"
+OUT_4C = "EIIMRP4C.COLD"
+OUT_4D = "EIIMRP4D.COLD"
+
+LRECL = 220
+
+
+# ==========================================
+# DELETE STEP
+# ==========================================
+def delete_datasets():
+    for f in [OUT_4A, OUT_4B, OUT_4C, OUT_4D]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ==========================================
+# WRITE FB 220
+# ==========================================
+def write_fb_220(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(v).ljust(20) for v in row)
+            line = line[:LRECL].ljust(LRECL)
+            f.write(line + "\n")
+
+
+# ==========================================
+# EIIMRP4A (ALL BRANCHES)
+# ==========================================
+def EIIMRP4A():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    write_fb_220(df, OUT_4A)
+
+
+# ==========================================
+# EIIMRP4B (BY BRANCH)
+# ==========================================
+def EIIMRP4B():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["BRANCH"])
+
+    write_fb_220(df, OUT_4B)
+
+
+# ==========================================
+# EIIMRP4C (BY REGION)
+# ==========================================
+def EIIMRP4C():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["REGION"])
+
+    write_fb_220(df, OUT_4C)
+
+
+# ==========================================
+# EIIMRP4D (REGION + BRANCH)
+# ==========================================
+def EIIMRP4D():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["REGION", "BRANCH"])
+
+    write_fb_220(df, OUT_4D)
+
+
+# ==========================================
+# MAIN (MATCH JCL)
+# ==========================================
+def main():
+
+    delete_datasets()
+
+    EIIMRP4A()
+    EIIMRP4B()
+    EIIMRP4C()
+    EIIMRP4D()
+
+    print("EIIELRP4 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()
 
 ===================================================  EIIELRP5 ===================================================  
 //EIIELRP5 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
@@ -340,6 +747,104 @@
 //            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP5D),DISP=SHR
 
+
+import os
+import pandas as pd
+
+# ==========================================
+# DATASET
+# ==========================================
+TEMP_DATASET = "data/TEMP_COLDRPT.parquet"
+
+# OUTPUT
+OUT_5A = "EIIMRP5A.COLD"
+OUT_5B = "EIIMRP5B.COLD"
+OUT_5C = "EIIMRP5C.COLD"
+OUT_5D = "EIIMRP5D.COLD"
+
+LRECL = 220
+
+
+# ==========================================
+# DELETE STEP
+# ==========================================
+def delete_datasets():
+    for f in [OUT_5A, OUT_5B, OUT_5C, OUT_5D]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ==========================================
+# WRITE FB 220
+# ==========================================
+def write_fb_220(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(v).ljust(20) for v in row)
+            line = line[:LRECL].ljust(LRECL)
+            f.write(line + "\n")
+
+
+# ==========================================
+# EIIMRP5A (ALL BRANCHES)
+# ==========================================
+def EIIMRP5A():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    write_fb_220(df, OUT_5A)
+
+
+# ==========================================
+# EIIMRP5B (BY BRANCH)
+# ==========================================
+def EIIMRP5B():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["BRANCH"])
+
+    write_fb_220(df, OUT_5B)
+
+
+# ==========================================
+# EIIMRP5C (BY REGION)
+# ==========================================
+def EIIMRP5C():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["REGION"])
+
+    write_fb_220(df, OUT_5C)
+
+
+# ==========================================
+# EIIMRP5D (REGION + BRANCH)
+# ==========================================
+def EIIMRP5D():
+    df = pd.read_parquet(TEMP_DATASET)
+
+    df = df.sort_values(by=["REGION", "BRANCH"])
+
+    write_fb_220(df, OUT_5D)
+
+
+# ==========================================
+# MAIN (MATCH JCL FLOW)
+# ==========================================
+def main():
+
+    delete_datasets()
+
+    EIIMRP5A()
+    EIIMRP5B()
+    EIIMRP5C()
+    EIIMRP5D()
+
+    print("EIIELRP5 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()
+
 ===================================================  EIIELRP6 ===================================================  
 //EIIELRP6 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
@@ -406,6 +911,96 @@
 //            UNIT=SYSDA,
 //            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP6D),DISP=SHR
+
+import os
+import pandas as pd
+
+# ==========================================
+# DATASET
+# ==========================================
+TEMP_DATASET = "data/TEMP_COLDRPT.parquet"
+
+# OUTPUT
+OUT_6A = "EIIMRP6A.COLD"
+OUT_6B = "EIIMRP6B.COLD"
+OUT_6C = "EIIMRP6C.COLD"
+OUT_6D = "EIIMRP6D.COLD"
+
+LRECL = 220
+
+
+# ==========================================
+# DELETE STEP
+# ==========================================
+def delete_datasets():
+    for f in [OUT_6A, OUT_6B, OUT_6C, OUT_6D]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ==========================================
+# WRITE FB 220
+# ==========================================
+def write_fb_220(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(v).ljust(20) for v in row)
+            line = line[:LRECL].ljust(LRECL)
+            f.write(line + "\n")
+
+
+# ==========================================
+# EIIMRP6A
+# ==========================================
+def EIIMRP6A():
+    df = pd.read_parquet(TEMP_DATASET)
+    write_fb_220(df, OUT_6A)
+
+
+# ==========================================
+# EIIMRP6B
+# ==========================================
+def EIIMRP6B():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["BRANCH"])
+    write_fb_220(df, OUT_6B)
+
+
+# ==========================================
+# EIIMRP6C
+# ==========================================
+def EIIMRP6C():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["REGION"])
+    write_fb_220(df, OUT_6C)
+
+
+# ==========================================
+# EIIMRP6D
+# ==========================================
+def EIIMRP6D():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["REGION", "BRANCH"])
+    write_fb_220(df, OUT_6D)
+
+
+# ==========================================
+# MAIN
+# ==========================================
+def main():
+
+    delete_datasets()
+
+    EIIMRP6A()
+    EIIMRP6B()
+    EIIMRP6C()
+    EIIMRP6D()
+
+    print("EIIELRP6 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()
 
 ===================================================  EIIELRP7 ===================================================  
 //EIIELRP7 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
@@ -474,6 +1069,97 @@
 //            DCB=(LRECL=250,RECFM=FB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP7D),DISP=SHR
 
+
+import os
+import pandas as pd
+
+# ==========================================
+# DATASET
+# ==========================================
+TEMP_DATASET = "data/TEMP_COLDRPT.parquet"
+
+# OUTPUT
+OUT_7A = "EIIMRP7A.COLD"
+OUT_7B = "EIIMRP7B.COLD"
+OUT_7C = "EIIMRP7C.COLD"
+OUT_7D = "EIIMRP7D.COLD"
+
+LRECL = 250   # <-- IMPORTANT CHANGE
+
+
+# ==========================================
+# DELETE STEP
+# ==========================================
+def delete_datasets():
+    for f in [OUT_7A, OUT_7B, OUT_7C, OUT_7D]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ==========================================
+# WRITE FB 250
+# ==========================================
+def write_fb_250(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(v).ljust(20) for v in row)
+            line = line[:LRECL].ljust(LRECL)
+            f.write(line + "\n")
+
+
+# ==========================================
+# EIIMRP7A
+# ==========================================
+def EIIMRP7A():
+    df = pd.read_parquet(TEMP_DATASET)
+    write_fb_250(df, OUT_7A)
+
+
+# ==========================================
+# EIIMRP7B
+# ==========================================
+def EIIMRP7B():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["BRANCH"])
+    write_fb_250(df, OUT_7B)
+
+
+# ==========================================
+# EIIMRP7C
+# ==========================================
+def EIIMRP7C():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["REGION"])
+    write_fb_250(df, OUT_7C)
+
+
+# ==========================================
+# EIIMRP7D
+# ==========================================
+def EIIMRP7D():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["REGION", "BRANCH"])
+    write_fb_250(df, OUT_7D)
+
+
+# ==========================================
+# MAIN
+# ==========================================
+def main():
+
+    delete_datasets()
+
+    EIIMRP7A()
+    EIIMRP7B()
+    EIIMRP7C()
+    EIIMRP7D()
+
+    print("EIIELRP7 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()
+
 ===================================================  EIIELRP8 ===================================================  
 //EIIELRP8 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
 //**********************************************************************
@@ -540,6 +1226,97 @@
 //            UNIT=SYSDA,
 //            DCB=(LRECL=230,RECFM=FB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP8D),DISP=SHR
+
+import os
+import pandas as pd
+
+# ==========================================
+# DATASET
+# ==========================================
+TEMP_DATASET = "data/TEMP_COLDRPT.parquet"
+
+# OUTPUT
+OUT_8A = "EIIMRP8A.COLD"
+OUT_8B = "EIIMRP8B.COLD"
+OUT_8C = "EIIMRP8C.COLD"
+OUT_8D = "EIIMRP8D.COLD"
+
+LRECL = 230   # <-- IMPORTANT
+
+
+# ==========================================
+# DELETE STEP
+# ==========================================
+def delete_datasets():
+    for f in [OUT_8A, OUT_8B, OUT_8C, OUT_8D]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ==========================================
+# WRITE FB 230
+# ==========================================
+def write_fb_230(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(v).ljust(20) for v in row)
+            line = line[:LRECL].ljust(LRECL)
+            f.write(line + "\n")
+
+
+# ==========================================
+# EIIMRP8A
+# ==========================================
+def EIIMRP8A():
+    df = pd.read_parquet(TEMP_DATASET)
+    write_fb_230(df, OUT_8A)
+
+
+# ==========================================
+# EIIMRP8B
+# ==========================================
+def EIIMRP8B():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["BRANCH"])
+    write_fb_230(df, OUT_8B)
+
+
+# ==========================================
+# EIIMRP8C
+# ==========================================
+def EIIMRP8C():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["REGION"])
+    write_fb_230(df, OUT_8C)
+
+
+# ==========================================
+# EIIMRP8D
+# ==========================================
+def EIIMRP8D():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["REGION", "BRANCH"])
+    write_fb_230(df, OUT_8D)
+
+
+# ==========================================
+# MAIN
+# ==========================================
+def main():
+
+    delete_datasets()
+
+    EIIMRP8A()
+    EIIMRP8B()
+    EIIMRP8C()
+    EIIMRP8D()
+
+    print("EIIELRP8 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()
+
 
 ===================================================  EIIELRP9 ===================================================  
 
@@ -608,3 +1385,94 @@
 //            UNIT=SYSDA,
 //            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP9D),DISP=SHR
+
+
+import os
+import pandas as pd
+
+# ==========================================
+# DATASET
+# ==========================================
+TEMP_DATASET = "data/TEMP_COLDRPT.parquet"
+
+# OUTPUT
+OUT_9A = "EIIMRP9A.COLD"
+OUT_9B = "EIIMRP9B.COLD"
+OUT_9C = "EIIMRP9C.COLD"
+OUT_9D = "EIIMRP9D.COLD"
+
+LRECL = 220
+
+
+# ==========================================
+# DELETE STEP
+# ==========================================
+def delete_datasets():
+    for f in [OUT_9A, OUT_9B, OUT_9C, OUT_9D]:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ==========================================
+# WRITE FB 220
+# ==========================================
+def write_fb_220(df, path):
+    with open(path, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(v).ljust(20) for v in row)
+            line = line[:LRECL].ljust(LRECL)
+            f.write(line + "\n")
+
+
+# ==========================================
+# EIIMRP9A
+# ==========================================
+def EIIMRP9A():
+    df = pd.read_parquet(TEMP_DATASET)
+    write_fb_220(df, OUT_9A)
+
+
+# ==========================================
+# EIIMRP9B
+# ==========================================
+def EIIMRP9B():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["BRANCH"])
+    write_fb_220(df, OUT_9B)
+
+
+# ==========================================
+# EIIMRP9C
+# ==========================================
+def EIIMRP9C():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["REGION"])
+    write_fb_220(df, OUT_9C)
+
+
+# ==========================================
+# EIIMRP9D
+# ==========================================
+def EIIMRP9D():
+    df = pd.read_parquet(TEMP_DATASET)
+    df = df.sort_values(by=["REGION", "BRANCH"])
+    write_fb_220(df, OUT_9D)
+
+
+# ==========================================
+# MAIN
+# ==========================================
+def main():
+
+    delete_datasets()
+
+    EIIMRP9A()
+    EIIMRP9B()
+    EIIMRP9C()
+    EIIMRP9D()
+
+    print("EIIELRP9 COMPLETED")
+
+
+if __name__ == "__main__":
+    main()
