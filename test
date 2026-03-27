@@ -14,6 +14,15 @@ Currently, the STRAIL and LTRAIL fields are extracted by MIS from the source fil
 
 This eSMR is raised to enhance the extraction logic so that the hexadecimal values are handled correctly and the data can be read properly.
 
+VIEW       RBP2.B033.MST03.DPPSTRGS 
+Command ===>                        
+=COLS> 6----+----7----+----8----+---
+000114  &     &   Á°     &          
+       05000005000690000050000000000
+       000C00000C0500C00000C00000C00
+
+
+
 
 /*LIBNAME DP      '/dwh/cmsbdptr';*
 /*FILENAME BNM    '/sasdata/dwh/logs';*/
