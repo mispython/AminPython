@@ -1,0 +1,610 @@
+===================================================  EIIELRP1 ===================================================  
+
+//EIIELRP1 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP1A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP1B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP1C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP1D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//***************************************************************
+//* REPORT 1A : ALL BRANCHES
+//***************************************************************
+//EIIMRP1A EXEC SAS609
+//CCRIS    DD DSN=SAP.PBB.CCRIS.CREDSUB,DISP=SHR
+//LN       DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
+//DBRANCH  DD DSN=SAP.PBB.ELDS.RGBRLIST.TEXT(0),DISP=SHR
+//ELDS     DD DSN=SAP.PBB.ELDS.NRRRNRRS.TEXT(0),DISP=SHR
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP1A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP1A),DISP=SHR
+//***************************************************************
+//* REPORT 1B : BY BRANCH
+//***************************************************************
+//EIIMRP1B EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP1B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP1B),DISP=SHR
+//***************************************************************
+//* REPORT 1C : BY REGION / SORT BY REGION
+//***************************************************************
+//EIIMRP1C EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP1C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP1C),DISP=SHR
+//***************************************************************
+//* REPORT 1D : BY BRANCH / SORT BY REGION
+//***************************************************************
+//EIIMRP1D EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP1D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP1D),DISP=SHR
+
+
+===================================================  EIIELRP2 ===================================================  
+//EIIELRP2 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487  (REPORT 2)
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP2A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP2B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP2C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP2D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//***************************************************************
+//* REPORT 2A : ALL BRANCHES
+//***************************************************************
+//EIIMRP2A EXEC SAS609
+//TEMP     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP2A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP2A),DISP=SHR
+//***************************************************************
+//* REPORT 2B : BY BRANCH
+//***************************************************************
+//EIIMRP2B EXEC SAS609
+//TEMP     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP2B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP2B),DISP=SHR
+//***************************************************************
+//* REPORT 2C : BY REGION / SORT BY REGION
+//***************************************************************
+//EIIMRP2C EXEC SAS609
+//TEMP     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP2C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP2C),DISP=SHR
+//***************************************************************
+//* REPORT 2D : BY BRANCH / SORT BY REGION
+//***************************************************************
+//EIIMRP2D EXEC SAS609
+//TEMP     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP2D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP2D),DISP=SHR
+
+===================================================  EIIELRP3 ===================================================  
+//EIIELRP3 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP3A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP3B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP3C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP3D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//***************************************************************
+//* REPORT 3A : ALL BRNACHES
+//***************************************************************
+//EIIMRP3A EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//LT       DD DSN=SAP.PBB.TEMP.COLDRPT,DISP=SHR
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP3A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP3A),DISP=SHR
+//***************************************************************
+//* REPORT 3B : BY BRANCH
+//***************************************************************
+//EIIMRP3B EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP3B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP3B),DISP=SHR
+//***************************************************************
+//* REPORT 3C : BY REGION / SORT BY REGION
+//***************************************************************
+//EIIMRP3C EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP3C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP3C),DISP=SHR
+//***************************************************************
+//* REPORT 3D : BY BRANCH / SORT BY REGION
+//***************************************************************
+//EIIMRP3D EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP3D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP3D),DISP=SHR
+
+===================================================  EIIELRP4 ===================================================  
+//EIIELRP4 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP4A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP4B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP4C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP4D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//***************************************************************
+//* REPORT 4A : ALL BRANCHES
+//***************************************************************
+//EIIMRP4A EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP4A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP4A),DISP=SHR
+//***************************************************************
+//* REPORT 4B : BY BRANCH
+//***************************************************************
+//EIIMRP4B EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP4B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP4B),DISP=SHR
+//***************************************************************
+//* REPORT 4C : BY REGION / SORT BY REGION
+//***************************************************************
+//EIIMRP4C EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP4C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP4C),DISP=SHR
+//***************************************************************
+//* REPORT 4D : BY BRANCH / SORT BY REGION
+//***************************************************************
+//EIIMRP4D EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP4D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP4D),DISP=SHR
+
+===================================================  EIIELRP5 ===================================================  
+//EIIELRP5 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP5A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP5B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP5C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP5D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//***************************************************************
+//* REPORT 5A : ALL BRANCHES
+//***************************************************************
+//EIIMRP5A EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP5A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP5A),DISP=SHR
+//***************************************************************
+//* REPORT 5B : BY BRANCH
+//***************************************************************
+//EIIMRP5B EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP5B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP5B),DISP=SHR
+//***************************************************************
+//* REPORT 5C : BY REGION / SORT BY REGION
+//***************************************************************
+//EIIMRP5C EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP5C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP5C),DISP=SHR
+//***************************************************************
+//* REPORT 5D : BY BRANCH / SORT BY REGION
+//***************************************************************
+//EIIMRP5D EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP5D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP5D),DISP=SHR
+
+===================================================  EIIELRP6 ===================================================  
+//EIIELRP6 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP6A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP6B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP6C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP6D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//***************************************************************
+//* REPORT 6A : ALL BRANCHES
+//***************************************************************
+//EIIMRP6A EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP6A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP6A),DISP=SHR
+//***************************************************************
+//* REPORT 6B : BY BRANCHES
+//***************************************************************
+//EIIMRP6B EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP6B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP6B),DISP=SHR
+//***************************************************************
+//* REPORT 6C : BY REGION / SORT BY REGION
+//***************************************************************
+//EIIMRP6C EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP6C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP6C),DISP=SHR
+//***************************************************************
+//* REPORT 6D : BY BRANCH / SORT REGION
+//***************************************************************
+//EIIMRP6D EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP6D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP6D),DISP=SHR
+
+===================================================  EIIELRP7 ===================================================  
+//EIIELRP7 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP7A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP7B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP7C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP7D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//****************************************************************
+//* REPORT 7A : ALL BRANCHES
+//****************************************************************
+//EIIMRP7A EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP7A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=250,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP7A),DISP=SHR
+//****************************************************************
+//* REPORT 7B : BY BRANCH
+//****************************************************************
+//EIIMRP7B EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP7B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=250,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP7B),DISP=SHR
+//****************************************************************
+//* REPORT 7C : BY REGION / SORT BY REGION
+//****************************************************************
+//EIIMRP7C EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP7C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=250,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP7C),DISP=SHR
+//****************************************************************
+//* REPORT 7D : BY BRANCH / SORT BY REGION
+//****************************************************************
+//EIIMRP7D EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP7D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=250,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP7D),DISP=SHR
+
+===================================================  EIIELRP8 ===================================================  
+//EIIELRP8 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP8A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP8B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP8C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP8D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//***************************************************************
+//* REPORT 6A : ALL BRANCHES
+//***************************************************************
+//EIIMRP8A EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP8A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=230,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP8A),DISP=SHR
+//***************************************************************
+//* REPORT 6B : BY BRANCHES
+//***************************************************************
+//EIIMRP8B EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP8B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=230,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP8B),DISP=SHR
+//***************************************************************
+//* REPORT 6C : BY REGION / SORT BY REGION
+//***************************************************************
+//EIIMRP8C EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP8C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=230,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP8C),DISP=SHR
+//***************************************************************
+//* REPORT 6D : BY BRANCH / SORT REGION
+//***************************************************************
+//EIIMRP8D EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP8D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=230,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP8D),DISP=SHR
+
+===================================================  EIIELRP9 ===================================================  
+
+//EIIELRP9 JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     JOB19047
+//**********************************************************************
+//* REPORT FOR LOANS WHICH ARE NON-FINANCIALLY DISTRESS BORROWERS
+//* WITH ZERO DAYS ARREARS EXAMPTED FROM R&R CLASSIFICATION
+//* GENERATE COLD REPORT
+//* ESMR   : 2015-1487
+//**********************************************************************
+//*
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PIBB.NFIN.EIIMRP9A.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PIBB.NFIN.EIIMRP9B.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL03    DD DSN=SAP.PIBB.NFIN.EIIMRP9C.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL04    DD DSN=SAP.PIBB.NFIN.EIIMRP9D.COLD,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//***************************************************************
+//* REPORT 9A : ALL BRANCHES
+//***************************************************************
+//EIIMRP9A EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP9A.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP9A),DISP=SHR
+//***************************************************************
+//* REPORT 9B : BY BRANCHES
+//***************************************************************
+//EIIMRP9B EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP9B.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP9B),DISP=SHR
+//***************************************************************
+//* REPORT 9C : BY REGION / SORT BY REGION
+//***************************************************************
+//EIIMRP9C EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP9C.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP9C),DISP=SHR
+//***************************************************************
+//* REPORT 9D : BY BRANCH / SORT REGION
+//***************************************************************
+//EIIMRP9D EXEC SAS609
+//LIST     DD DSN=SAP.PIBB.TEMP.COLDRPT,DISP=OLD
+//SASLIST  DD DSN=SAP.PIBB.NFIN.EIIMRP9D.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(150,80),RLSE),
+//            UNIT=SYSDA,
+//            DCB=(LRECL=220,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMRP9D),DISP=SHR
