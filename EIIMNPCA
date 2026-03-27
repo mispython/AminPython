@@ -68,3 +68,51 @@
 //            DCB=(LRECL=100,RECFM=VB,BLKSIZE=0)
 //SYSIN    DD DSN=SAP.BNM.PROGRAM(EIIMNP44),DISP=SHR
 
+
+import os
+
+def safe_delete(file):
+    if os.path.exists(file):
+        os.remove(file)
+
+
+def main():
+    # ========================
+    # DELETE STEP
+    # ========================
+    safe_delete("CAPCAMP_OLD.txt")
+    safe_delete("CAPBRCH_OLD.txt")
+    safe_delete("CAPCATE_OLD.txt")
+    safe_delete("FSAS5_OLD.txt")
+
+    # ========================
+    # RUN JOBS (placeholders)
+    # ========================
+    run_eiimnp41()
+    run_eiimnp42()
+    run_eiimnp43()
+    run_eiimnp44()
+
+
+def run_eiimnp41():
+    print("Running EIIMNP41...")
+    # TODO: implement when SAS provided
+
+
+def run_eiimnp42():
+    print("Running EIIMNP42...")
+    # TODO
+
+
+def run_eiimnp43():
+    print("Running EIIMNP43...")
+    # TODO
+
+
+def run_eiimnp44():
+    print("Running EIIMNP44...")
+    # TODO
+
+
+if __name__ == "__main__":
+    main()
