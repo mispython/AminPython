@@ -70,48 +70,144 @@
 
 
 import os
+import pandas as pd
 
-def safe_delete(file):
-    if os.path.exists(file):
-        os.remove(file)
+# ==========================================
+# CONFIG (DD → actual file mapping)
+# ==========================================
+CONFIG = {
+    "NPL": "data/NPL.parquet",
+    "HP": "data/HP.parquet",
+    "TEXT": "data/RECRATE.txt",   # likely fixed-width
+    "LOAN": "data/MNILN.parquet",
+    "CCRIS": "data/CCRIS.parquet",
+    "IWMIS": "data/IWMIS.parquet",
+    "WOF": "data/WOF.parquet",
+}
+
+OUTPUT = {
+    "CAPCAMP": "CAPCAMP_OLD.txt",
+    "CAPBRCH": "CAPBRCH_OLD.txt",
+    "CAPCATE": "CAPCATE_OLD.txt",
+    "FSAS5": "FSAS5_OLD.txt",
+}
 
 
+# ==========================================
+# UTILITIES
+# ==========================================
+def safe_delete(path):
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def write_vb_text(df, filepath):
+    """
+    Simulate RECFM=VB (variable-length text)
+    """
+    with open(filepath, "w") as f:
+        for _, row in df.iterrows():
+            line = "|".join(str(x) for x in row.values)
+            f.write(line + "\n")
+
+
+# ==========================================
+# LOAD ALL DATA (DD mapping)
+# ==========================================
+def load_data():
+    return {
+        "npl": pd.read_parquet(CONFIG["NPL"]),
+        "hp": pd.read_parquet(CONFIG["HP"]),
+        "text": pd.read_fwf(CONFIG["TEXT"]),  # adjust if layout known
+        "loan": pd.read_parquet(CONFIG["LOAN"]),
+        "ccris": pd.read_parquet(CONFIG["CCRIS"]),
+        "iwmis": pd.read_parquet(CONFIG["IWMIS"]),
+        "wof": pd.read_parquet(CONFIG["WOF"]),
+    }
+
+
+# ==========================================
+# EIIMNP41 → CAPCAMP
+# ==========================================
+def run_eiimnp41(data):
+    df = data["npl"]
+
+    # ⚠️ PLACEHOLDER — replace with SAS logic
+    df = df.copy()
+    df["SOURCE"] = "CAPCAMP"
+
+    return df
+
+
+# ==========================================
+# EIIMNP42 → CAPBRCH
+# ==========================================
+def run_eiimnp42(data):
+    df = data["npl"]
+
+    # Example: include write-off datasets
+    df = df.merge(data["wof"], how="left", on="ACCTNO")
+
+    df["SOURCE"] = "CAPBRCH"
+
+    return df
+
+
+# ==========================================
+# EIIMNP43 → CAPCATE
+# ==========================================
+def run_eiimnp43(data):
+    df = data["npl"]
+
+    df["SOURCE"] = "CAPCATE"
+
+    return df
+
+
+# ==========================================
+# EIIMNP44 → FSAS5 (interface)
+# ==========================================
+def run_eiimnp44(data):
+    df = data["npl"]
+
+    df["SOURCE"] = "FSAS5"
+
+    return df
+
+
+# ==========================================
+# MAIN JOB (matches JCL flow)
+# ==========================================
 def main():
-    # ========================
-    # DELETE STEP
-    # ========================
-    safe_delete("CAPCAMP_OLD.txt")
-    safe_delete("CAPBRCH_OLD.txt")
-    safe_delete("CAPCATE_OLD.txt")
-    safe_delete("FSAS5_OLD.txt")
 
-    # ========================
-    # RUN JOBS (placeholders)
-    # ========================
-    run_eiimnp41()
-    run_eiimnp42()
-    run_eiimnp43()
-    run_eiimnp44()
+    # --------------------------
+    # DELETE OLD FILES
+    # --------------------------
+    for path in OUTPUT.values():
+        safe_delete(path)
 
+    # --------------------------
+    # LOAD DATA
+    # --------------------------
+    data = load_data()
 
-def run_eiimnp41():
-    print("Running EIIMNP41...")
-    # TODO: implement when SAS provided
+    # --------------------------
+    # RUN ALL STEPS
+    # --------------------------
+    capcamp = run_eiimnp41(data)
+    capbrch = run_eiimnp42(data)
+    capcate = run_eiimnp43(data)
+    fsas5 = run_eiimnp44(data)
 
+    # --------------------------
+    # WRITE OUTPUT (VB TEXT)
+    # --------------------------
+    write_vb_text(capcamp, OUTPUT["CAPCAMP"])
+    write_vb_text(capbrch, OUTPUT["CAPBRCH"])
+    write_vb_text(capcate, OUTPUT["CAPCATE"])
+    write_vb_text(fsas5, OUTPUT["FSAS5"])
 
-def run_eiimnp42():
-    print("Running EIIMNP42...")
-    # TODO
-
-
-def run_eiimnp43():
-    print("Running EIIMNP43...")
-    # TODO
-
-
-def run_eiimnp44():
-    print("Running EIIMNP44...")
-    # TODO
+    print("EIIMNPCA job completed successfully.")
 
 
 if __name__ == "__main__":
