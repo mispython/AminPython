@@ -1,17 +1,16 @@
-/*LIBNAME DP      '/dwh/cmsbdptr';*/
-/*LIBNAME LNTRAN  '/dwh/cmsblntr';*/
-/*LIBNAME LN      '/dwh/ln_ln';*/
-/*LIBNAME ILN     '/dwh/iln_ln';*/
-/*LIBNAME CA      '/dwh/dp_ca';*/
-/*LIBNAME ICA     '/dwh/idp_ca';*/
-/*LIBNAME SA      '/dwh/dp_sa';*/
-/*LIBNAME ISA     '/dwh/idp_sa';*/
-/*LIBNAME FD      '/dwh/dp_fd';*/
-/*LIBNAME IFD     '/dwh/idp_fd';*/
-/*LIBNAME FCY     '/dwh/dp_fcy';*/
-/*LIBNAME IFCY    '/dwh/idp_fcy';*/
-/*LIBNAME GOLD    '/dwh/dp_gold';*/
-/*LIBNAME TEMP    '/dwh/dwh_m/tempsource/qrf';*/
+
+Required Functionality	
+Enhance STRAIL and LTRAIL fields in DPBTRAN/IDPBTRAN daily and weekly datasets by storing hexadecimal values in SAS Data Warehouse
+
+Background
+
+Currently. STRAIL and LTRAIL fields are stored as character values only in SAS Data Warehouse.
+
+The hexadecimal values captured in the source file result in unreadable symbol in the SAS output (refer to the sample attached). Hence, to retrieve the data correctly, this eSMR is raised to store hexadecimal values in the mentioned fields.
+
+
+
+/*LIBNAME DP      '/dwh/cmsbdptr';*
 /*FILENAME BNM    '/sasdata/dwh/logs';*/
 
 
