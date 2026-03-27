@@ -138,8 +138,175 @@ DATA GP3;
 PROC SORT DATA=GP3 OUT=NPGS.NPGS ; BY ACCTNO;
 *;
 
+import os
+import pandas as pd
+
+# ================================
+# CONFIG
+# ================================
+INPUT_CCRISP_LOAN = "CCRISP_LOAN.txt"
+INPUT_CCRISP_OVERDFS = "CCRISP_OVERDFS.txt"
+
+INPUT_CCRISI_LOAN = "CCRISI_LOAN.txt"
+INPUT_CCRISI_OVERDFS = "CCRISI_OVERDFS.txt"
+
+OUTPUT_DLFTP_PARQUET = "DLFTP.parquet"
+OUTPUT_IDLFTP_PARQUET = "IDLFTP.parquet"
 
 
+# ================================
+# UTIL
+# ================================
+def safe_delete(filepath):
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+
+# ================================
+# CORE TRANSFORMATION
+# ================================
+def process_system(loan_path, overdraft_path):
+    loan = pd.read_csv(loan_path)
+    overdraft = pd.read_csv(overdraft_path)
+
+    # ---- LOAN
+    loan = loan.rename(columns={"LOANTYPE": "PRODUCT"})
+    loan = loan[loan["LEG"] == "A"]
+
+    # ---- OVERDRAFT
+    overdraft["NOTENO"] = 0
+    overdraft = overdraft[overdraft["LEG"] == "A"]
+
+    # ---- COMBINE
+    df = pd.concat([loan, overdraft], ignore_index=True)
+
+    # ---- KEEP
+    df = df[["BRANCH", "PRODUCT", "ACCTNO", "NOTENO", "DELQCD", "COSTCTR"]]
+
+    # ---- SORT
+    df = df.sort_values(by=["ACCTNO", "NOTENO"])
+
+    # ---- SAS missing=0 behavior
+    df = df.fillna(0)
+
+    return df
+
+
+# ================================
+# MAIN
+# ================================
+def main():
+
+    safe_delete(OUTPUT_DLFTP_PARQUET)
+    safe_delete(OUTPUT_IDLFTP_PARQUET)
+
+    pbb_df = process_system(INPUT_CCRISP_LOAN, INPUT_CCRISP_OVERDFS)
+    pibb_df = process_system(INPUT_CCRISI_LOAN, INPUT_CCRISI_OVERDFS)
+
+    # ---- WRITE PARQUET
+    pbb_df.to_parquet(OUTPUT_DLFTP_PARQUET, index=False)
+    pibb_df.to_parquet(OUTPUT_IDLFTP_PARQUET, index=False)
+
+    print("Parquet outputs generated successfully.")
+
+
+if __name__ == "__main__":
+    main()
+
+
+import os
+import pandas as pd
+from datetime import datetime
+
+# ================================
+# CONFIG (simulate DD names)
+# ================================
+INPUT_CCRISP_LOAN = "CCRISP_LOAN.txt"
+INPUT_CCRISP_OVERDFS = "CCRISP_OVERDFS.txt"
+
+INPUT_CCRISI_LOAN = "CCRISI_LOAN.txt"
+INPUT_CCRISI_OVERDFS = "CCRISI_OVERDFS.txt"
+
+OUTPUT_DLFTP = "DLFTP.txt"
+OUTPUT_IDLFTP = "IDLFTP.txt"
+
+RECORD_LENGTH = 80
+
+
+# ================================
+# UTIL: FIXED WIDTH WRITER
+# ================================
+def write_fixed_width(df, filepath, record_length=80):
+    with open(filepath, "w") as f:
+        for _, row in df.iterrows():
+            line = "".join(str(val).ljust(10) for val in row)
+            line = line[:record_length].ljust(record_length)
+            f.write(line + "\n")
+
+
+# ================================
+# UTIL: DELETE FILE IF EXISTS
+# ================================
+def safe_delete(filepath):
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+
+# ================================
+# CORE TRANSFORMATION
+# ================================
+def process_system(loan_path, overdraft_path):
+    # ---- LOAD (assume structured text, adjust if fixed-width later)
+    loan = pd.read_csv(loan_path)
+    overdraft = pd.read_csv(overdraft_path)
+
+    # ---- LOAN
+    loan = loan.rename(columns={"LOANTYPE": "PRODUCT"})
+    loan = loan[loan["LEG"] == "A"]
+
+    # ---- OVERDRAFT
+    overdraft["NOTENO"] = 0
+    overdraft = overdraft[overdraft["LEG"] == "A"]
+
+    # ---- COMBINE
+    df = pd.concat([loan, overdraft], ignore_index=True)
+
+    # ---- KEEP FIELDS
+    df = df[["BRANCH", "PRODUCT", "ACCTNO", "NOTENO", "DELQCD", "COSTCTR"]]
+
+    # ---- SORT
+    df = df.sort_values(by=["ACCTNO", "NOTENO"])
+
+    # ---- HANDLE MISSING (SAS MISSING=0)
+    df = df.fillna(0)
+
+    return df
+
+
+# ================================
+# MAIN JOB
+# ================================
+def main():
+
+    # ---- DELETE EXISTING
+    safe_delete(OUTPUT_DLFTP)
+    safe_delete(OUTPUT_IDLFTP)
+
+    # ---- PROCESS PBB
+    pbb_df = process_system(INPUT_CCRISP_LOAN, INPUT_CCRISP_OVERDFS)
+
+    # ---- PROCESS PIBB
+    pibb_df = process_system(INPUT_CCRISI_LOAN, INPUT_CCRISI_OVERDFS)
+
+    # ---- WRITE FIXED WIDTH
+    write_fixed_width(pbb_df, OUTPUT_DLFTP, RECORD_LENGTH)
+    write_fixed_width(pibb_df, OUTPUT_IDLFTP, RECORD_LENGTH)
+
+    print("Job EIBWDELQ completed successfully.")
+
+
+if __name__ == "__main__":
+    main()
 
 
 ============================================================================= SAP#MTH#CGC (EIBTCGCS)					============================================================================= 
@@ -364,4 +531,111 @@ DATA NPGS.BTNPGX;
           BRANCH CVAR15 CENSUST NATGUAR CINSTCL PRODUCT;
 *;
 
+
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+# ================================
+# FIXED WIDTH READERS
+# ================================
+def read_crft(file_path):
+    colspecs = [
+        (0,1),    # RECTYP1
+        (3,11),   # TFID
+        (11,16),  # SUBACCT
+        (364,365),# PREIND
+        (367,368),# CENSUST
+        (376,386) # ACCTNO
+    ]
+    
+    df = pd.read_fwf(file_path, colspecs=colspecs,
+                     names=["RECTYP1","TFID","SUBACCT","PREIND","CENSUST","ACCTNO"])
+    
+    df = df[df["RECTYP1"] != '1']
+    df = df[df["CENSUST"] >= 0]
+    
+    return df
+
+
+# ================================
+# ARREARS CALCULATION
+# ================================
+def calculate_arrears(df, report_date):
+    df["NODAYS"] = 0
+    df["ARREARS"] = 0
+
+    mask = (df["MATUREDS"] > 0) & (report_date > df["MATUREDS"])
+
+    df.loc[mask, "NODAYS"] = (report_date - df["MATUREDS"]) + 1
+
+    df["ARREARS"] = (df["NODAYS"] / 30).astype(int)
+
+    # special rule
+    df.loc[df["ARREARS"] == 24, "ARREARS"] = (
+        df["NODAYS"] / 30
+    ).round()
+
+    return df
+
+
+# ================================
+# NPL LOGIC
+# ================================
+def apply_npl_logic(df):
+    df["CVAR12"] = ""
+    df["CVAR13"] = ""
+
+    mask = df["NODAYS"] > 89
+
+    df.loc[mask, "CVAR12"] = "NPL"
+    df.loc[mask, "NPLDATE"] = df["MATUREDS"] + 89
+
+    # format date
+    df["CVAR13"] = pd.to_datetime(df["NPLDATE"], errors="coerce")\
+        .dt.strftime("%d/%m/%Y")
+
+    return df
+
+
+# ================================
+# MAIN PIPELINE
+# ================================
+def main():
+
+    crft = read_crft("CRFTABL.txt")
+
+    mast = pd.read_parquet("MAST.parquet")
+    cred = pd.read_parquet("CRED.parquet")
+    prov = pd.read_parquet("PROV.parquet")
+
+    # ---- merge
+    df = crft.merge(mast, on="ACCTNO")
+
+    # ---- credit aggregation
+    cred1 = cred.groupby("ACCTNO")["OUTSTAND"].sum().reset_index()
+
+    # ---- join
+    df = df.merge(cred1, on="ACCTNO", how="left")
+
+    # ---- arrears logic
+    report_date = 20250101  # replace properly
+    df = calculate_arrears(df, report_date)
+
+    # ---- NPL
+    df = apply_npl_logic(df)
+
+    # ---- final mapping
+    df["CVAR01"] = df["CENSUST"]
+    df["CVAR06"] = df["ACCTNO"]
+    df["CVAR09"] = df["OUTSTAND"]
+    df["CVAR11"] = df["ARREARS"]
+
+    df = df[df["OUTSTAND"].notna()]
+
+    df.to_parquet("BTNPGX.parquet", index=False)
+
+
+if __name__ == "__main__":
+    main()
 
