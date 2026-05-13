@@ -26,3 +26,12 @@ pyreadstat.write_sas7bdat(
     icapmove_staff,
     f"{output_folder}ICAPMOVE_STAFF_{mmyy}.sas7bdat"
 )
+
+37      capmove_staff.to_parquet(f"{output_folder}CAPMOVE_STAFF_{mmyy}.parquet")
+38      icapmove_staff.to_parquet(f"{output_folder}ICAPMOVE_STAFF_{mmyy}.parquet")
+39      pyreadstat.write_sas7bdat(
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIMCAPMV_CREATE_CAPMOVE.py", line 167, in <module>
+    pyreadstat.write_sas7bdat(
+AttributeError: module 'pyreadstat' has no attribute 'write_sas7bdat'
+
