@@ -190,3 +190,17 @@ print("\n ========== PREVIEW =========== \n")
 print(capmove.head(100))
 
 
+import pandas as pd
+
+df = pd.read_parquet(
+    "Data_Warehouse/MIS/XMIS/output_parquet/CAPMOVE_1025.parquet"
+)
+
+df.to_csv(
+    "Data_Warehouse/MIS/XMIS/output_parquet/CAPMOVE_1025.csv",
+    index=False
+)
+
+print("Done.")
+
+
