@@ -1,176 +1,28 @@
-# //EIMCAPMV JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M                     
-# /*JOBPARM S=S1M1                                                        
-# //**********************************************************************
-# //* MOVEMENT OF CAP                                                     
-# //* ON MONTHLY BASIS                                                    
-# //* DATASET: CAPMOVEMMYY                                                
-# //*          ICAPMOVEMMYY                                               
-# //* ESMR   : 2013-1283                                                  
-# //**********************************************************************
-# //*                                                                     
-# //DELETE  EXEC PGM=IEFBR14                                              
-# //DEL01    DD DSN=SAP.PBB.CAP.CAPFTP,                                   
-# //            DISP=(MOD,DELETE,DELETE),                                 
-# //            SPACE=(CYL,(0))                                           
-# //DEL01    DD DSN=SAP.PIBB.CAP.CAPFTP,                                  
-# //            DISP=(MOD,DELETE,DELETE),                                 
-# //            SPACE=(CYL,(0))                                           
-# //*                                                                     
-# //CREATE  EXEC PGM=IEFBR14                          
-# //CRT01    DD DSN=SAP.PBB.CAP.CAPFTP,                                   
-# //            DISP=(NEW,CATLG,DELETE),                                  
-# //            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),                    
-# //            SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)                 
-# //CRT02    DD DSN=SAP.PIBB.CAP.CAPFTP,                                  
-# //            DISP=(NEW,CATLG,DELETE),                                  
-# //            DCB=(RECFM=FB,LRECL=80,BLKSIZE=24000),                    
-# //            SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)                 
-# //*                                                                     
-# //EIBWINGW EXEC SAS609,REGION=8M                                        
-# //HP       DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR                       
-# //IHP      DD DSN=SAP.PIBB.NPL.HP.SASDATA,DISP=SHR                      
-# //MNILN    DD DSN=SAP.PBB.MNILN(0),DISP=SHR                             
-# //CAP      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),                      
-# //            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),                 
-# //            SPACE=(CYL,(600,300)),UNIT=(SYSDA,5)                      
-# //ICAP     DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),                      
-# //            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),                 
-# //            SPACE=(CYL,(600,300)),UNIT=(SYSDA,5)               
-# //SASLIST  DD SYSOUT=X                                                  
-# //SYSIN    DD *                                                         
-                                                                        
-# OPTIONS YEARCUTOFF=1950 NOCENTER;                                       
-# DATA REPTDATE;                                                          
-#    SET MNILN.REPTDATE;                                                  
-#    SELECT(DAY(REPTDATE));                                               
-#      WHEN (8)  DO; WK = '1'; WK1='4'; END;                              
-#      WHEN(15)  DO; WK = '2'; WK1='1'; END;                              
-#      WHEN(22)  DO; WK = '3'; WK1='2'; END;                              
-#      OTHERWISE DO; WK = '4'; WK1='3'; END;                              
-#    END;                                                                 
-#    CALL SYMPUT('NOWK',PUT(WK,$1.));                                     
-#    CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));                     
-#    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));                        
-# RUN;                                                                    
-                                                                        
-# DATA CAP.CAPMOVE&REPTMON&REPTYEAR                                       
-#    (KEEP=BRANCH ACCTNO NOTENO PRODUCT OPEN_BALANCE SUSPEND      
-#          WRBACK WRIOFF_BAL CAP CATEGORY PD LGD                          
-#     RENAME=(OPEN_BALANCE=CAPOPEN SUSPEND=CAPADD WRBACK=CAPWBACK         
-#             WRIOFF_BAL=CAPWOFF CAP=CAPCLOSE));                          
-#    SET HP.CAP&REPTMON&REPTYEAR;                                         
-# RUN;                                                                    
-                                                                        
-# DATA CAP.CAPMOVE_STAFF&REPTMON&REPTYEAR                                 
-#    (KEEP=BRANCH ACCTNO NOTENO PRODUCT OPEN_BALANCE SUSPEND              
-#          WRBACK WRIOFF_BAL CAP CATEGORY PD LGD                          
-#     RENAME=(OPEN_BALANCE=CAPOPEN SUSPEND=CAPADD WRBACK=CAPWBACK         
-#             WRIOFF_BAL=CAPWOFF CAP=CAPCLOSE));                          
-#    SET HP.CAP_STAFF&REPTMON&REPTYEAR;                                   
-# RUN;                                                                    
-                                                                        
-# DATA ICAP.ICAPMOVE&REPTMON&REPTYEAR                                     
-#    (KEEP=BRANCH ACCTNO NOTENO PRODUCT OPEN_BALANCE SUSPEND              
-#          WRBACK WRIOFF_BAL CAP CATEGORY PD LGD                          
-#     RENAME=(OPEN_BALANCE=CAPOPEN SUSPEND=CAPADD WRBACK=CAPWBACK         
-#             WRIOFF_BAL=CAPWOFF CAP=CAPCLOSE));         
-#                SET IHP.ICAP&REPTMON&REPTYEAR;                                       
-# RUN;                                                                    
-                                                    
-# DATA ICAP.ICAPMOVE_STAFF&REPTMON&REPTYEAR                               
-#    (KEEP=BRANCH ACCTNO NOTENO PRODUCT OPEN_BALANCE SUSPEND              
-#          WRBACK WRIOFF_BAL CAP CATEGORY PD LGD                          
-#     RENAME=(OPEN_BALANCE=CAPOPEN SUSPEND=CAPADD WRBACK=CAPWBACK         
-#             WRIOFF_BAL=CAPWOFF CAP=CAPCLOSE));                          
-#    SET IHP.ICAP_STAFF&REPTMON&REPTYEAR;                                 
-# RUN;                                                                                                                                           
-# FILENAME TRANFILE 'SAP.PBB.CAP.CAPFTP' DISP=OLD;                        
-# PROC CPORT LIBRARY=CAP FILE=TRANFILE; RUN;                                                                                                     
-# FILENAME TRANFILE 'SAP.PIBB.CAP.CAPFTP' DISP=OLD;                       
-# PROC CPORT LIBRARY=ICAP FILE=TRANFILE; RUN;       
-
-                                                      
-import pandas as pd
-from datetime import datetime, timedelta
-import os
-import pyreadstat
-
-hp_path = "Data_Warehouse/MIS/XMIS/input_testing_file/icapmove_staff1025.csv"
-ihp_path = "Data_Warehouse/MIS/XMIS/input_testing_file/icapmove_staff1025.csv"
-hpstaff_path = "Data_Warehouse/MIS/XMIS/input_testing_file/icapmove_staff1025.csv"
-ihpstaff_path = "Data_Warehouse/MIS/XMIS/input_testing_file/icapmove_staff1025.csv"
-
-print(os.path.exists(hp_path),os.path.exists(ihp_path))
-
-hp = pd.read_csv(hp_path, encoding='latin-1')
-ihp = pd.read_csv(ihp_path, encoding='latin-1')
-hpstaff = pd.read_csv(hp_path, encoding='latin-1')
-ihpstaff = pd.read_csv(ihp_path, encoding='latin-1')
-
-reptdate_value = (datetime.today() - timedelta(days=1)).date()
-
-print("REPT DATE", reptdate_value)
-
-reptday = reptdate_value.day
-reptmon = reptdate_value.month
-reptyear = reptdate_value.year
-mmyy = f"{reptmon:02d}{reptyear % 100:02d}"
-
-print(mmyy)
-
-def compute_week(day : int):
-    if day == 8:
-        return ("1","4")
-    elif day == 15:
-        return ("2","1")
-    elif day == 22:
-        return ("3","2")
-    else:
-        return ("4","3")
-
-wk , wk1 = compute_week(reptday)
-
-print(f"The REPTDATE = {reptdate_value}, WK = {wk}, WK1 ={wk1} ")
-
-rename_map = {
-    # "OPEN_BALANCE" : "CAPOPEN",
-    # "SUSPEND" : "CAPADD",
-    # "WRBACK" : "CAPWBACK",
-    # "WRIOFF_BAL" : "CAPWOFF",
-    # "CAP" : "CAPCLOSE"
-    "CAP" : "CAP2"
-}
-
-# keep_cols = [
-#     "BRANCH", "ACCTNO", "NOTENO", "PRODUCT", "OPEN_BALANCE", "SUSPEND",
-#     "WRBACK", "WRIOFF_BAL", "CAP", "CATEGORY", "PD", "LGD"
-# ]
-
-# capmove = hp[keep_cols].rename(columns=rename_map)
-# icapmove = ihp[keep_cols].rename(columns=rename_map)
-# capmove_staff = hpstaff[keep_cols].rename(columns=rename_map)
-# icapmove_staff = ihpstaff[keep_cols].rename(columns=rename_map)
-capmove = hp.rename(columns=rename_map)
-icapmove = ihp.rename(columns=rename_map)
-capmove_staff = hpstaff.rename(columns=rename_map)
-icapmove_staff = ihpstaff.rename(columns=rename_map)
-
 output_folder = "Data_Warehouse/MIS/XMIS/output_parquet/"
+
+# parquet output
 capmove.to_parquet(f"{output_folder}CAPMOVE_{mmyy}.parquet")
 icapmove.to_parquet(f"{output_folder}ICAPMOVE_{mmyy}.parquet")
 capmove_staff.to_parquet(f"{output_folder}CAPMOVE_STAFF_{mmyy}.parquet")
-icapmove_staff.to_parquet(f"{output_folder}ICAPMOVE__STAFF_{mmyy}.parquet")
+icapmove_staff.to_parquet(f"{output_folder}ICAPMOVE_STAFF_{mmyy}.parquet")
 
-pyreadstat.write_sas7bdat(f"{output_folder}CAPMOVE_{mmyy}.parquet")
-pyreadstat.write_sas7bdat(f"{output_folder}ICAPMOVE_{mmyy}.parquet")
-pyreadstat.write_sas7bdat(f"{output_folder}CAPMOVE_STAFF_{mmyy}.parquet")
-pyreadstat.write_sas7bdat(f"{output_folder}ICAPMOVE__STAFF_{mmyy}.parquet")
+# sas7bdat output
+pyreadstat.write_sas7bdat(
+    capmove,
+    f"{output_folder}CAPMOVE_{mmyy}.sas7bdat"
+)
 
+pyreadstat.write_sas7bdat(
+    icapmove,
+    f"{output_folder}ICAPMOVE_{mmyy}.sas7bdat"
+)
 
+pyreadstat.write_sas7bdat(
+    capmove_staff,
+    f"{output_folder}CAPMOVE_STAFF_{mmyy}.sas7bdat"
+)
 
-print(" The PBB AND PIBB CAPMOVE parquet file are ready. ")
-
-print("\n ========== PREVIEW =========== \n")
-print(capmove.head(100))
-
-
+pyreadstat.write_sas7bdat(
+    icapmove_staff,
+    f"{output_folder}ICAPMOVE_STAFF_{mmyy}.sas7bdat"
+)
