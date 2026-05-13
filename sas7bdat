@@ -164,26 +164,25 @@ capmove_staff.to_parquet(f"{output_folder}CAPMOVE_STAFF_{mmyy}.parquet")
 icapmove_staff.to_parquet(f"{output_folder}ICAPMOVE_STAFF_{mmyy}.parquet")
 
 # sas7bdat output
-pyreadstat.write_sas7bdat(
-    capmove,
-    f"{output_folder}CAPMOVE_{mmyy}.sas7bdat"
+capmove.to_csv(
+    f"{output_folder}CAPMOVE_{mmyy}.csv",
+    index=False
 )
 
-pyreadstat.write_sas7bdat(
-    icapmove,
-    f"{output_folder}ICAPMOVE_{mmyy}.sas7bdat"
+icapmove.to_csv(
+    f"{output_folder}ICAPMOVE_{mmyy}.csv",
+    index=False
 )
 
-pyreadstat.write_sas7bdat(
-    capmove_staff,
-    f"{output_folder}CAPMOVE_STAFF_{mmyy}.sas7bdat"
+capmove_staff.to_csv(
+    f"{output_folder}CAPMOVE_STAFF_{mmyy}.csv",
+    index=False
 )
 
-pyreadstat.write_sas7bdat(
-    icapmove_staff,
-    f"{output_folder}ICAPMOVE_STAFF_{mmyy}.sas7bdat"
+icapmove_staff.to_csv(
+    f"{output_folder}ICAPMOVE_STAFF_{mmyy}.csv",
+    index=False
 )
-
 
 print(" The PBB AND PIBB CAPMOVE parquet file are ready. ")
 
