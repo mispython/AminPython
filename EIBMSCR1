@@ -1,0 +1,104 @@
+//EIBMSCR1 JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,          00000100
+//          USER=OPCC                                                   00000200
+//*                                                                     00000300
+//* TO RUN AFTER EIBMSCRA & EIBRCRRB                                    00000400
+//*                                                                     00000500
+//PRINT1   OUTPUT CLASS=K,                                              00000600
+//         NAME='ATTN: EN MOHD BADRAN SAADULLAH',                       00000700
+//         ROOM='13TH FLOOR',                                           00000800
+//         BUILDING='MENARA PBB',                                       00000900
+//         DEPT='CARD PRODUCT & DEVELOPMENT',                           00001000
+//         ADDRESS=('BUSINESS DEVELOPMENT','MENARA PUBLIC BANK',        00001100
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),                    00001200
+//         DEST=LOCAL                                                   00001300
+//EIBMSCR1 EXEC SAS609                                                  00001400
+//MNITB     DD DSN=SAP.PBB.MNITB(0),DISP=SHR                            00001500
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR                             00001600
+//BRHFI     DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR                    00001700
+//SCRD      DD DSN=SAP.PBB.SRS.SASDATA,DISP=SHR                         00001800
+//SASLIST   DD DSN=SAP.PBB.XCRR.COLD,DISP=MOD                           00001900
+//*            DISP=(NEW,CATLG,DELETE),                                 00002000
+//*            SPACE=(CYL,(10,1),RLSE),                                 00002100
+//*            UNIT=(SYSDA,5),                                          00002200
+//*            DCB=(LRECL=133,RECFM=FBA,BLKSIZE=0,BUFNO=10)             00002300
+//SYSIN     DD *                                                        00002400
+                                                                        00002500
+OPTION NOCENTER NODATE NONUMBER;                                        00002600
+TITLE;                                                                  00002700
+*;                                                                      00002800
+DATA _NULL_;                                                            00002900
+   SET MNITB.REPTDATE;                                                  00003000
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));                        00003100
+   CALL SYMPUT('RMM',PUT(REPTDATE,MONTH2.));                            00003200
+   CALL SYMPUT('RMON',PUT(REPTDATE,MONYY7.));                           00003300
+   CALL SYMPUT('RYY',PUT(REPTDATE,YEAR2.));                             00003400
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));                           00003500
+*;                                                                      00003600
+DATA BRH;                                                               00003700
+   INFILE BRHFI;                                                        00003800
+   INPUT @002 BRANCH  3.                                                00003900
+         @006 BRCHCD $3.;                                               00004000
+*;                                                                      00004100
+PROC SORT; BY BRCHCD;                                                   00004200
+PROC SORT  DATA=SCRD.SRSBR OUT=SRSBR; BY BRCHCD;                        00004300
+*;                                                                      00004400
+DATA SRS;                                                               00004500
+   MERGE  BRH SRSBR(IN=A); BY BRCHCD;                                   00004600
+   IF A;                                                                00004700
+   IF C1CNT=.     THEN C1CNT=0;                                         00004800
+   IF C1BAL=.     THEN C1BAL=0;                                         00004900
+   IF C2CNT=.     THEN C2CNT=0;                                         00005000
+   IF C2BAL=.     THEN C2BAL=0;                                         00005100
+   IF C3CNT=.     THEN C3CNT=0;                                         00005200
+   IF C3BAL=.     THEN C3BAL=0;                                         00005300
+   IF C4CNT=.     THEN C4CNT=0;                                         00005400
+   IF C5CNT=.     THEN C5CNT=0;                                         00005500
+*;                                                                      00005600
+PROC SORT; BY BRANCH STAFF PRODUCT;                                     00005700
+*;                                                                      00005800
+DATA SRS;                                                               00005900
+  SET SRS END=LAST; BY BRANCH;                                          00006000
+  FILE PRINT HEADER=NEWPAGE;                                            00006100
+                                                                        00006200
+  IF  FIRST.BRANCH THEN DO;                                             00006300
+      PUT _PAGE_;                                                       00006400
+      TC1CNT=0; TC2CNT=0; TC3CNT=0; TC4CNT=0;TC5CNT=0;                  00006500
+      TC1BAL=0.00; TC2BAL=0.00; TC3BAL=0.00;                            00006600
+  END;                                                                  00006700
+                                                                        00006800
+  TC1CNT+C1CNT; TC1BAL+C1BAL;                                           00006900
+  TC2CNT+C2CNT; TC2BAL+C2BAL;                                           00007000
+  TC3CNT+C3CNT; TC3BAL+C3BAL;                                           00007100
+  TC4CNT+C4CNT; TC5CNT+C5CNT;                                           00007200
+                                                                        00007300
+  PUT @002  STAFF 6.   @010 PRODUCT  $20.                               00007400
+      @031  C1CNT 6.   @039 C1BAL    COMMA16.2                          00007500
+      @058  C2CNT 6.   @066 C2BAL    COMMA16.2                          00007600
+      @085  C3CNT 6.   @093 C3BAL    COMMA16.2                          00007700
+      @114  C4CNT 6.   @123 C5CNT    6.;                                00007800
+                                                                        00007900
+  IF  LAST.BRANCH THEN DO;                                              00008000
+  PUT @003 127*'-';                                                     00008100
+  PUT @003  'BRANCH TOTAL='                                             00008200
+      @031  TC1CNT 6.  @039 TC1BAL    COMMA16.2                         00008300
+      @058  TC2CNT 6.  @066 TC2BAL    COMMA16.2                         00008400
+      @085  TC3CNT 6.  @093 TC3BAL    COMMA16.2                         00008500
+      @114  TC4CNT 6.  @123 TC5CNT    6.;                               00008600
+  PUT @003 127*'-';                                                     00008700
+  END;                                                                  00008800
+  RETURN;                                                               00008900
+                                                                        00009000
+NEWPAGE:                                                                00009100
+PUT @01 'REPORT NO: STAFF PARTICIPATION UNDER SCR SCHEME BY BRANCH'     00009200
+    @111 'REPORT DATE=' "&RDATE";                                       00009300
+PUT @01 'PROGRAM ID : EIBMSCR1';                                        00009400
+PUT @01 'BRANCH=NO.: ' BRANCH Z3.  '   ' BRCHCD $3.;                    00009500
+PUT @032 '---- CATEGORY 1 -------    -- CATEGORY 2 - CORE --'           00009600
+    @086 '- CATEGORY 2 NON-CORE -    DB CARD  CR CARD';                 00009700
+PUT @003 'STAFF  PRODUCT'                                               00009800
+    @032 'COUNT       YTD BALANCE    COUNT       YTD BALANCE'           00009900
+    @086 'COUNT       YTD BALANCE    COUNT    COUNT';                   00010000
+PUT @002 '  ';                                                          00010100
+PUT @002 127*'-';                                                       00010200
+RETURN;                                                                 00010300
+RUN;                                                                    00010400
