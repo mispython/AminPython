@@ -102,3 +102,108 @@ PUT @002 '  ';                                                          00010100
 PUT @002 127*'-';                                                       00010200
 RETURN;                                                                 00010300
 RUN;                                                                    00010400
+
+
+#!/usr/bin/env python3
+
+import pandas as pd
+import pyreadstat
+
+from datetime import datetime, timedelta
+
+# ---------------------------------------------------------
+# REPORT DATE
+# ---------------------------------------------------------
+
+rdate = (datetime.today() - timedelta(days=1)).strftime("%d/%m/%Y")
+
+# ---------------------------------------------------------
+# READ SAS DATASETS
+# ---------------------------------------------------------
+
+brh, _ = pyreadstat.read_sas7bdat("BRHFI.sas7bdat")
+srsbr, _ = pyreadstat.read_sas7bdat("SRSBR.sas7bdat")
+
+# ---------------------------------------------------------
+# MERGE + CLEAN
+# ---------------------------------------------------------
+
+srs = (
+    brh.merge(srsbr, on="BRCHCD", how="right")
+       .fillna(0)
+       .sort_values(["BRANCH", "STAFF", "PRODUCT"])
+)
+
+# ---------------------------------------------------------
+# REPORT FUNCTION
+# ---------------------------------------------------------
+
+def print_header(branch, brchcd):
+
+    print("\n")
+    print(
+        f"REPORT NO: STAFF PARTICIPATION UNDER SCR SCHEME BY BRANCH"
+        f"{'REPORT DATE=' + rdate:>40}"
+    )
+
+    print("PROGRAM ID : EIBMSCR1")
+
+    print(f"BRANCH=NO.: {int(branch):03d}   {brchcd}")
+
+    print("-" * 127)
+
+
+def print_total(total):
+
+    print("-" * 127)
+
+    print(
+        f"BRANCH TOTAL="
+        f"{total['C1CNT']:>10.0f}"
+        f"{total['C1BAL']:>20,.2f}"
+        f"{total['C2CNT']:>10.0f}"
+        f"{total['C2BAL']:>20,.2f}"
+        f"{total['C3CNT']:>10.0f}"
+        f"{total['C3BAL']:>20,.2f}"
+        f"{total['C4CNT']:>10.0f}"
+        f"{total['C5CNT']:>10.0f}"
+    )
+
+    print("-" * 127)
+
+
+# ---------------------------------------------------------
+# PROCESS BY BRANCH
+# ---------------------------------------------------------
+
+total_cols = [
+    "C1CNT", "C1BAL",
+    "C2CNT", "C2BAL",
+    "C3CNT", "C3BAL",
+    "C4CNT", "C5CNT"
+]
+
+for (branch, brchcd), grp in srs.groupby(["BRANCH", "BRCHCD"]):
+
+    print_header(branch, brchcd)
+
+    # Detail lines
+    for _, row in grp.iterrows():
+
+        print(
+            f"{int(row['STAFF']):6}"
+            f"{str(row['PRODUCT']):>20}"
+            f"{row['C1CNT']:10.0f}"
+            f"{row['C1BAL']:20,.2f}"
+            f"{row['C2CNT']:10.0f}"
+            f"{row['C2BAL']:20,.2f}"
+            f"{row['C3CNT']:10.0f}"
+            f"{row['C3BAL']:20,.2f}"
+            f"{row['C4CNT']:10.0f}"
+            f"{row['C5CNT']:10.0f}"
+        )
+
+    # Branch totals
+    totals = grp[total_cols].sum()
+
+    print_total(totals)
