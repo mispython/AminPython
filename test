@@ -1,4 +1,4 @@
-
+Data_Warehouse/MIS/XMIS/input_testing_file
 Required Functionality	
 Enhance STRAIL and LTRAIL fields in DPBTRAN/IDPBTRAN daily and weekly datasets by storing hexadecimal values in SAS Data Warehouse
 
