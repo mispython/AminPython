@@ -204,3 +204,66 @@ df.to_csv(
 print("Done.")
 
 
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+
+
+# ==========================================
+# INPUT SAS DATASET
+# ==========================================
+
+input_file = "Data_Warehouse/MIS/XMIS/input_testing_file/SRSBR.sas7bdat"
+
+
+# ==========================================
+# OUTPUT CSV FILE
+# ==========================================
+
+output_file = "Data_Warehouse/MIS/XMIS/output/SRSBR.csv"
+
+
+# ==========================================
+# READ SAS7BDAT
+# ==========================================
+
+df = pd.read_sas(
+    input_file,
+    format="sas7bdat"
+)
+
+
+# ==========================================
+# DECODE BYTE COLUMNS
+# ==========================================
+
+for col in df.select_dtypes(include="object").columns:
+
+    try:
+        df[col] = df[col].str.decode("utf-8")
+
+    except:
+        pass
+
+
+# ==========================================
+# OUTPUT TO CSV
+# ==========================================
+
+df.to_csv(
+    output_file,
+    index=False
+)
+
+
+print("Conversion completed.")
+print("Input :", input_file)
+print("Output:", output_file)
