@@ -104,6 +104,17 @@ for col in SRSBR.select_dtypes(include="object").columns:
 
 
 # =========================================================
+# REPLACE NULL ONLY FOR NUMERIC COLUMNS
+# =========================================================
+
+print("Replacing missing numeric values with 0 ...")
+
+numeric_cols = SRSBR.select_dtypes(include=["number"]).columns
+
+SRSBR[numeric_cols] = SRSBR[numeric_cols].fillna(0)
+
+
+# =========================================================
 # SORT
 # =========================================================
 
@@ -126,29 +137,6 @@ SRS = pd.merge(
     on="BRCHCD",
     how="left"
 )
-
-
-# =========================================================
-# REPLACE MISSING VALUES
-# =========================================================
-
-print("Replacing missing numeric values ...")
-
-numeric_cols = [
-    "C1CNT",
-    "C1BAL",
-    "C2CNT",
-    "C2BAL",
-    "C3CNT",
-    "C3BAL",
-    "C4CNT",
-    "C5CNT"
-]
-
-for col in numeric_cols:
-
-    if col in SRS.columns:
-        SRS[col] = SRS[col].fillna(0)
 
 
 # =========================================================
