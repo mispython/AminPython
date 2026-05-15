@@ -328,3 +328,84 @@ df.to_csv(
 
 print("\nFirst 10 records saved to:")
 print(output_file)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+
+
+# ==========================================
+# INPUT SAS DATASET
+# ==========================================
+
+input_file = "Data_Warehouse/MIS/XMIS/input_testing_file/SRSBR.sas7bdat"
+
+
+# ==========================================
+# READ ONLY FIRST 10 RECORDS
+# ==========================================
+
+sas_reader = pd.read_sas(
+    input_file,
+    format="sas7bdat",
+    chunksize=10
+)
+
+df = next(sas_reader)
+
+
+# ==========================================
+# DECODE BYTE COLUMNS
+# ==========================================
+
+for col in df.select_dtypes(include="object").columns:
+
+    try:
+        df[col] = df[col].str.decode("utf-8")
+
+    except Exception:
+        pass
+
+
+# ==========================================
+# REPLACE BLANK / NULL WITH '.'
+# ==========================================
+
+df = df.fillna(".")
+
+df = df.replace("", ".")
+
+
+# ==========================================
+# DISPLAY FIRST 10 RECORDS
+# ==========================================
+
+print(df)
+
+
+# ==========================================
+# OPTIONAL: SAVE TO CSV
+# ==========================================
+
+output_file = "Data_Warehouse/MIS/XMIS/output/SRSBR_first10.csv"
+
+df.to_csv(
+    output_file,
+    index=False
+)
+
+print("\nFirst 10 records saved to:")
+print(output_file)
