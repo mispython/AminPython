@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
 """
+
+input/prod/BRANCH.txt
+input/prod/RGSTAF.TXT
+input/prod/HOSTAF.TXT
+sftp://sasdemo_edw_dev@svdwh004/stgsrcsys/host/uat/BRSTAF.TXT
+input/prod/ACCT55.txt
+input/prod/ACCT33.txt
+input/prod/DP_SCRFFD.txt
+input/prod/DP_SRR.txt
+
 Python conversion of mainframe SAS job EIBMSCRA.
 
 This job keeps SAS include files separate. Put converted include modules under
