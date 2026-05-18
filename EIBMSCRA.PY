@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
 """
-
-input/prod/BRANCH.txt
-input/prod/RGSTAF.TXT
-input/prod/HOSTAF.TXT
-sftp://sasdemo_edw_dev@svdwh004/stgsrcsys/host/uat/BRSTAF.TXT
-input/prod/ACCT55.txt
-input/prod/ACCT33.txt
-input/prod/DP_SCRFFD.txt
-input/prod/DP_SRR.txt
-
 Python conversion of mainframe SAS job EIBMSCRA.
 
 This job keeps SAS include files separate. Put converted include modules under
@@ -27,7 +17,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS")
+DEFAULT_BASE = Path("input/prod")
 DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
 
 
@@ -332,6 +322,8 @@ def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -
 
 def read_elds(path: Path, branch_by_code: dict[str, Branch]) -> list[SrsRecord]:
     rows: list[SrsRecord] = []
+    if not path.exists():
+        return rows
 
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -581,17 +573,18 @@ def existing_paths(paths: list[Path]) -> list[Path]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert SAS EIBMSCRA SCR summary job to Python.")
     parser.add_argument("--mnitb-reptdate", type=Path, help="Optional report-date text/CSV file.")
-    parser.add_argument("--brhfi", type=Path, default=DEFAULT_BASE / "BRHFI.txt")
+    parser.add_argument("--brhfi", type=Path, default=DEFAULT_BASE / "BRANCH.txt")
     parser.add_argument("--elds", type=Path, default=DEFAULT_BASE / "ELDS.txt")
     parser.add_argument("--dep", action="append", type=Path, default=None, help="DEP fixed-width file. Repeatable.")
     parser.add_argument("--cardfile", action="append", type=Path, default=None, help="Card fixed-width file. Repeatable.")
-    parser.add_argument("--hrbr", type=Path, default=DEFAULT_BASE / "HRBR.txt")
-    parser.add_argument("--hrho", type=Path, default=DEFAULT_BASE / "HRHO.txt")
+    parser.add_argument("--hrbr", type=Path, default=DEFAULT_BASE / "BRSTAF.TXT")
+    parser.add_argument("--hrho", type=Path, default=DEFAULT_BASE / "HOSTAF.TXT")
+    parser.add_argument("--hrrg", type=Path, default=DEFAULT_BASE / "RGSTAF.TXT", help="Regional staff file; kept for DD mapping, not used by this SAS flow.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--report-date", help="Optional report date override, e.g. 31/12/2025 or 2025-12-31.")
     args = parser.parse_args()
 
-    dep_paths = args.dep or [DEFAULT_BASE / "DEP.txt", DEFAULT_BASE / "SCRFD.txt"]
+    dep_paths = args.dep or [DEFAULT_BASE / "DP_SRR.txt", DEFAULT_BASE / "DP_SCRFFD.txt"]
     card_paths = args.cardfile or [DEFAULT_BASE / "ACCT33.txt", DEFAULT_BASE / "ACCT55.txt"]
 
     report_date_path = resolve_input_path(args.mnitb_reptdate) if args.mnitb_reptdate else None
