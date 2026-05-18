@@ -198,3 +198,42 @@ FDORGMT_RULES = [
     RangeRule(18, 24, "23"), RangeRule(24, 36, "24"),
     RangeRule(36, 48, "25"), RangeRule(48, 60, "26"),
     RangeRule(60, inf, "30"),
+]
+
+
+def fdorgmt(months: float) -> str:
+    return lookup_range(months, FDORGMT_RULES)
+
+
+FDRMMT_RULES = [
+    RangeRule(-inf, 0, "51"), RangeRule(0, 1, "52"),
+    RangeRule(1, 2, "53"), RangeRule(2, 3, "54"),
+    RangeRule(3, 6, "55"), RangeRule(6, 9, "56"),
+    RangeRule(9, 12, "57"), RangeRule(12, 24, "61"),
+    RangeRule(24, 36, "62"), RangeRule(36, 48, "63"),
+    RangeRule(48, 60, "64"), RangeRule(60, inf, "70"),
+]
+
+
+def fdrmmt(months: float) -> str:
+    return lookup_range(months, FDRMMT_RULES)
+
+
+RMFDORGMT = {
+    272: "12", 284: "12", 273: "13", 285: "13", 274: "14", 286: "14",
+    275: "15", 276: "15", 277: "15", 287: "15", 288: "15", 289: "15",
+    278: "16", 279: "16", 280: "16", 290: "16", 291: "16", 292: "16",
+    281: "17", 282: "17", 283: "17", 293: "17", 294: "17", 295: "17",
+}
+
+
+def rmfdorgmt(code: int) -> str | None:
+    return RMFDORGMT.get(code)
+
+
+RACE = {"0": "0", "1": "1", "2": "2", "3": "3"}
+
+
+def race(value: str | int) -> str:
+    return lookup(str(value), RACE, "0")
+
