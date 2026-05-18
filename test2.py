@@ -860,3 +860,334 @@ Total time elapsed : 00:21:02
 Memory used: 7.39 MB
 Program end : 2026/05/18 16:03:04
 (virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+==============================================================================
+
+source /sas/python/virt_edw/bin/activate
+/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRA.py
+[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRA.py
+**********************************************************
+* Job:      EIBMSCRA                                     *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Monday, May 18, 2026, 04:32:38 PM            *
+**********************************************************
+Program start : 2026/05/18 16:32:46
+
+1       """
+2       from __future__ import annotations
+3       import argparse
+4       import csv
+5       from collections import defaultdict
+6       from dataclasses import dataclass, field
+7       from datetime import date, datetime
+8       from pathlib import Path
+9       from typing import Iterable
+10      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+11      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+12      try:
+13          import pbbdpfmt  # noqa: F401
+14      except ImportError:
+15          try:
+16              from includes import pbbdpfmt, pbmisfmt  # noqa: F401
+17          except ImportError:
+18              pbbdpfmt = pbmisfmt = None
+19      @dataclass(frozen=True)
+20      class Branch:
+21          branch: int
+22          brchcd: str
+23      @dataclass(frozen=True)
+24      class HrBranch:
+25          staff: int
+26          branch: int
+27          brchcd: str
+28      @dataclass(frozen=True)
+29      class HrHo:
+30          staff: int
+31          hoe: str
+32      @dataclass
+33      class SrsRecord:
+34          staff: int
+35          product: str
+36          ncore: str
+37          branch: int = 0
+38          brchcd: str = ""
+39          hoe: str = ""
+40          tag: str = ""
+41          acctno: int | None = None
+42          aanum: str = ""
+43          c1cnt: int = 0
+44          c2cnt: int = 0
+45          c3cnt: int = 0
+46          c1bal: float = 0.0
+47          c2bal: float = 0.0
+48          c3bal: float = 0.0
+49      @dataclass
+50      class Summary:
+51          values: dict[str, object]
+52          sums: dict[str, float] = field(default_factory=lambda: defaultdict(float))
+53      def parse_sas_number(raw: str, implied_decimals: int = 0) -> float:
+54      def parse_int(raw: str) -> int:
+55      def resolve_input_path(path: Path) -> Path:
+56      def format_report_date(value: str, output_format: str = "%d/%m/%Y") -> str:
+57      def read_report_date(path: Path | None, override: str | None) -> str:
+58      def read_branch_file(path: Path) -> tuple[dict[int, Branch], dict[str, Branch]]:
+59      def read_hr_branch(path: Path) -> dict[int, HrBranch]:
+60      def read_hr_ho(path: Path) -> dict[int, HrHo]:
+61      def read_card_files(paths: Iterable[Path]) -> list[SrsRecord]:
+62      def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -> list[SrsRecord]:
+63      def read_elds(path: Path, branch_by_code: dict[str, Branch]) -> list[SrsRecord]:
+64      def attach_card_locations(
+65      def split_srs_locations(
+66      def summarize(rows: Iterable[SrsRecord], class_fields: tuple[str, ...]) -> list[Summary]:
+67      def srss_product_summary(rows: Iterable[SrsRecord]) -> list[Summary]:
+68      def write_summary_csv(rows: list[Summary], path: Path) -> None:
+69      def write_exception_report(rows: list[SrsRecord], path: Path) -> None:
+70      def write_print_report(rows: list[Summary], report_date: str, path: Path) -> None:
+71      def existing_paths(paths: list[Path]) -> list[Path]:
+72      def main() -> None:
+73      if __name__ == "__main__":
+74          main()
+75          parser = argparse.ArgumentParser(description="Convert SAS EIBMSCRA SCR summary job to Python.")
+76          parser.add_argument("--mnitb-reptdate", type=Path, help="Optional report-date text/CSV file.")
+77          parser.add_argument("--brhfi", type=Path, default=DEFAULT_BASE / "BRANCH.txt")
+78          parser.add_argument("--elds", type=Path, default=DEFAULT_BASE / "ELDS.txt")
+79          parser.add_argument("--dep", action="append", type=Path, default=None, help="DEP fixed-width file. Repeatable.")
+80          parser.add_argument("--cardfile", action="append", type=Path, default=None, help="Card fixed-width file. Repeatable.")
+81          parser.add_argument("--hrbr", type=Path, default=DEFAULT_BASE / "BRSTAF.TXT")
+82          parser.add_argument("--hrho", type=Path, default=DEFAULT_BASE / "HOSTAF.TXT")
+83          parser.add_argument("--hrrg", type=Path, default=DEFAULT_BASE / "RGSTAF.TXT", help="Regional staff file; kept for DD mapping, not used by this SAS flow.")
+84          parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+85          parser.add_argument("--report-date", help="Optional report date override, e.g. 31/12/2025 or 2025-12-31.")
+86          args = parser.parse_args()
+87          dep_paths = args.dep or [DEFAULT_BASE / "DP_SRR.txt", DEFAULT_BASE / "DP_SCRFFD.txt"]
+88          card_paths = args.cardfile or [DEFAULT_BASE / "ACCT33.txt", DEFAULT_BASE / "ACCT55.txt"]
+89          report_date_path = resolve_input_path(args.mnitb_reptdate) if args.mnitb_reptdate else None
+90          report_date = read_report_date(report_date_path, args.report_date)
+91          if override:
+92          if path is None or not path.exists():
+93              return date.today().strftime("%d/%m/%Y")
+94          branch_by_number, branch_by_code = read_branch_file(resolve_input_path(args.brhfi))
+95          path_variants = [path]
+96          if path.suffix.lower() != ".txt":
+97          if path.is_absolute():
+98          candidates = [
+99              for base in (Path.cwd(), *Path.cwd().parents)
+100             for variant in path_variants
+101             base / variant
+102         for candidate in candidates:
+103             if candidate.exists():
+104                 return candidate
+105         by_branch: dict[int, Branch] = {}
+106         by_brchcd: dict[str, Branch] = {}
+107         with path.open("r", encoding="utf-8") as handle:
+108             for line in handle:
+109                 if not line.strip():
+110                 branch = parse_int(line[1:4])
+111         return int(parse_sas_number(raw))
+112         value = raw.strip()
+113         if not value or value == "." or value.startswith("."):
+114         if "." in value:
+115         return int(value) / (10**implied_decimals)
+116                 brchcd = line[5:8].strip()
+117                 item = Branch(branch=branch, brchcd=brchcd)
+118                 by_branch[branch] = item
+119                 by_brchcd[brchcd] = item
+120         return by_branch, by_brchcd
+121         hr_branch_by_staff = read_hr_branch(resolve_input_path(args.hrbr))
+122         rows: dict[int, HrBranch] = {}
+123         with path.open("r", encoding="utf-8") as handle:
+124             for line in handle:
+125                 if not line.strip():
+126                 staff = parse_int(line[4:9])
+127                 branch = parse_int(line[68:71])
+128                 brchcd = line[71:74].strip()
+129                 if 2 <= branch <= 267:
+130                     rows[staff] = HrBranch(staff=staff, branch=branch, brchcd=brchcd)
+131         return rows
+132         hr_ho_by_staff = read_hr_ho(resolve_input_path(args.hrho))
+133         rows: dict[int, HrHo] = {}
+134         with path.open("r", encoding="utf-8") as handle:
+135             for line in handle:
+136                 if not line.strip():
+137                 staff = parse_int(line[4:9])
+138                 hoe = line[71:86].strip()
+139                 rows[staff] = HrHo(staff=staff, hoe=hoe)
+140         return rows
+141         cards = read_card_files(existing_paths(card_paths))
+142         resolved_paths = []
+143         for path in paths:
+144             resolved = resolve_input_path(path)
+145             if resolved.exists():
+146                 resolved_paths.append(resolved)
+147         return resolved_paths
+148         rows: list[SrsRecord] = []
+149         for path in paths:
+150             with path.open("r", encoding="utf-8") as handle:
+151                 for line in handle:
+152                     if not line.strip():
+153                     acctno = parse_int(line[0:11])
+154                     typec = int(str(acctno)[:5])
+155                     if typec not in {3301, 3302, 3305, 3306, 3308, 3309, 5503, 5504}:
+156                         continue
+157         return rows
+158         card_branch_rows, card_ho_rows, card_unmatched = attach_card_locations(
+159             cards, hr_branch_by_staff, hr_ho_by_staff
+160         branch_rows: list[SrsRecord] = []
+161         ho_rows: list[SrsRecord] = []
+162         unmatched: list[SrsRecord] = []
+163         for row in cards:
+164         return branch_rows, ho_rows, unmatched
+165         dep_rows = read_dep_files(existing_paths(dep_paths), branch_by_number)
+166         rows: list[SrsRecord] = []
+167         for path in paths:
+168             with path.open("r", encoding="utf-8") as handle:
+169                 for line in handle:
+170                     if not line.strip():
+171                     acctno = parse_int(line[1:11])
+172                     primoff = parse_int(line[49:54])
+173                     secnoff = parse_int(line[55:60])
+174                     xcore = line[60:61]
+175                     ytdbals = parse_sas_number(line[75:89], implied_decimals=2)
+176             return float(value)
+177                     nummth = parse_int(line[89:91])
+178                     branch_no = parse_int(line[96:99])
+179                     branch = branch_by_number.get(branch_no)
+180                     if branch is None:
+181                     product = ""
+182                     if 1000000000 <= acctno <= 1999999999 or 7000000000 <= acctno <= 7999999999:
+183                     elif 3000000000 <= acctno <= 3999999999:
+184                         product = "CURRENT ACCOUNT"
+185                     if not product or nummth == 0:
+186                         continue
+187                     elif 4000000000 <= acctno <= 4999999999 or 6000000000 <= acctno <= 6999999999:
+188                         product = "SAVING ACCOUNT"
+189             return 0.0
+190                         product = "FIXED DEPOSITS"
+191         return rows
+192         elds_rows = read_elds(resolve_input_path(args.elds), branch_by_code)
+193         rows: list[SrsRecord] = []
+194         if not path.exists():
+195         with path.open("r", encoding="utf-8") as handle:
+196             for line in handle:
+197                 if not line.strip():
+198                 aanum = line[0:13].strip()
+199                 stafx1 = line[16:21].strip()
+200                 stafx2 = line[25:30].strip()
+201                 stafx3 = line[34:39].strip()
+202                 product = line[50:68].strip()
+203                 ytdbal = parse_sas_number(line[68:80])
+204                 brchcd = aanum[:3]
+205                 branch = branch_by_code.get(brchcd)
+206                 if stafx1 == "*****" or branch is None:
+207                 if "00001" <= stafx1 <= "99999":
+208                     rows.append(
+209                         SrsRecord(
+210                             staff=parse_int(stafx1),
+211                             product=product,
+212                             ncore="X",
+213                             branch=branch.branch,
+214                             brchcd=branch.brchcd,
+215                             tag="ELDS",
+216                             aanum=aanum,
+217                             c1cnt=1,
+218                             c1bal=ytdbal,
+219                 if "00001" <= stafx2 <= "99999":
+220                 if "00001" <= stafx3 <= "99999":
+221                     rows.append(
+222                         SrsRecord(
+223                             staff=parse_int(stafx2),
+224                             product=product,
+225                             ncore="C",
+226                             branch=branch.branch,
+227                             brchcd=branch.brchcd,
+228                             tag="ELDS",
+229                             aanum=aanum,
+230                             c2cnt=1,
+231                             c2bal=ytdbal,
+232                     rows.append(
+233                         SrsRecord(
+234                             staff=parse_int(stafx3),
+235                             product=product,
+236                             ncore="N",
+237                             branch=branch.branch,
+238                             brchcd=branch.brchcd,
+239                             tag="ELDS",
+240                             aanum=aanum,
+241                             c3cnt=1,
+242                             c3bal=ytdbal,
+243         return rows
+244         srs_rows = elds_rows + dep_rows
+245         srs_branch_rows, srs_ho_rows, srs_unmatched = split_srs_locations(srs_rows, hr_ho_by_staff)
+246         branch_rows: list[SrsRecord] = []
+247         ho_rows: list[SrsRecord] = []
+248         unmatched: list[SrsRecord] = []
+249         for row in rows:
+250             hr_ho = hr_ho_by_staff.get(row.staff)
+251             if hr_ho:
+252             elif row.branch > 0:
+253                 branch_rows.append(row)
+254                 row.hoe = hr_ho.hoe
+255                 ho_rows.append(row)
+256         return branch_rows, ho_rows, unmatched
+257         final_branch_rows = srs_branch_rows + card_branch_rows
+258         final_ho_rows = srs_ho_rows + card_ho_rows
+259         all_rows = final_ho_rows + final_branch_rows
+260         output_dir = args.output_dir
+261         write_exception_report(srs_unmatched + card_unmatched, output_dir / "exception_report.txt")
+262         path.parent.mkdir(parents=True, exist_ok=True)
+263         lines = ["EXCEPTION REPORT : UMMATCHED STAFF ID AGAINST HR FILE", ""]
+264         elds_rows = [row for row in rows if row.tag == "ELDS"]
+265         depo_rows = [row for row in rows if row.tag == "DEPO"]
+266         lines.append("ELDS")
+267         lines.append(f"{'AANUM':<14}{'STAFF':>8}  {'PRODUCT':<18}{'YTDBAL':>14}")
+268         for row in elds_rows:
+269         lines.append("")
+270         lines.append("DEPO")
+271         lines.append(f"{'ACCTNO':<14}{'STAFF':>8}  {'PRODUCT':<18}{'YTDBAL':>14}")
+272         for row in depo_rows:
+273         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+274         write_summary_csv(summarize(final_branch_rows, ("brchcd", "staff", "product", "ncore")), output_dir / "SRSBR.csv")
+275         sums = ("c1cnt", "c2cnt", "c3cnt", "c1bal", "c2bal", "c3bal")
+276         grouped: dict[tuple[object, ...], Summary] = {}
+277         for row in rows:
+278             key = tuple(getattr(row, field_name) for field_name in class_fields)
+279             if key not in grouped:
+280                 grouped[key] = Summary(values=dict(zip(class_fields, key, strict=True)))
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRA.py", line 621, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRA.py", line 612, in main
+    write_summary_csv(summarize(final_branch_rows, ("brchcd", "staff", "product", "ncore")), output_dir / "SRSBR.csv")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRA.py", line 447, in summarize
+    grouped[key] = Summary(values=dict(zip(class_fields, key, strict=True)))
+TypeError: zip() takes no keyword arguments
+
+Total time elapsed : 00:25:36
+Memory used: 135.19 MB
+Program end : 2026/05/18 16:58:23
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
