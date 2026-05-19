@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Python conversion of mainframe SAS job EIBMSCRN.
+Python conversion of mainframe SAS job EIBMSCRA.
 
-This is the 6th-of-month clone of EIBMSCRA, run after ELDS is ready.
+This job keeps SAS include files separate. Put converted include modules under
+./includes, for example includes/pbmisfmt.py and includes/pbbdpfmt.py.
 """
 
 from __future__ import annotations
@@ -66,8 +67,6 @@ class SrsRecord:
     c1cnt: int = 0
     c2cnt: int = 0
     c3cnt: int = 0
-    c4cnt: int = 0
-    c5cnt: int = 0
     c1bal: float = 0.0
     c2bal: float = 0.0
     c3bal: float = 0.0
@@ -220,9 +219,9 @@ def read_card_files(paths: Iterable[Path]) -> list[SrsRecord]:
                         SrsRecord(
                             staff=staff,
                             product="CARD",
-                            ncore="N",
+                            ncore="X",
                             acctno=acctno,
-                            c4cnt=1,
+                            c1cnt=1,
                         )
                     )
                 else:
@@ -230,9 +229,9 @@ def read_card_files(paths: Iterable[Path]) -> list[SrsRecord]:
                         SrsRecord(
                             staff=staff,
                             product="CARD",
-                            ncore="N",
+                            ncore="C",
                             acctno=acctno,
-                            c5cnt=1,
+                            c2cnt=1,
                         )
                     )
 
@@ -256,8 +255,6 @@ def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -
                 nummth = parse_int(line[89:91])
                 branch_no = parse_int(line[96:99])
                 branch = branch_by_number.get(branch_no)
-                if branch is None:
-                    continue
 
                 product = ""
                 if 1000000000 <= acctno <= 1999999999 or 7000000000 <= acctno <= 7999999999:
@@ -267,10 +264,11 @@ def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -
                 elif 4000000000 <= acctno <= 4999999999 or 6000000000 <= acctno <= 6999999999:
                     product = "SAVING ACCOUNT"
 
-                if not product or nummth == 0:
+                if not product:
                     continue
 
-                ytdbal = round(ytdbals / nummth)
+                ytdbal = round(ytdbals / nummth) if nummth else 0.0
+                brchcd = branch.brchcd if branch else ""
 
                 if primoff and xcore == " ":
                     rows.append(
@@ -278,8 +276,8 @@ def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -
                             staff=primoff,
                             product=product,
                             ncore="X",
-                            branch=branch.branch,
-                            brchcd=branch.brchcd,
+                            branch=branch_no,
+                            brchcd=brchcd,
                             tag="DEPO",
                             acctno=acctno,
                             c1cnt=1,
@@ -295,8 +293,8 @@ def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -
                                 staff=staff,
                                 product=product,
                                 ncore="C",
-                                branch=branch.branch,
-                                brchcd=branch.brchcd,
+                                branch=branch_no,
+                                brchcd=brchcd,
                                 tag="DEPO",
                                 acctno=acctno,
                                 c2cnt=1,
@@ -309,8 +307,8 @@ def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -
                                 staff=staff,
                                 product=product,
                                 ncore="N",
-                                branch=branch.branch,
-                                brchcd=branch.brchcd,
+                                branch=branch_no,
+                                brchcd=brchcd,
                                 tag="DEPO",
                                 acctno=acctno,
                                 c3cnt=1,
@@ -439,7 +437,7 @@ def split_srs_locations(
 
 
 def summarize(rows: Iterable[SrsRecord], class_fields: tuple[str, ...]) -> list[Summary]:
-    sums = ("c1cnt", "c2cnt", "c3cnt", "c4cnt", "c5cnt", "c1bal", "c2bal", "c3bal")
+    sums = ("c1cnt", "c2cnt", "c3cnt", "c1bal", "c2bal", "c3bal")
     grouped: dict[tuple[object, ...], Summary] = {}
 
     for row in rows:
@@ -466,8 +464,6 @@ def srss_product_summary(rows: Iterable[SrsRecord]) -> list[Summary]:
                 c1cnt=int(item.sums["c1cnt"]),
                 c2cnt=int(item.sums["c2cnt"]),
                 c3cnt=int(item.sums["c3cnt"]),
-                c4cnt=int(item.sums["c4cnt"]),
-                c5cnt=int(item.sums["c5cnt"]),
                 c1bal=item.sums["c1bal"],
                 c2bal=item.sums["c2bal"],
                 c3bal=item.sums["c3bal"],
@@ -479,16 +475,12 @@ def srss_product_summary(rows: Iterable[SrsRecord]) -> list[Summary]:
         if row.product not in grouped:
             grouped[row.product] = Summary(values={"product": row.product})
         item = grouped[row.product]
-        item.sums["s1cnt"] += 1 if row.ncore == "X" and row.c1cnt > 0 else 0
-        item.sums["s2cnt"] += 1 if row.ncore == "C" and row.c2cnt > 0 else 0
-        item.sums["s3cnt"] += 1 if row.ncore == "N" and row.c3cnt > 0 else 0
-        item.sums["s4cnt"] += 1 if row.ncore == "N" and row.c4cnt > 0 else 0
-        item.sums["s5cnt"] += 1 if row.ncore == "N" and row.c5cnt > 0 else 0
+        item.sums["s1cnt"] += 1 if row.ncore == "X" else 0
+        item.sums["s2cnt"] += 1 if row.ncore == "C" else 0
+        item.sums["s3cnt"] += 1 if row.ncore == "N" else 0
         item.sums["c1cnt"] += row.c1cnt
         item.sums["c2cnt"] += row.c2cnt
         item.sums["c3cnt"] += row.c3cnt
-        item.sums["c4cnt"] += row.c4cnt
-        item.sums["c5cnt"] += row.c5cnt
         item.sums["c1bal"] += row.c1bal
         item.sums["c2bal"] += row.c2bal
         item.sums["c3bal"] += row.c3bal
@@ -535,29 +527,35 @@ def write_exception_report(rows: list[SrsRecord], path: Path) -> None:
 
 def write_print_report(rows: list[Summary], report_date: str, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = []
+    lines = [
+        "SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR BY PRODUCT",
+        f"REPORT DATE: {report_date}",
+        "",
+        (
+            f"{'PRODUCT':<20}{'CAT.1 #STAFF':>14}{'CAT.1 #ACCTS':>14}{'CAT.1 YTD BALANCE':>22}"
+            f"{'CAT.2 #STAFF CORE':>20}{'CAT.2 #ACCTS CORE':>20}{'CAT.2 YTDBAL CORE':>22}"
+            f"{'CAT.2 #STAFF NON-CORE':>24}{'CAT.2 #ACCTS NON-CORE':>24}{'CAT.2 YTDBAL NON-CORE':>26}"
+        ),
+    ]
+
+    totals = defaultdict(float)
     for row in rows:
         sums = row.sums
+        for key, value in sums.items():
+            totals[key] += value
         lines.append(
-            ";".join(
-                [
-                    str(row.values["product"]),
-                    f"{sums['s1cnt']:.0f}",
-                    f"{sums['c1cnt']:.0f}",
-                    f"{sums['c1bal']:.2f}",
-                    f"{sums['s2cnt']:.0f}",
-                    f"{sums['c2cnt']:.0f}",
-                    f"{sums['c2bal']:.2f}",
-                    f"{sums['s3cnt']:.0f}",
-                    f"{sums['c3cnt']:.0f}",
-                    f"{sums['c3bal']:.2f}",
-                    f"{sums['s4cnt']:.0f}",
-                    f"{sums['c4cnt']:.0f}",
-                    f"{sums['s5cnt']:.0f}",
-                    f"{sums['c5cnt']:.0f}",
-                ]
-            )
+            f"{str(row.values['product']):<20}"
+            f"{sums['s1cnt']:>14.0f}{sums['c1cnt']:>14.0f}{sums['c1bal']:>22,.2f}"
+            f"{sums['s2cnt']:>20.0f}{sums['c2cnt']:>20.0f}{sums['c2bal']:>22,.2f}"
+            f"{sums['s3cnt']:>24.0f}{sums['c3cnt']:>24.0f}{sums['c3bal']:>26,.2f}"
         )
+
+    lines.append(
+        f"{'TOTAL':<20}"
+        f"{totals['s1cnt']:>14.0f}{totals['c1cnt']:>14.0f}{totals['c1bal']:>22,.2f}"
+        f"{totals['s2cnt']:>20.0f}{totals['c2cnt']:>20.0f}{totals['c2bal']:>22,.2f}"
+        f"{totals['s3cnt']:>24.0f}{totals['c3cnt']:>24.0f}{totals['c3bal']:>26,.2f}"
+    )
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -572,7 +570,7 @@ def existing_paths(paths: list[Path]) -> list[Path]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Convert SAS EIBMSCRN SCR amendment job to Python.")
+    parser = argparse.ArgumentParser(description="Convert SAS EIBMSCRA SCR summary job to Python.")
     parser.add_argument("--mnitb-reptdate", type=Path, help="Optional report-date text/CSV file.")
     parser.add_argument("--brhfi", type=Path, default=DEFAULT_BASE / "BRANCH.txt")
     parser.add_argument("--elds", type=Path, default=DEFAULT_BASE / "ELDS.txt")
