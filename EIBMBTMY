@@ -1,86 +1,241 @@
-//EIBMBTMY JOB MISEIS,EIBMBTMY,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,       JOB10766
-//         USER=OPCC,REGION=8M
-/*JOBPARM S=S1M1
-//*
-//* DEPENDENCY: EIBWBTEX.
-//* FREQ      : MONTHLY.
-//*
-//DELETE   EXEC PGM=IEFBR14
-//DD1      DD DSN=SAP.PBB.BT.LIMIT.REPORT,
-//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
-//            SPACE=(CYL,1,RLSE)
-//*
-//EIBMBTMY  EXEC SAS609
-//LOAN      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
-//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-//BNM       DD DSN=SAP.BT.SASDATA,DISP=SHR
-//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-//SASLIST   DD DSN=SAP.PBB.BT.LIMIT.REPORT,
-//             DISP=(NEW,CATLG,DELETE),
-//             SPACE=(CYL,(10,5),RLSE),UNIT=SYSDA,
-//          DCB=(LRECL=133,RECFM=FB,BLKSIZE=27531)
-//SYSIN     DD *
+#!/usr/bin/env python3
+"""
+Python conversion of mainframe SAS job EIBMBTMY.
 
-OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
-*;
-%INC PGM(PBBDPFMT);
-*;
-DATA REPTDATE (KEEP=REPTDATE);
-  SET LOAN.REPTDATE;
-  SELECT(DAY(REPTDATE));
-    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
-    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
-    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
-    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3';
-                            WK2= '2'; WK3 = '1'; END;
-  END;
-  MM = MONTH(REPTDATE);
-  IF WK = '1' THEN DO;
-     MM1 = MM - 1;
-     IF MM1 = 0 THEN MM1 = 12;
-  END;
-  ELSE MM1 = MM;
-  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
-  CALL SYMPUT('NOWK',PUT(WK,$1.));
-  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
-  CALL SYMPUT('NOWK2',PUT(WK2,$1.));
-  CALL SYMPUT('NOWK3',PUT(WK3,$1.));
-  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
-  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
-  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
-  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
-  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
-  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
-RUN;
-*;
-DATA APPROVE;
-   SET BNM.BTMAST&REPTMON&NOWK;
-   WHERE LEVELS = 1 AND D = 1 AND SUBSTR(ACCTNO,1,2)='25';
-   IF  RETAILID='C'   THEN CATEGORY='CORPORATE';  ELSE
-   IF  RETAILID='R'   THEN CATEGORY='RETAIL   ';
-RUN;
-*;
-PROC  SUMMARY DATA=APPROVE NWAY MISSING;
-CLASS BRANCH CATEGORY;
-VAR   APPRLIMT;
-OUTPUT OUT=PRT (DROP=_TYPE_  RENAME=(_FREQ_=ACCT)) SUM=;
-RUN;
-*;
-DATA PRT;
-   SET PRT;
-   IF  BRANCH > 0;
-   BRHNAME=PUT(BRANCH,BRANCHCD.);
-   BRANCHX=PUT(BRANCH,Z3.)||"-"||BRHNAME;
-*;
-TITLE1 'PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY';
-TITLE2 'MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS' &RDATE;
-PROC  TABULATE DATA=PRT NOSEPS MISSING;
-CLASS BRANCHX CATEGORY; VAR ACCT APPRLIMT;
-TABLE BRANCHX=' ' ALL='TOTAL ',
-      ALL=''*(ACCT='TOTAL ACCTS'*F=COMMA8.
-              APPRLIMT='TOTAL LIMITS(RM)'*F=COMMA22.2)
-      CATEGORY=''*(ACCT='ACCTS'*F=COMMA8.
-              APPRLIMT='LIMITS(RM)'*F=COMMA20.2)
-      /BOX='BRANCH ' RTS=30;
-      KEYLABEL SUM=' ';
-*;
+- BNM input = SAS7BDAT dataset
+- LOAN.REPTDATE replaced with today date
+- Same input/output structure as previous jobs
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+
+
+def get_report_variables(reptdate: date) -> dict[str, str]:
+
+    day = reptdate.day
+
+    week_map = {
+        8: ("1", "4", "", "", 1),
+        15: ("2", "1", "", "", 9),
+        22: ("3", "2", "", "", 16),
+    }
+
+    wk, wk1, wk2, wk3, sdd = week_map.get(
+        day,
+        ("4", "3", "2", "1", 23)
+    )
+
+    mm = reptdate.month
+
+    mm1 = (
+        12 if wk == "1" and mm == 1
+        else (mm - 1 if wk == "1" else mm)
+    )
+
+    sdate = date(reptdate.year, mm, sdd)
+
+    return {
+        "NOWK": wk,
+        "NOWK1": wk1,
+        "NOWK2": wk2,
+        "NOWK3": wk3,
+        "REPTMON": f"{mm:02d}",
+        "REPTMON1": f"{mm1:02d}",
+        "REPTYEAR": str(reptdate.year),
+        "REPTDAY": f"{day:02d}",
+        "RDATE": reptdate.strftime("%d/%m/%y"),
+        "SDATE": sdate.strftime("%d/%m/%y"),
+    }
+
+
+def resolve_input_path(path: Path) -> Path:
+
+    if path.exists():
+        return path
+
+    sas_path = path.with_suffix(".sas7bdat")
+
+    if sas_path.exists():
+        return sas_path
+
+    return path
+
+
+def read_sas_dataset(path: Path) -> pd.DataFrame:
+
+    return pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="utf-8"
+    )
+
+
+def main() -> None:
+
+    parser = argparse.ArgumentParser(
+        description="Convert SAS EIBMBTMY to Python"
+    )
+
+    parser.add_argument(
+        "--bnm",
+        type=Path,
+        default=DEFAULT_BASE / "BTMAST.sas7bdat",
+        help="BNM SAS7BDAT dataset",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+    )
+
+    args = parser.parse_args()
+
+    output_dir = args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ----------------------------------------------------------
+    # REPORT VARIABLES
+    # ----------------------------------------------------------
+
+    reptdate = date.today()
+
+    vars = get_report_variables(reptdate)
+
+    # ----------------------------------------------------------
+    # INPUT
+    # ----------------------------------------------------------
+
+    bnm_path = resolve_input_path(args.bnm)
+
+    df = read_sas_dataset(bnm_path)
+
+    df.columns = [col.upper() for col in df.columns]
+
+    # ----------------------------------------------------------
+    # FILTER APPROVE
+    # ----------------------------------------------------------
+
+    df["ACCTNO"] = df["ACCTNO"].astype(str)
+
+    approve = df[
+        (df["LEVELS"] == 1)
+        & (df["D"] == 1)
+        & (df["ACCTNO"].str[:2] == "25")
+    ].copy()
+
+    # ----------------------------------------------------------
+    # CATEGORY
+    # ----------------------------------------------------------
+
+    approve["CATEGORY"] = ""
+
+    approve.loc[
+        approve["RETAILID"] == "C",
+        "CATEGORY"
+    ] = "CORPORATE"
+
+    approve.loc[
+        approve["RETAILID"] == "R",
+        "CATEGORY"
+    ] = "RETAIL"
+
+    # ----------------------------------------------------------
+    # SUMMARY
+    # ----------------------------------------------------------
+
+    prt = (
+        approve.groupby(
+            ["BRANCH", "CATEGORY"],
+            dropna=False
+        )
+        .agg(
+            ACCT=("APPRLIMT", "count"),
+            APPRLIMT=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    # ----------------------------------------------------------
+    # FILTER BRANCH
+    # ----------------------------------------------------------
+
+    prt = prt[prt["BRANCH"] > 0].copy()
+
+    # ----------------------------------------------------------
+    # BRANCH NAME
+    # ----------------------------------------------------------
+
+    # Replace with actual branch mapping if available
+    prt["BRHNAME"] = ""
+
+    prt["BRANCHX"] = (
+        prt["BRANCH"]
+        .astype(int)
+        .astype(str)
+        .str.zfill(3)
+        + "-"
+        + prt["BRHNAME"]
+    )
+
+    # ----------------------------------------------------------
+    # OUTPUT CSV
+    # ----------------------------------------------------------
+
+    output_csv = output_dir / "BT_LIMIT_REPORT.csv"
+
+    prt.to_csv(
+        output_csv,
+        index=False
+    )
+
+    # ----------------------------------------------------------
+    # SASLIST REPORT
+    # ----------------------------------------------------------
+
+    saslist = output_dir / "SASLIST.txt"
+
+    with saslist.open("w", encoding="utf-8") as f:
+
+        f.write(
+            "PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY\n"
+        )
+
+        f.write(
+            f"MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS {vars['RDATE']}\n\n"
+        )
+
+        f.write(
+            f"{'BRANCH':<20}"
+            f"{'CATEGORY':<15}"
+            f"{'ACCTS':>12}"
+            f"{'LIMITS(RM)':>20}\n"
+        )
+
+        f.write("-" * 70 + "\n")
+
+        for _, row in prt.iterrows():
+
+            f.write(
+                f"{row['BRANCHX']:<20}"
+                f"{row['CATEGORY']:<15}"
+                f"{int(row['ACCT']):>12,}"
+                f"{row['APPRLIMT']:>20,.2f}\n"
+            )
+
+    print(f"CSV Output : {output_csv}")
+    print(f"SASLIST    : {saslist}")
+
+
+if __name__ == "__main__":
+    main()
