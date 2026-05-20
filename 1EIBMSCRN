@@ -317,7 +317,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Iterable
 
 
 DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
@@ -543,47 +542,77 @@ def read_card_files(paths: Iterable[Path]) -> list[SrsRecord]:
     return rows
 
 
-def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -> list[SrsRecord]:
+# Replace ONLY this function in your EIBMSCRN.py
+
+def read_dep_files(
+    paths: Iterable[Path],
+    branch_by_number: dict[int, Branch],
+) -> list[SrsRecord]:
+
     rows: list[SrsRecord] = []
 
     for path in paths:
+
         with path.open("r", encoding="utf-8") as handle:
+
             for line in handle:
+
                 if not line.strip():
                     continue
 
                 acctno = parse_int(line[1:11])
+
                 primoff = parse_int(line[49:54])
                 secnoff = parse_int(line[55:60])
+
                 xcore = line[60:61]
-                ytdbals = parse_sas_number(line[75:89], implied_decimals=2)
+
+                ytdbals = parse_sas_number(
+                    line[75:89],
+                    implied_decimals=2,
+                )
+
                 nummth = parse_int(line[89:91])
+
                 branch_no = parse_int(line[96:99])
+
                 branch = branch_by_number.get(branch_no)
-                if branch is None:
-                    continue
+
+                brchcd = branch.brchcd if branch else ""
 
                 product = ""
-                if 1000000000 <= acctno <= 1999999999 or 7000000000 <= acctno <= 7999999999:
+
+                if (
+                    1000000000 <= acctno <= 1999999999
+                    or 7000000000 <= acctno <= 7999999999
+                ):
                     product = "FIXED DEPOSITS"
+
                 elif 3000000000 <= acctno <= 3999999999:
                     product = "CURRENT ACCOUNT"
-                elif 4000000000 <= acctno <= 4999999999 or 6000000000 <= acctno <= 6999999999:
+
+                elif (
+                    4000000000 <= acctno <= 4999999999
+                    or 6000000000 <= acctno <= 6999999999
+                ):
                     product = "SAVING ACCOUNT"
 
                 if not product or nummth == 0:
                     continue
 
-                ytdbal = round(ytdbals / nummth)
+                # SAS ROUND equivalent
+                ytdbal = int((ytdbals / nummth) + 0.5)
 
+                # CATEGORY 1
                 if primoff and xcore == " ":
+
                     rows.append(
                         SrsRecord(
                             staff=primoff,
                             product=product,
                             ncore="X",
-                            branch=branch.branch,
-                            brchcd=branch.brchcd,
+                            branch=branch_no,
+                            brchcd=brchcd,
                             tag="DEPO",
                             acctno=acctno,
                             c1cnt=1,
@@ -591,30 +620,38 @@ def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -
                         )
                     )
 
+                # CATEGORY 2
                 staff = secnoff or primoff
+
                 if staff and xcore in {"C", "N"}:
+
+                    # CORE
                     if xcore == "C":
+
                         rows.append(
                             SrsRecord(
                                 staff=staff,
                                 product=product,
                                 ncore="C",
-                                branch=branch.branch,
-                                brchcd=branch.brchcd,
+                                branch=branch_no,
+                                brchcd=brchcd,
                                 tag="DEPO",
                                 acctno=acctno,
                                 c2cnt=1,
                                 c2bal=ytdbal,
                             )
                         )
+
+                    # NON CORE
                     else:
+
                         rows.append(
                             SrsRecord(
                                 staff=staff,
                                 product=product,
                                 ncore="N",
-                                branch=branch.branch,
-                                brchcd=branch.brchcd,
+                                branch=branch_no,
+                                brchcd=brchcd,
                                 tag="DEPO",
                                 acctno=acctno,
                                 c3cnt=1,
