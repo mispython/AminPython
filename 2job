@@ -340,7 +340,15 @@ def read_elds(path: Path, branch_by_code: dict[str, Branch]) -> list[SrsRecord]:
             if stafx1 == "*****" or branch is None:
                 continue
 
+            ncore = ""
             if "00001" <= stafx1 <= "99999":
+                ncore = "X"
+            if "00001" <= stafx2 <= "99999":
+                ncore = "C"
+            if "00001" <= stafx3 <= "99999":
+                ncore = "N"
+
+            if ncore == "X":
                 rows.append(
                     SrsRecord(
                         staff=parse_int(stafx1),
@@ -355,7 +363,7 @@ def read_elds(path: Path, branch_by_code: dict[str, Branch]) -> list[SrsRecord]:
                     )
                 )
 
-            if "00001" <= stafx2 <= "99999":
+            if ncore == "C":
                 rows.append(
                     SrsRecord(
                         staff=parse_int(stafx2),
@@ -370,7 +378,7 @@ def read_elds(path: Path, branch_by_code: dict[str, Branch]) -> list[SrsRecord]:
                     )
                 )
 
-            if "00001" <= stafx3 <= "99999":
+            if ncore == "N":
                 rows.append(
                     SrsRecord(
                         staff=parse_int(stafx3),
