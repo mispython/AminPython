@@ -89,141 +89,253 @@ TABLE BRANCHX=' ' ALL='TOTAL ',
 *;
 
 
+#!/usr/bin/env python3
+"""
+Python conversion of mainframe SAS job EIIMBTMY.
+
+- BNM input = SAS7BDAT dataset
+- REPTDATE replaced with today date
+- Same input/output structure style as previous jobs
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date
+from pathlib import Path
+
 import pandas as pd
-from datetime import datetime
-import os
 
-# =========================
-# CONFIG
-# =========================
-DATA_DIR = "./data"
-OUTPUT_FILE = "./output/SAP.PIBB.BT.LIMIT.REPORT.txt"
 
-# =========================
-# LOAD REPTDATE
-# =========================
-reptdate_df = pd.read_csv(f"{DATA_DIR}/REPTDATE.csv")  # Replace with actual loader
-reptdate = pd.to_datetime(reptdate_df['REPTDATE'].iloc[0])
+DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
 
-day = reptdate.day
-month = reptdate.month
-year = reptdate.year
 
-# =========================
-# DETERMINE WEEK LOGIC
-# =========================
-if day == 8:
-    SDD, WK, WK1 = 1, '1', '4'
-elif day == 15:
-    SDD, WK, WK1 = 9, '2', '1'
-elif day == 22:
-    SDD, WK, WK1 = 16, '3', '2'
-else:
-    SDD, WK, WK1, WK2, WK3 = 23, '4', '3', '2', '1'
+def get_report_variables(reptdate: date) -> dict[str, str]:
 
-if WK == '1':
-    MM1 = month - 1 if month > 1 else 12
-else:
-    MM1 = month
+    day = reptdate.day
 
-# =========================
-# BUILD DATASET NAME
-# =========================
-REPTMON = f"{month:02d}"
-dataset_name = f"IBTMAST{REPTMON}{WK}"
+    week_map = {
+        8: ("1", "4", "", "", 1),
+        15: ("2", "1", "", "", 9),
+        22: ("3", "2", "", "", 16),
+    }
 
-# =========================
-# LOAD MAIN DATA
-# =========================
-df = pd.read_csv(f"{DATA_DIR}/{dataset_name}.csv")  # Replace with proper loader
-
-# =========================
-# FILTERING
-# =========================
-df = df[
-    (df['LEVELS'] == 1) &
-    (df['D'] == 1) &
-    (df['ACCTNO'].astype(str).str[:2] == '28')
-].copy()
-
-# =========================
-# CATEGORY MAPPING
-# =========================
-df['CATEGORY'] = df['RETAILID'].map({
-    'C': 'CORPORATE',
-    'R': 'RETAIL'
-})
-
-# =========================
-# AGGREGATION
-# =========================
-agg = (
-    df.groupby(['BRANCH', 'CATEGORY'], dropna=False)
-    .agg(
-        ACCT=('ACCTNO', 'count'),
-        APPRLIMT=('APPRLIMT', 'sum')
-    )
-    .reset_index()
-)
-
-# =========================
-# BRANCH TRANSFORMATION
-# =========================
-agg = agg[agg['BRANCH'] > 0]
-
-agg.loc[agg['BRANCH'] >= 3000, 'BRANCH'] -= 3000
-
-# Dummy branch name lookup (replace with real mapping)
-def get_branch_name(branch):
-    return f"BR_{branch}"
-
-agg['BRHNAME'] = agg['BRANCH'].apply(get_branch_name)
-agg['BRANCHX'] = agg['BRANCH'].astype(str).str.zfill(3) + "-" + agg['BRHNAME']
-
-# =========================
-# SORT (SAS default behavior)
-# =========================
-agg = agg.sort_values(['BRANCHX', 'CATEGORY'])
-
-# =========================
-# FORMAT OUTPUT (FIXED WIDTH)
-# =========================
-def format_row(row):
-    return (
-        f"{row['BRANCHX']:<30}"
-        f"{row['CATEGORY']:<12}"
-        f"{int(row['ACCT']):>10}"
-        f"{row['APPRLIMT']:>20,.2f}"
+    wk, wk1, wk2, wk3, sdd = week_map.get(
+        day,
+        ("4", "3", "2", "1", 23)
     )
 
-lines = []
+    mm = reptdate.month
 
-# HEADER
-lines.append("PUBLIC BANK BERHAD. REPORT-ID: EIIMBTMY")
-lines.append(f"MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS {reptdate.strftime('%d/%m/%Y')}")
-lines.append("")
+    mm1 = (
+        12 if wk == "1" and mm == 1
+        else (mm - 1 if wk == "1" else mm)
+    )
 
-# DATA
-for _, row in agg.iterrows():
-    lines.append(format_row(row))
+    sdate = date(reptdate.year, mm, sdd)
 
-# =========================
-# WRITE FIXED WIDTH FILE
-# =========================
-os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+    return {
+        "NOWK": wk,
+        "NOWK1": wk1,
+        "NOWK2": wk2,
+        "NOWK3": wk3,
+        "REPTMON": f"{mm:02d}",
+        "REPTMON1": f"{mm1:02d}",
+        "REPTYEAR": str(reptdate.year),
+        "REPTDAY": f"{day:02d}",
+        "RDATE": reptdate.strftime("%d/%m/%y"),
+        "SDATE": sdate.strftime("%d/%m/%y"),
+    }
 
-with open(OUTPUT_FILE, "w") as f:
-    for line in lines:
-        f.write(line[:133].ljust(133) + "\n")  # enforce LRECL=133
+
+def resolve_input_path(path: Path) -> Path:
+
+    if path.exists():
+        return path
+
+    sas_path = path.with_suffix(".sas7bdat")
+
+    if sas_path.exists():
+        return sas_path
+
+    return path
 
 
-Dear Hui Wen,
+def read_sas_dataset(path: Path) -> pd.DataFrame:
 
-Our findings show that the source file contains hexadecimal value instead of character only data.
+    return pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="utf-8"
+    )
 
-Therefore, the dataset is unable to produce readable output.
 
-The file is not in normal readable text.
-It is stored in a special system format, so when we open it, it looks like random characters.
-That’s why we can’t produce a readable output from it.
+def main() -> None:
+
+    parser = argparse.ArgumentParser(
+        description="Convert SAS EIIMBTMY to Python"
+    )
+
+    parser.add_argument(
+        "--bnm",
+        type=Path,
+        default=DEFAULT_BASE / "IBTMAST.sas7bdat",
+        help="BNM SAS7BDAT dataset",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+    )
+
+    args = parser.parse_args()
+
+    output_dir = args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ----------------------------------------------------------
+    # REPORT VARIABLES
+    # ----------------------------------------------------------
+
+    reptdate = date.today()
+
+    vars = get_report_variables(reptdate)
+
+    # ----------------------------------------------------------
+    # INPUT
+    # ----------------------------------------------------------
+
+    bnm_path = resolve_input_path(args.bnm)
+
+    df = read_sas_dataset(bnm_path)
+
+    df.columns = [col.upper() for col in df.columns]
+
+    # ----------------------------------------------------------
+    # FILTER APPROVE
+    # ----------------------------------------------------------
+
+    df["ACCTNO"] = df["ACCTNO"].astype(str)
+
+    approve = df[
+        (df["LEVELS"] == 1)
+        & (df["D"] == 1)
+        & (df["ACCTNO"].str[:2] == "28")
+    ].copy()
+
+    # ----------------------------------------------------------
+    # CATEGORY
+    # ----------------------------------------------------------
+
+    approve["CATEGORY"] = ""
+
+    approve.loc[
+        approve["RETAILID"] == "C",
+        "CATEGORY"
+    ] = "CORPORATE"
+
+    approve.loc[
+        approve["RETAILID"] == "R",
+        "CATEGORY"
+    ] = "RETAIL"
+
+    # ----------------------------------------------------------
+    # SUMMARY
+    # ----------------------------------------------------------
+
+    prt = (
+        approve.groupby(
+            ["BRANCH", "CATEGORY"],
+            dropna=False
+        )
+        .agg(
+            ACCT=("APPRLIMT", "count"),
+            APPRLIMT=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    # ----------------------------------------------------------
+    # BRANCH FILTER
+    # ----------------------------------------------------------
+
+    prt = prt[prt["BRANCH"] > 0].copy()
+
+    # ----------------------------------------------------------
+    # BRANCH ADJUSTMENT
+    # ----------------------------------------------------------
+
+    prt.loc[
+        prt["BRANCH"] >= 3000,
+        "BRANCH"
+    ] = prt["BRANCH"] - 3000
+
+    # ----------------------------------------------------------
+    # BRANCH NAME
+    # ----------------------------------------------------------
+
+    prt["BRHNAME"] = ""
+
+    prt["BRANCHX"] = (
+        prt["BRANCH"]
+        .astype(int)
+        .astype(str)
+        .str.zfill(3)
+        + "-"
+        + prt["BRHNAME"]
+    )
+
+    # ----------------------------------------------------------
+    # OUTPUT CSV
+    # ----------------------------------------------------------
+
+    output_csv = output_dir / "BT_LIMIT_REPORT.csv"
+
+    prt.to_csv(
+        output_csv,
+        index=False
+    )
+
+    # ----------------------------------------------------------
+    # SASLIST REPORT
+    # ----------------------------------------------------------
+
+    saslist = output_dir / "SASLIST.txt"
+
+    with saslist.open("w", encoding="utf-8") as f:
+
+        f.write(
+            "PUBLIC BANK BERHAD. REPORT-ID: EIIMBTMY\n"
+        )
+
+        f.write(
+            f"MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS {vars['RDATE']}\n\n"
+        )
+
+        f.write(
+            f"{'BRANCH':<20}"
+            f"{'CATEGORY':<15}"
+            f"{'ACCTS':>12}"
+            f"{'LIMITS(RM)':>20}\n"
+        )
+
+        f.write("-" * 70 + "\n")
+
+        for _, row in prt.iterrows():
+
+            f.write(
+                f"{row['BRANCHX']:<20}"
+                f"{row['CATEGORY']:<15}"
+                f"{int(row['ACCT']):>12,}"
+                f"{row['APPRLIMT']:>20,.2f}\n"
+            )
+
+    print(f"CSV Output : {output_csv}")
+    print(f"SASLIST    : {saslist}")
+
+
+if __name__ == "__main__":
+    main()
 
