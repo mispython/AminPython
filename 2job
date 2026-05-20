@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""
-Python conversion of mainframe SAS job EIBMSCRA.
+"""Fast streaming Python conversion of SAS job EIBMSCRA.
 
-This job keeps SAS include files separate. Put converted include modules under
-./includes, for example includes/pbmisfmt.py and includes/pbbdpfmt.py.
+This version keeps all outputs but avoids storing every account-level row.
+It aggregates SRSBR, SRSHO, and SRSP while reading the fixed-width text files.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable
@@ -19,11 +18,9 @@ from typing import Iterable
 
 DEFAULT_BASE = Path("input/prod")
 DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+SUM_FIELDS = ("c1cnt", "c2cnt", "c3cnt", "c1bal", "c2bal", "c3bal")
 
 
-# SAS: %INC PGM(PBMISFMT,PBBDPFMT);
-# Prefer include modules in the same folder as this job. Keep includes/ as a
-# fallback for shared converted include modules.
 try:
     import pbbdpfmt  # noqa: F401
     import pbmisfmt  # noqa: F401
@@ -54,7 +51,7 @@ class HrHo:
 
 
 @dataclass
-class SrsRecord:
+class MiniRecord:
     staff: int
     product: str
     ncore: str
@@ -72,12 +69,6 @@ class SrsRecord:
     c3bal: float = 0.0
 
 
-@dataclass
-class Summary:
-    values: dict[str, object]
-    sums: dict[str, float] = field(default_factory=lambda: defaultdict(float))
-
-
 def parse_sas_number(raw: str, implied_decimals: int = 0) -> float:
     value = raw.strip()
     if not value or value == "." or value.startswith("."):
@@ -92,26 +83,31 @@ def parse_int(raw: str) -> int:
 
 
 def resolve_input_path(path: Path) -> Path:
-    path_variants = [path]
+    variants = [path]
     if path.suffix.lower() != ".txt":
-        path_variants.append(path.with_name(f"{path.name}.txt"))
+        variants.append(path.with_name(f"{path.name}.txt"))
 
     if path.is_absolute():
-        for variant in path_variants:
+        for variant in variants:
             if variant.exists():
                 return variant
         return path
 
-    candidates = [
-        base / variant
-        for base in (Path.cwd(), *Path.cwd().parents)
-        for variant in path_variants
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-
+    for base in (Path.cwd(), *Path.cwd().parents):
+        for variant in variants:
+            candidate = base / variant
+            if candidate.exists():
+                return candidate
     return Path.cwd() / path
+
+
+def existing_paths(paths: Iterable[Path]) -> list[Path]:
+    resolved = []
+    for path in paths:
+        item = resolve_input_path(path)
+        if item.exists():
+            resolved.append(item)
+    return resolved
 
 
 def format_report_date(value: str, output_format: str = "%d/%m/%Y") -> str:
@@ -129,11 +125,9 @@ def read_report_date(path: Path | None, override: str | None) -> str:
         return format_report_date(override)
     if path is None or not path.exists():
         return date.today().strftime("%d/%m/%Y")
-
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         return date.today().strftime("%d/%m/%Y")
-
     first_line = text.splitlines()[0]
     if "," in first_line:
         rows = list(csv.DictReader(text.splitlines()))
@@ -141,24 +135,78 @@ def read_report_date(path: Path | None, override: str | None) -> str:
             raw = rows[0].get("REPTDATE") or rows[0].get("reptdate")
             if raw:
                 return format_report_date(raw)
-
     return format_report_date(text.replace(",", " ").split()[0])
+
+
+def add_sums(target: list[float], row: MiniRecord) -> None:
+    target[0] += row.c1cnt
+    target[1] += row.c2cnt
+    target[2] += row.c3cnt
+    target[3] += row.c1bal
+    target[4] += row.c2bal
+    target[5] += row.c3bal
+
+
+def empty_sums() -> list[float]:
+    return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+
+class Aggregator:
+    def __init__(self, hr_ho_by_staff: dict[int, HrHo], hr_branch_by_staff: dict[int, HrBranch]) -> None:
+        self.hr_ho_by_staff = hr_ho_by_staff
+        self.hr_branch_by_staff = hr_branch_by_staff
+        self.srsbr: dict[tuple[str, int, str, str], list[float]] = defaultdict(empty_sums)
+        self.srsho: dict[tuple[str, int, str, str], list[float]] = defaultdict(empty_sums)
+        self.staff_product_ncore: dict[tuple[int, str, str], list[float]] = defaultdict(empty_sums)
+        self.exception_lines = ["EXCEPTION REPORT : UMMATCHED STAFF ID AGAINST HR FILE", "", "ELDS"]
+        self.exception_lines.append(f"{'AANUM':<14}{'STAFF':>8}  {'PRODUCT':<18}{'YTDBAL':>14}")
+        self.depo_exception_lines = ["", "DEPO"]
+        self.depo_exception_lines.append(f"{'ACCTNO':<14}{'STAFF':>8}  {'PRODUCT':<18}{'YTDBAL':>14}")
+
+    def add_srs(self, row: MiniRecord) -> None:
+        hr_ho = self.hr_ho_by_staff.get(row.staff)
+        if hr_ho:
+            row.hoe = hr_ho.hoe
+            add_sums(self.srsho[(row.hoe, row.staff, row.product, row.ncore)], row)
+            add_sums(self.staff_product_ncore[(row.staff, row.product, row.ncore)], row)
+        elif row.branch > 0:
+            add_sums(self.srsbr[(row.brchcd, row.staff, row.product, row.ncore)], row)
+            add_sums(self.staff_product_ncore[(row.staff, row.product, row.ncore)], row)
+        else:
+            ytdbal = row.c1bal + row.c2bal + row.c3bal
+            if row.tag == "ELDS":
+                self.exception_lines.append(f"{row.aanum:<14}{row.staff:>8}  {row.product:<18}{ytdbal:>14,.2f}")
+            elif row.tag == "DEPO":
+                self.depo_exception_lines.append(f"{row.acctno or '':<14}{row.staff:>8}  {row.product:<18}{ytdbal:>14,.2f}")
+
+    def add_card(self, row: MiniRecord) -> None:
+        hr_branch = self.hr_branch_by_staff.get(row.staff)
+        if hr_branch:
+            row.branch = hr_branch.branch
+            row.brchcd = hr_branch.brchcd
+            add_sums(self.srsbr[(row.brchcd, row.staff, row.product, row.ncore)], row)
+            add_sums(self.staff_product_ncore[(row.staff, row.product, row.ncore)], row)
+            return
+
+        hr_ho = self.hr_ho_by_staff.get(row.staff)
+        if hr_ho:
+            row.hoe = hr_ho.hoe
+            add_sums(self.srsho[(row.hoe, row.staff, row.product, row.ncore)], row)
+            add_sums(self.staff_product_ncore[(row.staff, row.product, row.ncore)], row)
 
 
 def read_branch_file(path: Path) -> tuple[dict[int, Branch], dict[str, Branch]]:
     by_branch: dict[int, Branch] = {}
     by_brchcd: dict[str, Branch] = {}
-
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
             if not line.strip():
                 continue
             branch = parse_int(line[1:4])
             brchcd = line[5:8].strip()
-            item = Branch(branch=branch, brchcd=brchcd)
+            item = Branch(branch, brchcd)
             by_branch[branch] = item
             by_brchcd[brchcd] = item
-
     return by_branch, by_brchcd
 
 
@@ -172,7 +220,7 @@ def read_hr_branch(path: Path) -> dict[int, HrBranch]:
             branch = parse_int(line[68:71])
             brchcd = line[71:74].strip()
             if 2 <= branch <= 267:
-                rows[staff] = HrBranch(staff=staff, branch=branch, brchcd=brchcd)
+                rows[staff] = HrBranch(staff, branch, brchcd)
     return rows
 
 
@@ -182,26 +230,23 @@ def read_hr_ho(path: Path) -> dict[int, HrHo]:
         for line in handle:
             if not line.strip():
                 continue
-            staff = parse_int(line[4:9])
-            hoe = line[71:86].strip()
-            rows[staff] = HrHo(staff=staff, hoe=hoe)
+            rows[parse_int(line[4:9])] = HrHo(parse_int(line[4:9]), line[71:86].strip())
     return rows
 
 
-def read_card_files(paths: Iterable[Path]) -> list[SrsRecord]:
-    rows: list[SrsRecord] = []
-
+def process_cards(paths: Iterable[Path], agg: Aggregator) -> None:
     for path in paths:
+        print(f"Reading {path}")
         with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
+            for line_no, line in enumerate(handle, start=1):
+                if line_no % 1_000_000 == 0:
+                    print(f"  {path.name}: {line_no:,} lines")
                 if not line.strip():
                     continue
-
                 acctno = parse_int(line[0:11])
                 typec = int(str(acctno)[:5])
                 if typec not in {3301, 3302, 3305, 3306, 3308, 3309, 5503, 5504}:
                     continue
-
                 opnmm = parse_int(line[13:15])
                 opnyr = parse_int(line[15:17])
                 seco = line[560:572].strip()
@@ -209,44 +254,24 @@ def read_card_files(paths: Iterable[Path]) -> list[SrsRecord]:
                     continue
                 if not (1 < len(seco) < 6):
                     continue
-
                 staff = parse_int(seco)
                 if not (1 < staff < 99999):
                     continue
-
                 if typec == 3309:
-                    rows.append(
-                        SrsRecord(
-                            staff=staff,
-                            product="CARD",
-                            ncore="X",
-                            acctno=acctno,
-                            c1cnt=1,
-                        )
-                    )
+                    agg.add_card(MiniRecord(staff=staff, product="CARD", ncore="X", acctno=acctno, c1cnt=1))
                 else:
-                    rows.append(
-                        SrsRecord(
-                            staff=staff,
-                            product="CARD",
-                            ncore="C",
-                            acctno=acctno,
-                            c2cnt=1,
-                        )
-                    )
-
-    return rows
+                    agg.add_card(MiniRecord(staff=staff, product="CARD", ncore="C", acctno=acctno, c2cnt=1))
 
 
-def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -> list[SrsRecord]:
-    rows: list[SrsRecord] = []
-
+def process_dep(paths: Iterable[Path], branch_by_number: dict[int, Branch], agg: Aggregator) -> None:
     for path in paths:
+        print(f"Reading {path}")
         with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
+            for line_no, line in enumerate(handle, start=1):
+                if line_no % 1_000_000 == 0:
+                    print(f"  {path.name}: {line_no:,} lines")
                 if not line.strip():
                     continue
-
                 acctno = parse_int(line[1:11])
                 primoff = parse_int(line[49:54])
                 secnoff = parse_int(line[55:60])
@@ -263,277 +288,134 @@ def read_dep_files(paths: Iterable[Path], branch_by_number: dict[int, Branch]) -
                     product = "CURRENT ACCOUNT"
                 elif 4000000000 <= acctno <= 4999999999 or 6000000000 <= acctno <= 6999999999:
                     product = "SAVING ACCOUNT"
-
                 if not product:
                     continue
 
                 ytdbal = round(ytdbals / nummth) if nummth else 0.0
                 brchcd = branch.brchcd if branch else ""
-
                 if primoff and xcore == " ":
-                    rows.append(
-                        SrsRecord(
-                            staff=primoff,
-                            product=product,
-                            ncore="X",
-                            branch=branch_no,
-                            brchcd=brchcd,
-                            tag="DEPO",
-                            acctno=acctno,
-                            c1cnt=1,
-                            c1bal=ytdbal,
+                    agg.add_srs(
+                        MiniRecord(
+                            staff=primoff, product=product, ncore="X", branch=branch_no,
+                            brchcd=brchcd, tag="DEPO", acctno=acctno, c1cnt=1, c1bal=ytdbal
                         )
                     )
 
                 staff = secnoff or primoff
-                if staff and xcore in {"C", "N"}:
-                    if xcore == "C":
-                        rows.append(
-                            SrsRecord(
-                                staff=staff,
-                                product=product,
-                                ncore="C",
-                                branch=branch_no,
-                                brchcd=brchcd,
-                                tag="DEPO",
-                                acctno=acctno,
-                                c2cnt=1,
-                                c2bal=ytdbal,
-                            )
+                if staff and xcore == "C":
+                    agg.add_srs(
+                        MiniRecord(
+                            staff=staff, product=product, ncore="C", branch=branch_no,
+                            brchcd=brchcd, tag="DEPO", acctno=acctno, c2cnt=1, c2bal=ytdbal
                         )
-                    else:
-                        rows.append(
-                            SrsRecord(
-                                staff=staff,
-                                product=product,
-                                ncore="N",
-                                branch=branch_no,
-                                brchcd=brchcd,
-                                tag="DEPO",
-                                acctno=acctno,
-                                c3cnt=1,
-                                c3bal=ytdbal,
-                            )
+                    )
+                elif staff and xcore == "N":
+                    agg.add_srs(
+                        MiniRecord(
+                            staff=staff, product=product, ncore="N", branch=branch_no,
+                            brchcd=brchcd, tag="DEPO", acctno=acctno, c3cnt=1, c3bal=ytdbal
                         )
+                    )
 
-    return rows
 
-
-def read_elds(path: Path, branch_by_code: dict[str, Branch]) -> list[SrsRecord]:
-    rows: list[SrsRecord] = []
+def process_elds(path: Path, branch_by_code: dict[str, Branch], agg: Aggregator) -> None:
     if not path.exists():
-        return rows
-
+        return
+    print(f"Reading {path}")
     with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
+        for line_no, line in enumerate(handle, start=1):
+            if line_no % 1_000_000 == 0:
+                print(f"  {path.name}: {line_no:,} lines")
             if not line.strip():
                 continue
-
             aanum = line[0:13].strip()
             stafx1 = line[16:21].strip()
             stafx2 = line[25:30].strip()
             stafx3 = line[34:39].strip()
             product = line[50:68].strip()
             ytdbal = parse_sas_number(line[68:80])
-            brchcd = aanum[:3]
-            branch = branch_by_code.get(brchcd)
+            branch = branch_by_code.get(aanum[:3])
             if stafx1 == "*****" or branch is None:
                 continue
 
             ncore = ""
+            staff_raw = ""
             if "00001" <= stafx1 <= "99999":
-                ncore = "X"
+                ncore, staff_raw = "X", stafx1
             if "00001" <= stafx2 <= "99999":
-                ncore = "C"
+                ncore, staff_raw = "C", stafx2
             if "00001" <= stafx3 <= "99999":
-                ncore = "N"
+                ncore, staff_raw = "N", stafx3
+            if not ncore:
+                continue
 
+            kwargs = {"c1cnt": 0, "c2cnt": 0, "c3cnt": 0, "c1bal": 0.0, "c2bal": 0.0, "c3bal": 0.0}
             if ncore == "X":
-                rows.append(
-                    SrsRecord(
-                        staff=parse_int(stafx1),
-                        product=product,
-                        ncore="X",
-                        branch=branch.branch,
-                        brchcd=branch.brchcd,
-                        tag="ELDS",
-                        aanum=aanum,
-                        c1cnt=1,
-                        c1bal=ytdbal,
-                    )
-                )
+                kwargs["c1cnt"], kwargs["c1bal"] = 1, ytdbal
+            elif ncore == "C":
+                kwargs["c2cnt"], kwargs["c2bal"] = 1, ytdbal
+            else:
+                kwargs["c3cnt"], kwargs["c3bal"] = 1, ytdbal
 
-            if ncore == "C":
-                rows.append(
-                    SrsRecord(
-                        staff=parse_int(stafx2),
-                        product=product,
-                        ncore="C",
-                        branch=branch.branch,
-                        brchcd=branch.brchcd,
-                        tag="ELDS",
-                        aanum=aanum,
-                        c2cnt=1,
-                        c2bal=ytdbal,
-                    )
+            agg.add_srs(
+                MiniRecord(
+                    staff=parse_int(staff_raw), product=product, ncore=ncore,
+                    branch=branch.branch, brchcd=branch.brchcd, tag="ELDS", aanum=aanum, **kwargs
                 )
+            )
 
-            if ncore == "N":
-                rows.append(
-                    SrsRecord(
-                        staff=parse_int(stafx3),
-                        product=product,
-                        ncore="N",
-                        branch=branch.branch,
-                        brchcd=branch.brchcd,
-                        tag="ELDS",
-                        aanum=aanum,
-                        c3cnt=1,
-                        c3bal=ytdbal,
-                    )
-                )
 
+def rows_from_grouped(grouped: dict[tuple[object, ...], list[float]], fieldnames: tuple[str, ...]) -> list[dict[str, object]]:
+    rows = []
+    for key in sorted(grouped):
+        row = dict(zip(fieldnames, key))
+        for name, value in zip(SUM_FIELDS, grouped[key]):
+            row[name] = value
+        rows.append(row)
     return rows
 
 
-def attach_card_locations(
-    cards: list[SrsRecord],
-    hr_branch_by_staff: dict[int, HrBranch],
-    hr_ho_by_staff: dict[int, HrHo],
-) -> tuple[list[SrsRecord], list[SrsRecord], list[SrsRecord]]:
-    branch_rows: list[SrsRecord] = []
-    ho_rows: list[SrsRecord] = []
-    unmatched: list[SrsRecord] = []
-
-    for row in cards:
-        hr_branch = hr_branch_by_staff.get(row.staff)
-        if hr_branch:
-            row.branch = hr_branch.branch
-            row.brchcd = hr_branch.brchcd
-            branch_rows.append(row)
-            continue
-
-        hr_ho = hr_ho_by_staff.get(row.staff)
-        if hr_ho:
-            row.hoe = hr_ho.hoe
-            ho_rows.append(row)
-            continue
-
-        unmatched.append(row)
-
-    return branch_rows, ho_rows, unmatched
-
-
-def split_srs_locations(
-    rows: list[SrsRecord], hr_ho_by_staff: dict[int, HrHo]
-) -> tuple[list[SrsRecord], list[SrsRecord], list[SrsRecord]]:
-    branch_rows: list[SrsRecord] = []
-    ho_rows: list[SrsRecord] = []
-    unmatched: list[SrsRecord] = []
-
-    for row in rows:
-        hr_ho = hr_ho_by_staff.get(row.staff)
-        if hr_ho:
-            row.hoe = hr_ho.hoe
-            ho_rows.append(row)
-        elif row.branch > 0:
-            branch_rows.append(row)
-        else:
-            unmatched.append(row)
-
-    return branch_rows, ho_rows, unmatched
-
-
-def summarize(rows: Iterable[SrsRecord], class_fields: tuple[str, ...]) -> list[Summary]:
-    sums = ("c1cnt", "c2cnt", "c3cnt", "c1bal", "c2bal", "c3bal")
-    grouped: dict[tuple[object, ...], Summary] = {}
-
-    for row in rows:
-        key = tuple(getattr(row, field_name) for field_name in class_fields)
-        if key not in grouped:
-            grouped[key] = Summary(values=dict(zip(class_fields, key)))
-        for name in sums:
-            grouped[key].sums[name] += getattr(row, name)
-
-    return sorted(grouped.values(), key=lambda item: tuple(item.values.values()))
-
-
-def srss_product_summary(rows: Iterable[SrsRecord]) -> list[Summary]:
-    by_staff_product_ncore = summarize(rows, ("staff", "product", "ncore"))
-    product_rows: list[SrsRecord] = []
-
-    for item in by_staff_product_ncore:
-        ncore = str(item.values["ncore"])
-        product_rows.append(
-            SrsRecord(
-                staff=int(item.values["staff"]),
-                product=str(item.values["product"]),
-                ncore=ncore,
-                c1cnt=int(item.sums["c1cnt"]),
-                c2cnt=int(item.sums["c2cnt"]),
-                c3cnt=int(item.sums["c3cnt"]),
-                c1bal=item.sums["c1bal"],
-                c2bal=item.sums["c2bal"],
-                c3bal=item.sums["c3bal"],
-            )
-        )
-
-    grouped: dict[str, Summary] = {}
-    for row in product_rows:
-        if row.product not in grouped:
-            grouped[row.product] = Summary(values={"product": row.product})
-        item = grouped[row.product]
-        item.sums["s1cnt"] += 1 if row.ncore == "X" else 0
-        item.sums["s2cnt"] += 1 if row.ncore == "C" else 0
-        item.sums["s3cnt"] += 1 if row.ncore == "N" else 0
-        item.sums["c1cnt"] += row.c1cnt
-        item.sums["c2cnt"] += row.c2cnt
-        item.sums["c3cnt"] += row.c3cnt
-        item.sums["c1bal"] += row.c1bal
-        item.sums["c2bal"] += row.c2bal
-        item.sums["c3bal"] += row.c3bal
-
-    return sorted(grouped.values(), key=lambda item: str(item.values["product"]))
-
-
-def write_summary_csv(rows: list[Summary], path: Path) -> None:
+def write_summary_csv(rows: list[dict[str, object]], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
         path.write_text("", encoding="utf-8")
         return
-
-    fieldnames = list(rows[0].values.keys()) + sorted(rows[0].sums.keys())
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
-        for row in rows:
-            values = dict(row.values)
-            values.update(row.sums)
-            writer.writerow(values)
+        writer.writerows(rows)
 
 
-def write_exception_report(rows: list[SrsRecord], path: Path) -> None:
+def product_summary(staff_grouped: dict[tuple[int, str, str], list[float]]) -> list[dict[str, object]]:
+    product_rows: dict[str, dict[str, float | str]] = {}
+    for (_staff, product, ncore), sums in staff_grouped.items():
+        row = product_rows.setdefault(
+            product,
+            {
+                "product": product, "s1cnt": 0.0, "c1cnt": 0.0, "c1bal": 0.0,
+                "s2cnt": 0.0, "c2cnt": 0.0, "c2bal": 0.0,
+                "s3cnt": 0.0, "c3cnt": 0.0, "c3bal": 0.0,
+            },
+        )
+        c1cnt, c2cnt, c3cnt, c1bal, c2bal, c3bal = sums
+        row["s1cnt"] += 1 if ncore == "X" else 0
+        row["s2cnt"] += 1 if ncore == "C" else 0
+        row["s3cnt"] += 1 if ncore == "N" else 0
+        row["c1cnt"] += c1cnt
+        row["c2cnt"] += c2cnt
+        row["c3cnt"] += c3cnt
+        row["c1bal"] += c1bal
+        row["c2bal"] += c2bal
+        row["c3bal"] += c3bal
+    return [product_rows[key] for key in sorted(product_rows)]
+
+
+def write_exception_report(agg: Aggregator, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["EXCEPTION REPORT : UMMATCHED STAFF ID AGAINST HR FILE", ""]
-
-    elds_rows = [row for row in rows if row.tag == "ELDS"]
-    depo_rows = [row for row in rows if row.tag == "DEPO"]
-
-    lines.append("ELDS")
-    lines.append(f"{'AANUM':<14}{'STAFF':>8}  {'PRODUCT':<18}{'YTDBAL':>14}")
-    for row in elds_rows:
-        lines.append(f"{row.aanum:<14}{row.staff:>8}  {row.product:<18}{row.c1bal + row.c2bal + row.c3bal:>14,.2f}")
-
-    lines.append("")
-    lines.append("DEPO")
-    lines.append(f"{'ACCTNO':<14}{'STAFF':>8}  {'PRODUCT':<18}{'YTDBAL':>14}")
-    for row in depo_rows:
-        lines.append(f"{row.acctno or '':<14}{row.staff:>8}  {row.product:<18}{row.c1bal + row.c2bal + row.c3bal:>14,.2f}")
-
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text("\n".join(agg.exception_lines + agg.depo_exception_lines) + "\n", encoding="utf-8")
 
 
-def write_print_report(rows: list[Summary], report_date: str, path: Path) -> None:
+def write_print_report(rows: list[dict[str, object]], report_date: str, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
         "SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR BY PRODUCT",
@@ -545,83 +427,63 @@ def write_print_report(rows: list[Summary], report_date: str, path: Path) -> Non
             f"{'CAT.2 #STAFF NON-CORE':>24}{'CAT.2 #ACCTS NON-CORE':>24}{'CAT.2 YTDBAL NON-CORE':>26}"
         ),
     ]
-
     totals = defaultdict(float)
     for row in rows:
-        sums = row.sums
-        for key, value in sums.items():
-            totals[key] += value
+        for key, value in row.items():
+            if key != "product":
+                totals[key] += float(value)
         lines.append(
-            f"{str(row.values['product']):<20}"
-            f"{sums['s1cnt']:>14.0f}{sums['c1cnt']:>14.0f}{sums['c1bal']:>22,.2f}"
-            f"{sums['s2cnt']:>20.0f}{sums['c2cnt']:>20.0f}{sums['c2bal']:>22,.2f}"
-            f"{sums['s3cnt']:>24.0f}{sums['c3cnt']:>24.0f}{sums['c3bal']:>26,.2f}"
+            f"{str(row['product']):<20}"
+            f"{row['s1cnt']:>14.0f}{row['c1cnt']:>14.0f}{row['c1bal']:>22,.2f}"
+            f"{row['s2cnt']:>20.0f}{row['c2cnt']:>20.0f}{row['c2bal']:>22,.2f}"
+            f"{row['s3cnt']:>24.0f}{row['c3cnt']:>24.0f}{row['c3bal']:>26,.2f}"
         )
-
     lines.append(
         f"{'TOTAL':<20}"
         f"{totals['s1cnt']:>14.0f}{totals['c1cnt']:>14.0f}{totals['c1bal']:>22,.2f}"
         f"{totals['s2cnt']:>20.0f}{totals['c2cnt']:>20.0f}{totals['c2bal']:>22,.2f}"
         f"{totals['s3cnt']:>24.0f}{totals['c3cnt']:>24.0f}{totals['c3bal']:>26,.2f}"
     )
-
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def existing_paths(paths: list[Path]) -> list[Path]:
-    resolved_paths = []
-    for path in paths:
-        resolved = resolve_input_path(path)
-        if resolved.exists():
-            resolved_paths.append(resolved)
-    return resolved_paths
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Convert SAS EIBMSCRA SCR summary job to Python.")
+    parser = argparse.ArgumentParser(description="Fast EIBMSCRA conversion with all outputs.")
     parser.add_argument("--mnitb-reptdate", type=Path, help="Optional report-date text/CSV file.")
     parser.add_argument("--brhfi", type=Path, default=DEFAULT_BASE / "BRANCH.txt")
     parser.add_argument("--elds", type=Path, default=DEFAULT_BASE / "ELDS.txt")
-    parser.add_argument("--dep", action="append", type=Path, default=None, help="DEP fixed-width file. Repeatable.")
-    parser.add_argument("--cardfile", action="append", type=Path, default=None, help="Card fixed-width file. Repeatable.")
+    parser.add_argument("--dep", action="append", type=Path, default=None)
+    parser.add_argument("--cardfile", action="append", type=Path, default=None)
     parser.add_argument("--hrbr", type=Path, default=DEFAULT_BASE / "BRSTAF.TXT")
     parser.add_argument("--hrho", type=Path, default=DEFAULT_BASE / "HOSTAF.TXT")
-    parser.add_argument("--hrrg", type=Path, default=DEFAULT_BASE / "RGSTAF.TXT", help="Regional staff file; kept for DD mapping, not used by this SAS flow.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--report-date", help="Optional report date override, e.g. 31/12/2025 or 2025-12-31.")
+    parser.add_argument("--report-date")
     args = parser.parse_args()
 
-    dep_paths = args.dep or [DEFAULT_BASE / "DP_SRR.txt", DEFAULT_BASE / "DP_SCRFFD.txt"]
-    card_paths = args.cardfile or [DEFAULT_BASE / "ACCT33.txt", DEFAULT_BASE / "ACCT55.txt"]
-
+    dep_paths = existing_paths(args.dep or [DEFAULT_BASE / "DP_SRR.txt", DEFAULT_BASE / "DP_SCRFFD.txt"])
+    card_paths = existing_paths(args.cardfile or [DEFAULT_BASE / "ACCT33.txt", DEFAULT_BASE / "ACCT55.txt"])
     report_date_path = resolve_input_path(args.mnitb_reptdate) if args.mnitb_reptdate else None
     report_date = read_report_date(report_date_path, args.report_date)
+
     branch_by_number, branch_by_code = read_branch_file(resolve_input_path(args.brhfi))
     hr_branch_by_staff = read_hr_branch(resolve_input_path(args.hrbr))
     hr_ho_by_staff = read_hr_ho(resolve_input_path(args.hrho))
+    agg = Aggregator(hr_ho_by_staff, hr_branch_by_staff)
 
-    cards = read_card_files(existing_paths(card_paths))
-    card_branch_rows, card_ho_rows, card_unmatched = attach_card_locations(
-        cards, hr_branch_by_staff, hr_ho_by_staff
-    )
-
-    dep_rows = read_dep_files(existing_paths(dep_paths), branch_by_number)
-    elds_rows = read_elds(resolve_input_path(args.elds), branch_by_code)
-    srs_rows = elds_rows + dep_rows
-
-    srs_branch_rows, srs_ho_rows, srs_unmatched = split_srs_locations(srs_rows, hr_ho_by_staff)
-    final_branch_rows = srs_branch_rows + card_branch_rows
-    final_ho_rows = srs_ho_rows + card_ho_rows
-    all_rows = final_ho_rows + final_branch_rows
+    process_cards(card_paths, agg)
+    process_dep(dep_paths, branch_by_number, agg)
+    process_elds(resolve_input_path(args.elds), branch_by_code, agg)
 
     output_dir = args.output_dir
-    write_exception_report(srs_unmatched + card_unmatched, output_dir / "exception_report.txt")
-    write_summary_csv(summarize(final_branch_rows, ("brchcd", "staff", "product", "ncore")), output_dir / "SRSBR.csv")
-    write_summary_csv(summarize(final_ho_rows, ("hoe", "staff", "product", "ncore")), output_dir / "SRSHO.csv")
+    srsbr_rows = rows_from_grouped(agg.srsbr, ("brchcd", "staff", "product", "ncore"))
+    srsho_rows = rows_from_grouped(agg.srsho, ("hoe", "staff", "product", "ncore"))
+    srsp_rows = product_summary(agg.staff_product_ncore)
 
-    product_summary = srss_product_summary(all_rows)
-    write_summary_csv(product_summary, output_dir / "SRSP.csv")
-    write_print_report(product_summary, report_date, output_dir / "SASLIST.txt")
+    write_exception_report(agg, output_dir / "exception_report.txt")
+    write_summary_csv(srsbr_rows, output_dir / "SRSBR.csv")
+    write_summary_csv(srsho_rows, output_dir / "SRSHO.csv")
+    write_summary_csv(srsp_rows, output_dir / "SRSP.csv")
+    write_print_report(srsp_rows, report_date, output_dir / "SASLIST.txt")
 
 
 if __name__ == "__main__":
