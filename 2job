@@ -459,7 +459,7 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--report-date")
     args = parser.parse_args()
-
+ 
     dep_paths = existing_paths(args.dep or [DEFAULT_BASE / "DP_SRR.txt", DEFAULT_BASE / "DP_SCRFFD.txt"])
     card_paths = existing_paths(args.cardfile or [DEFAULT_BASE / "ACCT33.txt", DEFAULT_BASE / "ACCT55.txt"])
     report_date_path = resolve_input_path(args.mnitb_reptdate) if args.mnitb_reptdate else None
