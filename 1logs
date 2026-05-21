@@ -1,3 +1,30 @@
+
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMBTMY.py", line 103, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMBTMY.py", line 53, in main
+    approve.loc[approve["RETAILID"].str.strip() == "C", "CATEGORY"] = "CORPORATE"
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/generic.py", line 6299, in __getattr__
+    return object.__getattribute__(self, name)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/accessor.py", line 224, in __get__
+    accessor_obj = self._accessor(obj)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/strings/accessor.py", line 191, in __init__
+    self._inferred_dtype = self._validate(data)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/strings/accessor.py", line 245, in _validate
+    raise AttributeError("Can only use .str accessor with string values!")
+AttributeError: Can only use .str accessor with string values!
+
+
+
+
+
+
+
+
+
+
+
+
 source /sas/python/virt_edw/bin/activate
 /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMSCRA.py
 [sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
