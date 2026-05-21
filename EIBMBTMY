@@ -1,3 +1,126 @@
+#!/usr/bin/env python3
+"""EIBMBTMY – Monthly Trade Bills by Approve Limit & No. of Accounts."""
+
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_BASE = Path("input/prod")
+OUTPUT_DIR   = DEFAULT_BASE / "output"
+
+
+# ---------------------------------------------------------------------------
+# REPTDATE logic
+# ---------------------------------------------------------------------------
+
+def get_report_vars(reptdate: date) -> dict:
+    day = reptdate.day
+    wk, sdd = {8: ("1", 1), 15: ("2", 9), 22: ("3", 16)}.get(day, ("4", 23))
+    mm = reptdate.month
+    return {
+        "NOWK":    wk,
+        "REPTMON": f"{mm:02d}",
+        "RDATE":   reptdate.strftime("%d/%m/%Y"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+
+    # REPTDATE
+    reptdate = date.today()
+    v = get_report_vars(reptdate)
+
+    # BNM input  →  BTMAST<MM><WK>.sas7bdat
+    bnm_path = DEFAULT_BASE / f"BTMAST{v['REPTMON']}{v['NOWK']}.sas7bdat"
+    df = pd.read_sas(bnm_path, format="sas7bdat", encoding="latin-1")
+    df.columns = [c.upper() for c in df.columns]
+
+    # DATA APPROVE – WHERE LEVELS=1, D=1, ACCTNO starts '25'
+    df["ACCTNO"] = df["ACCTNO"].astype(str).str.strip()
+    approve = df[(df["LEVELS"] == 1) & (df["D"] == 1) & (df["ACCTNO"].str[:2] == "25")].copy()
+
+    # CATEGORY from RETAILID
+    approve["CATEGORY"] = ""
+    approve.loc[approve["RETAILID"].str.strip() == "C", "CATEGORY"] = "CORPORATE"
+    approve.loc[approve["RETAILID"].str.strip() == "R", "CATEGORY"] = "RETAIL   "
+
+    # PROC SUMMARY – count + sum APPRLIMT by BRANCH, CATEGORY
+    prt = (
+        approve.groupby(["BRANCH", "CATEGORY"], dropna=False)
+        .agg(ACCT=("APPRLIMT", "count"), APPRLIMT=("APPRLIMT", "sum"))
+        .reset_index()
+    )
+
+    # DATA PRT – IF BRANCH > 0, build BRANCHX
+    prt = prt[prt["BRANCH"] > 0].copy()
+    prt["BRANCH"]  = prt["BRANCH"].astype(int)
+    prt["BRANCHX"] = prt["BRANCH"].astype(str).str.zfill(3) + "-"
+
+    # CSV output
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    prt.to_csv(OUTPUT_DIR / "BT_LIMIT_REPORT.csv", index=False)
+
+    # SASLIST – PROC TABULATE style
+    pivot = prt.pivot_table(
+        index="BRANCHX", columns="CATEGORY",
+        values=["ACCT", "APPRLIMT"], aggfunc="sum",
+        fill_value=0, margins=True, margins_name="TOTAL"
+    )
+    pivot.columns = [f"{m}_{c}".strip("_") for m, c in pivot.columns]
+
+    with (OUTPUT_DIR / "SASLIST.txt").open("w", encoding="utf-8") as f:
+        f.write("PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY\n")
+        f.write(f"MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS {v['RDATE']}\n\n")
+        f.write(f"{'BRANCH':<30}{'TOTAL ACCTS':>12}{'TOTAL LIMITS(RM)':>22}"
+                f"{'CORP ACCTS':>12}{'CORP LIMITS(RM)':>20}"
+                f"{'RETAIL ACCTS':>14}{'RETAIL LIMITS(RM)':>22}\n")
+        f.write("-" * 132 + "\n")
+        for branchx, row in pivot.iterrows():
+            f.write(
+                f"{str(branchx):<30}"
+                f"{int(row.get('ACCT_TOTAL',   0)):>12,}"
+                f"{    row.get('APPRLIMT_TOTAL',0):>22,.2f}"
+                f"{int(row.get('ACCT_CORPORATE',0)):>12,}"
+                f"{    row.get('APPRLIMT_CORPORATE',0):>20,.2f}"
+                f"{int(row.get('ACCT_RETAIL   ',0)):>14,}"
+                f"{    row.get('APPRLIMT_RETAIL   ',0):>22,.2f}\n"
+            )
+
+    print(f"CSV    : {OUTPUT_DIR / 'BT_LIMIT_REPORT.csv'}")
+    print(f"SASLIST: {OUTPUT_DIR / 'SASLIST.txt'}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //EIBMBTMY JOB MISEIS,EIBMBTMY,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,       JOB10766
 //         USER=OPCC,REGION=8M
 /*JOBPARM S=S1M1
