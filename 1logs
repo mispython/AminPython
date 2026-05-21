@@ -1,3 +1,24 @@
+approve["RETAILID"] = (
+    approve["RETAILID"]
+    .astype(str)
+    .str.strip()
+)
+
+approve.loc[
+    approve["RETAILID"] == "C",
+    "CATEGORY"
+] = "CORPORATE"
+
+approve.loc[
+    approve["RETAILID"] == "R",
+    "CATEGORY"
+] = "RETAIL"
+
+
+
+
+
+
 
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMBTMY.py", line 103, in <module>
