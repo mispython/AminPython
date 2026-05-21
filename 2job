@@ -488,3 +488,382 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+"""
+Python conversion of mainframe SAS job EIBMBTMY.
+
+INPUT
+------
+- SAS7BDAT dataset
+
+OUTPUT
+-------
+- BT_LIMIT_REPORT.csv
+- SASLIST.txt
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date
+from pathlib import Path
+
+import pandas as pd
+
+
+# ----------------------------------------------------------
+# INCLUDE SECTION
+# ----------------------------------------------------------
+
+try:
+    import pbbdpfmt
+
+except ImportError:
+    pbbdpfmt = None
+
+
+DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+
+
+# ----------------------------------------------------------
+# REPORT VARIABLES
+# ----------------------------------------------------------
+
+def get_report_variables(reptdate: date) -> dict[str, str]:
+
+    day = reptdate.day
+
+    week_map = {
+        8: ("1", "4", "", "", 1),
+        15: ("2", "1", "", "", 9),
+        22: ("3", "2", "", "", 16),
+    }
+
+    wk, wk1, wk2, wk3, sdd = week_map.get(
+        day,
+        ("4", "3", "2", "1", 23)
+    )
+
+    mm = reptdate.month
+
+    mm1 = (
+        12 if wk == "1" and mm == 1
+        else (mm - 1 if wk == "1" else mm)
+    )
+
+    sdate = date(reptdate.year, mm, sdd)
+
+    return {
+        "NOWK": wk,
+        "NOWK1": wk1,
+        "NOWK2": wk2,
+        "NOWK3": wk3,
+        "REPTMON": f"{mm:02d}",
+        "REPTMON1": f"{mm1:02d}",
+        "REPTYEAR": str(reptdate.year),
+        "REPTDAY": f"{day:02d}",
+        "RDATE": reptdate.strftime("%d/%m/%y"),
+        "SDATE": sdate.strftime("%d/%m/%y"),
+    }
+
+
+# ----------------------------------------------------------
+# INPUT PATH
+# ----------------------------------------------------------
+
+def resolve_input_path(path: Path) -> Path:
+
+    if path.exists():
+        return path
+
+    sas_path = path.with_suffix(".sas7bdat")
+
+    if sas_path.exists():
+        return sas_path
+
+    return path
+
+
+# ----------------------------------------------------------
+# READ SAS DATASET
+# ----------------------------------------------------------
+
+def read_sas_dataset(path: Path) -> pd.DataFrame:
+
+    return pd.read_sas(
+        path,
+        format="sas7bdat",
+        encoding="utf-8"
+    )
+
+
+# ----------------------------------------------------------
+# MAIN
+# ----------------------------------------------------------
+
+def main() -> None:
+
+    parser = argparse.ArgumentParser(
+        description="Convert SAS EIBMBTMY to Python"
+    )
+
+    parser.add_argument(
+        "--bnm",
+        type=Path,
+        default=DEFAULT_BASE / "BTMAST.sas7bdat",
+        help="BNM SAS7BDAT dataset",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+    )
+
+    args = parser.parse_args()
+
+    output_dir = args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ----------------------------------------------------------
+    # REPORT VARIABLES
+    # ----------------------------------------------------------
+
+    reptdate = date.today()
+
+    vars = get_report_variables(reptdate)
+
+    # ----------------------------------------------------------
+    # INPUT
+    # ----------------------------------------------------------
+
+    bnm_path = resolve_input_path(args.bnm)
+
+    print(f"Reading {bnm_path}")
+
+    df = read_sas_dataset(bnm_path)
+
+    # ----------------------------------------------------------
+    # COLUMN CLEANUP
+    # ----------------------------------------------------------
+
+    df.columns = [str(col).upper() for col in df.columns]
+
+    # ----------------------------------------------------------
+    # CONVERT TYPES
+    # ----------------------------------------------------------
+
+    df["ACCTNO"] = (
+        df["ACCTNO"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df["D"] = (
+        df["D"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df["RETAILID"] = (
+        df["RETAILID"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df["LEVELS"] = pd.to_numeric(
+        df["LEVELS"],
+        errors="coerce"
+    ).fillna(0)
+
+    df["BRANCH"] = pd.to_numeric(
+        df["BRANCH"],
+        errors="coerce"
+    ).fillna(0)
+
+    df["APPRLIMT"] = pd.to_numeric(
+        df["APPRLIMT"],
+        errors="coerce"
+    ).fillna(0)
+
+    # ----------------------------------------------------------
+    # FILTER APPROVE
+    # ----------------------------------------------------------
+
+    approve = df[
+        (df["LEVELS"] == 1)
+        & (df["D"] == "D")
+        & (df["ACCTNO"].str[:2] == "25")
+    ].copy()
+
+    # ----------------------------------------------------------
+    # CATEGORY
+    # ----------------------------------------------------------
+
+    approve["CATEGORY"] = ""
+
+    approve.loc[
+        approve["RETAILID"] == "C",
+        "CATEGORY"
+    ] = "CORPORATE"
+
+    approve.loc[
+        approve["RETAILID"] == "R",
+        "CATEGORY"
+    ] = "RETAIL"
+
+    # ----------------------------------------------------------
+    # SUMMARY
+    # ----------------------------------------------------------
+
+    prt = (
+        approve.groupby(
+            ["BRANCH", "CATEGORY"],
+            dropna=False
+        )
+        .agg(
+            ACCT=("APPRLIMT", "count"),
+            APPRLIMT=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    # ----------------------------------------------------------
+    # FILTER BRANCH
+    # ----------------------------------------------------------
+
+    prt = prt[
+        prt["BRANCH"] > 0
+    ].copy()
+
+    # ----------------------------------------------------------
+    # BRANCH NAME
+    # ----------------------------------------------------------
+
+    prt["BRHNAME"] = ""
+
+    prt["BRANCHX"] = (
+        prt["BRANCH"]
+        .astype(int)
+        .astype(str)
+        .str.zfill(3)
+        + "-"
+        + prt["BRHNAME"]
+    )
+
+    # ----------------------------------------------------------
+    # SORT
+    # ----------------------------------------------------------
+
+    prt = prt.sort_values(
+        by=["BRANCH", "CATEGORY"]
+    )
+
+    # ----------------------------------------------------------
+    # OUTPUT CSV
+    # ----------------------------------------------------------
+
+    output_csv = output_dir / "BT_LIMIT_REPORT.csv"
+
+    prt.to_csv(
+        output_csv,
+        index=False
+    )
+
+    # ----------------------------------------------------------
+    # SASLIST REPORT
+    # ----------------------------------------------------------
+
+    saslist = output_dir / "SASLIST.txt"
+
+    with saslist.open(
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        f.write(
+            "PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY\n"
+        )
+
+        f.write(
+            "MONTHLY TRADE BILLS "
+            "BY APPROVE LIMIT & NO.OF ACCTS\n"
+        )
+
+        f.write(
+            f"REPORT DATE : {vars['RDATE']}\n\n"
+        )
+
+        f.write(
+            f"{'BRANCH':<20}"
+            f"{'CATEGORY':<15}"
+            f"{'ACCTS':>12}"
+            f"{'LIMIT(RM)':>20}\n"
+        )
+
+        f.write("-" * 70 + "\n")
+
+        total_acct = 0
+        total_limit = 0.0
+
+        for _, row in prt.iterrows():
+
+            acct = int(row["ACCT"])
+            limit_amt = float(row["APPRLIMT"])
+
+            total_acct += acct
+            total_limit += limit_amt
+
+            f.write(
+                f"{row['BRANCHX']:<20}"
+                f"{row['CATEGORY']:<15}"
+                f"{acct:>12,}"
+                f"{limit_amt:>20,.2f}\n"
+            )
+
+        f.write("-" * 70 + "\n")
+
+        f.write(
+            f"{'TOTAL':<35}"
+            f"{total_acct:>12,}"
+            f"{total_limit:>20,.2f}\n"
+        )
+
+    # ----------------------------------------------------------
+    # COMPLETE
+    # ----------------------------------------------------------
+
+    print(f"CSV Output : {output_csv}")
+    print(f"SASLIST    : {saslist}")
+
+
+if __name__ == "__main__":
+    main()
