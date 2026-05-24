@@ -88,20 +88,21 @@ TABLE BRANCHX=' ' ALL='TOTAL ',
       KEYLABEL SUM=' ';
 *;
 
-
 #!/usr/bin/env python3
 """
 Python conversion of mainframe SAS job EIIMBTMY.
 
-- BNM input = SAS7BDAT dataset
-- REPTDATE replaced with today date
-- Same input/output structure style as previous jobs
+SAS equivalent notes:
+- REPTDATE can be supplied from file or argument; default is today.
+- BNM input dataset follows SAS naming: IBTMAST&REPTMON&NOWK.
+- PROC SUMMARY _FREQ_ is implemented using group size, not non-null count.
+- Branch name requires BRANCHCD. format mapping; placeholder kept if mapping is unavailable.
 """
 
 from __future__ import annotations
 
 import argparse
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -112,7 +113,6 @@ DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
 
 
 def get_report_variables(reptdate: date) -> dict[str, str]:
-
     day = reptdate.day
 
     week_map = {
@@ -123,15 +123,15 @@ def get_report_variables(reptdate: date) -> dict[str, str]:
 
     wk, wk1, wk2, wk3, sdd = week_map.get(
         day,
-        ("4", "3", "2", "1", 23)
+        ("4", "3", "2", "1", 23),
     )
 
     mm = reptdate.month
 
-    mm1 = (
-        12 if wk == "1" and mm == 1
-        else (mm - 1 if wk == "1" else mm)
-    )
+    if wk == "1":
+        mm1 = 12 if mm == 1 else mm - 1
+    else:
+        mm1 = mm
 
     sdate = date(reptdate.year, mm, sdd)
 
@@ -149,13 +149,26 @@ def get_report_variables(reptdate: date) -> dict[str, str]:
     }
 
 
-def resolve_input_path(path: Path) -> Path:
+def parse_report_date(value: str | None) -> date:
+    if not value:
+        return date.today()
 
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            pass
+
+    raise ValueError(
+        "Invalid report date. Use YYYY-MM-DD, DD/MM/YYYY, or DD/MM/YY."
+    )
+
+
+def resolve_input_path(path: Path) -> Path:
     if path.exists():
         return path
 
     sas_path = path.with_suffix(".sas7bdat")
-
     if sas_path.exists():
         return sas_path
 
@@ -163,25 +176,61 @@ def resolve_input_path(path: Path) -> Path:
 
 
 def read_sas_dataset(path: Path) -> pd.DataFrame:
-
     return pd.read_sas(
         path,
         format="sas7bdat",
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
 
-def main() -> None:
+def clean_char_column(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.strip()
 
+
+def get_branch_name(branch: int) -> str:
+    """
+    SAS uses:
+        BRHNAME = PUT(BRANCH, BRANCHCD.);
+
+    The BRANCHCD. format comes from PBBDPFMT.
+    Add the real branch-code mapping here when available.
+    """
+    branch_map: dict[int, str] = {
+        # Example:
+        # 1: "MAIN BRANCH",
+        # 2: "IPOH",
+    }
+
+    return branch_map.get(branch, "")
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Convert SAS EIIMBTMY to Python"
     )
 
     parser.add_argument(
+        "--base-dir",
+        type=Path,
+        default=DEFAULT_BASE,
+        help="Base input directory",
+    )
+
+    parser.add_argument(
         "--bnm",
         type=Path,
-        default=DEFAULT_BASE / "IBTMAST.sas7bdat",
-        help="BNM SAS7BDAT dataset",
+        default=None,
+        help=(
+            "Optional BNM SAS7BDAT file. "
+            "If not supplied, program uses IBTMAST{REPTMON}{NOWK}.sas7bdat"
+        ),
+    )
+
+    parser.add_argument(
+        "--report-date",
+        type=str,
+        default=None,
+        help="Report date. Example: 2026-05-24 or 24/05/2026",
     )
 
     parser.add_argument(
@@ -197,27 +246,39 @@ def main() -> None:
 
     # ----------------------------------------------------------
     # REPORT VARIABLES
+    # SAS source: LOAN.REPTDATE
     # ----------------------------------------------------------
 
-    reptdate = date.today()
-
-    vars = get_report_variables(reptdate)
+    reptdate = parse_report_date(args.report_date)
+    vars_ = get_report_variables(reptdate)
 
     # ----------------------------------------------------------
     # INPUT
+    # SAS source: BNM.IBTMAST&REPTMON&NOWK
+    # Example: IBTMAST054 for month 05, week 4
     # ----------------------------------------------------------
 
-    bnm_path = resolve_input_path(args.bnm)
+    if args.bnm:
+        bnm_path = resolve_input_path(args.bnm)
+    else:
+        bnm_name = f"IBTMAST{vars_['REPTMON']}{vars_['NOWK']}.sas7bdat"
+        bnm_path = resolve_input_path(args.base_dir / bnm_name)
 
     df = read_sas_dataset(bnm_path)
-
     df.columns = [col.upper() for col in df.columns]
 
     # ----------------------------------------------------------
-    # FILTER APPROVE
+    # CLEAN CHARACTER COLUMNS
     # ----------------------------------------------------------
 
-    df["ACCTNO"] = df["ACCTNO"].astype(str)
+    df["ACCTNO"] = clean_char_column(df["ACCTNO"])
+    df["RETAILID"] = clean_char_column(df["RETAILID"])
+
+    # ----------------------------------------------------------
+    # FILTER APPROVE
+    # SAS:
+    # WHERE LEVELS = 1 AND D = 1 AND SUBSTR(ACCTNO,1,2)='28';
+    # ----------------------------------------------------------
 
     approve = df[
         (df["LEVELS"] == 1)
@@ -227,31 +288,40 @@ def main() -> None:
 
     # ----------------------------------------------------------
     # CATEGORY
+    # SAS:
+    # IF RETAILID='C' THEN CATEGORY='CORPORATE';
+    # ELSE IF RETAILID='R' THEN CATEGORY='RETAIL   ';
     # ----------------------------------------------------------
 
     approve["CATEGORY"] = ""
 
     approve.loc[
         approve["RETAILID"] == "C",
-        "CATEGORY"
+        "CATEGORY",
     ] = "CORPORATE"
 
     approve.loc[
         approve["RETAILID"] == "R",
-        "CATEGORY"
+        "CATEGORY",
     ] = "RETAIL"
 
     # ----------------------------------------------------------
     # SUMMARY
+    # SAS PROC SUMMARY:
+    # CLASS BRANCH CATEGORY;
+    # VAR APPRLIMT;
+    # OUTPUT OUT=PRT RENAME=(_FREQ_=ACCT) SUM=;
+    #
+    # _FREQ_ counts rows, so use size instead of count.
     # ----------------------------------------------------------
 
     prt = (
         approve.groupby(
             ["BRANCH", "CATEGORY"],
-            dropna=False
+            dropna=False,
         )
         .agg(
-            ACCT=("APPRLIMT", "count"),
+            ACCT=("APPRLIMT", "size"),
             APPRLIMT=("APPRLIMT", "sum"),
         )
         .reset_index()
@@ -259,43 +329,97 @@ def main() -> None:
 
     # ----------------------------------------------------------
     # BRANCH FILTER
+    # SAS:
+    # IF BRANCH > 0;
     # ----------------------------------------------------------
 
     prt = prt[prt["BRANCH"] > 0].copy()
 
     # ----------------------------------------------------------
     # BRANCH ADJUSTMENT
+    # SAS:
+    # IF BRANCH>=3000 THEN BRANCH=BRANCH-3000;
     # ----------------------------------------------------------
 
     prt.loc[
         prt["BRANCH"] >= 3000,
-        "BRANCH"
+        "BRANCH",
     ] = prt["BRANCH"] - 3000
+
+    prt["BRANCH"] = prt["BRANCH"].astype(int)
 
     # ----------------------------------------------------------
     # BRANCH NAME
+    # SAS:
+    # BRHNAME=PUT(BRANCH,BRANCHCD.);
+    # BRANCHX=PUT(BRANCH,Z3.)||"-"||BRHNAME;
     # ----------------------------------------------------------
 
-    prt["BRHNAME"] = ""
+    prt["BRHNAME"] = prt["BRANCH"].apply(get_branch_name)
 
     prt["BRANCHX"] = (
-        prt["BRANCH"]
-        .astype(int)
-        .astype(str)
-        .str.zfill(3)
+        prt["BRANCH"].astype(str).str.zfill(3)
         + "-"
         + prt["BRHNAME"]
     )
 
     # ----------------------------------------------------------
-    # OUTPUT CSV
+    # OUTPUT DETAIL CSV
     # ----------------------------------------------------------
 
     output_csv = output_dir / "BT_LIMIT_REPORT.csv"
 
     prt.to_csv(
         output_csv,
-        index=False
+        index=False,
+    )
+
+    # ----------------------------------------------------------
+    # TABULATE-LIKE REPORT
+    # SAS layout:
+    # BRANCH rows, TOTAL columns, CATEGORY columns
+    # ----------------------------------------------------------
+
+    detail = prt.copy()
+
+    branch_total = (
+        detail.groupby("BRANCHX", dropna=False)
+        .agg(
+            TOTAL_ACCTS=("ACCT", "sum"),
+            TOTAL_LIMITS_RM=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    category_pivot = detail.pivot_table(
+        index="BRANCHX",
+        columns="CATEGORY",
+        values=["ACCT", "APPRLIMT"],
+        aggfunc="sum",
+        fill_value=0,
+        dropna=False,
+    )
+
+    category_pivot.columns = [
+        f"{category}_{measure}"
+        for measure, category in category_pivot.columns
+    ]
+
+    category_pivot = category_pivot.reset_index()
+
+    report = branch_total.merge(
+        category_pivot,
+        on="BRANCHX",
+        how="left",
+    )
+
+    report = report.sort_values("BRANCHX")
+
+    report_csv = output_dir / "BT_LIMIT_REPORT_TABULATE.csv"
+
+    report.to_csv(
+        report_csv,
+        index=False,
     )
 
     # ----------------------------------------------------------
@@ -305,34 +429,56 @@ def main() -> None:
     saslist = output_dir / "SASLIST.txt"
 
     with saslist.open("w", encoding="utf-8") as f:
-
+        f.write("PUBLIC BANK BERHAD. REPORT-ID: EIIMBTMY\n")
         f.write(
-            "PUBLIC BANK BERHAD. REPORT-ID: EIIMBTMY\n"
+            "MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS "
+            f"{vars_['RDATE']}\n\n"
         )
 
         f.write(
-            f"MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS {vars['RDATE']}\n\n"
+            f"{'BRANCH':<30}"
+            f"{'TOTAL ACCTS':>12}"
+            f"{'TOTAL LIMITS(RM)':>22}"
+            f"{'CORP ACCTS':>12}"
+            f"{'CORP LIMITS(RM)':>22}"
+            f"{'RETAIL ACCTS':>14}"
+            f"{'RETAIL LIMITS(RM)':>22}\n"
         )
 
-        f.write(
-            f"{'BRANCH':<20}"
-            f"{'CATEGORY':<15}"
-            f"{'ACCTS':>12}"
-            f"{'LIMITS(RM)':>20}\n"
-        )
+        f.write("-" * 134 + "\n")
 
-        f.write("-" * 70 + "\n")
+        grand_total_acct = 0
+        grand_total_limit = 0.0
 
-        for _, row in prt.iterrows():
+        for _, row in report.iterrows():
+            corp_acct = row.get("CORPORATE_ACCT", 0)
+            corp_limit = row.get("CORPORATE_APPRLIMT", 0.0)
+            retail_acct = row.get("RETAIL_ACCT", 0)
+            retail_limit = row.get("RETAIL_APPRLIMT", 0.0)
+
+            grand_total_acct += row["TOTAL_ACCTS"]
+            grand_total_limit += row["TOTAL_LIMITS_RM"]
 
             f.write(
-                f"{row['BRANCHX']:<20}"
-                f"{row['CATEGORY']:<15}"
-                f"{int(row['ACCT']):>12,}"
-                f"{row['APPRLIMT']:>20,.2f}\n"
+                f"{row['BRANCHX']:<30}"
+                f"{int(row['TOTAL_ACCTS']):>12,}"
+                f"{row['TOTAL_LIMITS_RM']:>22,.2f}"
+                f"{int(corp_acct):>12,}"
+                f"{corp_limit:>22,.2f}"
+                f"{int(retail_acct):>14,}"
+                f"{retail_limit:>22,.2f}\n"
             )
 
+        f.write("-" * 134 + "\n")
+        f.write(
+            f"{'TOTAL':<30}"
+            f"{int(grand_total_acct):>12,}"
+            f"{grand_total_limit:>22,.2f}\n"
+        )
+
+    print(f"BNM Input  : {bnm_path}")
     print(f"CSV Output : {output_csv}")
+    print(f"Report CSV : {report_csv}")
     print(f"SASLIST    : {saslist}")
 
 
