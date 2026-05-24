@@ -87,16 +87,19 @@ TABLE BRANCHX=' ' ALL='TOTAL ',
       /BOX='BRANCH ' RTS=30;
       KEYLABEL SUM=' ';
 *;
-
 #!/usr/bin/env python3
 """
 Python conversion of mainframe SAS job EIIMBTMY.
 
-SAS equivalent notes:
-- REPTDATE can be supplied from file or argument; default is today.
-- BNM input dataset follows SAS naming: IBTMAST&REPTMON&NOWK.
-- PROC SUMMARY _FREQ_ is implemented using group size, not non-null count.
-- Branch name requires BRANCHCD. format mapping; placeholder kept if mapping is unavailable.
+Input:
+- Semicolon-delimited text file
+- Default file naming follows SAS dataset logic:
+  IBTMAST{REPTMON}{NOWK}.txt
+  Example: IBTMAST054.txt
+
+Expected text file:
+- First row contains column headers
+- Delimiter is semicolon ;
 """
 
 from __future__ import annotations
@@ -168,23 +171,28 @@ def resolve_input_path(path: Path) -> Path:
     if path.exists():
         return path
 
-    sas_path = path.with_suffix(".sas7bdat")
-    if sas_path.exists():
-        return sas_path
+    txt_path = path.with_suffix(".txt")
+    if txt_path.exists():
+        return txt_path
+
+    csv_path = path.with_suffix(".csv")
+    if csv_path.exists():
+        return csv_path
 
     return path
 
 
-def read_sas_dataset(path: Path) -> pd.DataFrame:
-    return pd.read_sas(
+def read_semicolon_file(path: Path) -> pd.DataFrame:
+    return pd.read_csv(
         path,
-        format="sas7bdat",
+        sep=";",
+        dtype=str,
         encoding="utf-8",
     )
 
 
 def clean_char_column(series: pd.Series) -> pd.Series:
-    return series.astype(str).str.strip()
+    return series.fillna("").astype(str).str.strip()
 
 
 def get_branch_name(branch: int) -> str:
@@ -192,8 +200,7 @@ def get_branch_name(branch: int) -> str:
     SAS uses:
         BRHNAME = PUT(BRANCH, BRANCHCD.);
 
-    The BRANCHCD. format comes from PBBDPFMT.
-    Add the real branch-code mapping here when available.
+    Add real branch mapping here if available.
     """
     branch_map: dict[int, str] = {
         # Example:
@@ -221,8 +228,8 @@ def main() -> None:
         type=Path,
         default=None,
         help=(
-            "Optional BNM SAS7BDAT file. "
-            "If not supplied, program uses IBTMAST{REPTMON}{NOWK}.sas7bdat"
+            "Optional semicolon-delimited input file. "
+            "If not supplied, program uses IBTMAST{REPTMON}{NOWK}.txt"
         ),
     )
 
@@ -244,54 +251,50 @@ def main() -> None:
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ----------------------------------------------------------
-    # REPORT VARIABLES
-    # SAS source: LOAN.REPTDATE
-    # ----------------------------------------------------------
-
     reptdate = parse_report_date(args.report_date)
     vars_ = get_report_variables(reptdate)
-
-    # ----------------------------------------------------------
-    # INPUT
-    # SAS source: BNM.IBTMAST&REPTMON&NOWK
-    # Example: IBTMAST054 for month 05, week 4
-    # ----------------------------------------------------------
 
     if args.bnm:
         bnm_path = resolve_input_path(args.bnm)
     else:
-        bnm_name = f"IBTMAST{vars_['REPTMON']}{vars_['NOWK']}.sas7bdat"
+        bnm_name = f"IBTMAST{vars_['REPTMON']}{vars_['NOWK']}.txt"
         bnm_path = resolve_input_path(args.base_dir / bnm_name)
 
-    df = read_sas_dataset(bnm_path)
-    df.columns = [col.upper() for col in df.columns]
+    df = read_semicolon_file(bnm_path)
+    df.columns = [col.upper().strip() for col in df.columns]
 
-    # ----------------------------------------------------------
-    # CLEAN CHARACTER COLUMNS
-    # ----------------------------------------------------------
+    required_columns = [
+        "LEVELS",
+        "D",
+        "ACCTNO",
+        "RETAILID",
+        "BRANCH",
+        "APPRLIMT",
+    ]
+
+    missing_columns = [
+        col for col in required_columns if col not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            "Missing required columns in input file: "
+            + ", ".join(missing_columns)
+        )
 
     df["ACCTNO"] = clean_char_column(df["ACCTNO"])
     df["RETAILID"] = clean_char_column(df["RETAILID"])
 
-    # ----------------------------------------------------------
-    # FILTER APPROVE
-    # SAS:
-    # WHERE LEVELS = 1 AND D = 1 AND SUBSTR(ACCTNO,1,2)='28';
-    # ----------------------------------------------------------
+    df["LEVELS"] = pd.to_numeric(df["LEVELS"], errors="coerce")
+    df["D"] = pd.to_numeric(df["D"], errors="coerce")
+    df["BRANCH"] = pd.to_numeric(df["BRANCH"], errors="coerce")
+    df["APPRLIMT"] = pd.to_numeric(df["APPRLIMT"], errors="coerce").fillna(0)
 
     approve = df[
         (df["LEVELS"] == 1)
         & (df["D"] == 1)
         & (df["ACCTNO"].str[:2] == "28")
     ].copy()
-
-    # ----------------------------------------------------------
-    # CATEGORY
-    # SAS:
-    # IF RETAILID='C' THEN CATEGORY='CORPORATE';
-    # ELSE IF RETAILID='R' THEN CATEGORY='RETAIL   ';
-    # ----------------------------------------------------------
 
     approve["CATEGORY"] = ""
 
@@ -305,16 +308,6 @@ def main() -> None:
         "CATEGORY",
     ] = "RETAIL"
 
-    # ----------------------------------------------------------
-    # SUMMARY
-    # SAS PROC SUMMARY:
-    # CLASS BRANCH CATEGORY;
-    # VAR APPRLIMT;
-    # OUTPUT OUT=PRT RENAME=(_FREQ_=ACCT) SUM=;
-    #
-    # _FREQ_ counts rows, so use size instead of count.
-    # ----------------------------------------------------------
-
     prt = (
         approve.groupby(
             ["BRANCH", "CATEGORY"],
@@ -327,19 +320,7 @@ def main() -> None:
         .reset_index()
     )
 
-    # ----------------------------------------------------------
-    # BRANCH FILTER
-    # SAS:
-    # IF BRANCH > 0;
-    # ----------------------------------------------------------
-
     prt = prt[prt["BRANCH"] > 0].copy()
-
-    # ----------------------------------------------------------
-    # BRANCH ADJUSTMENT
-    # SAS:
-    # IF BRANCH>=3000 THEN BRANCH=BRANCH-3000;
-    # ----------------------------------------------------------
 
     prt.loc[
         prt["BRANCH"] >= 3000,
@@ -347,13 +328,6 @@ def main() -> None:
     ] = prt["BRANCH"] - 3000
 
     prt["BRANCH"] = prt["BRANCH"].astype(int)
-
-    # ----------------------------------------------------------
-    # BRANCH NAME
-    # SAS:
-    # BRHNAME=PUT(BRANCH,BRANCHCD.);
-    # BRANCHX=PUT(BRANCH,Z3.)||"-"||BRHNAME;
-    # ----------------------------------------------------------
 
     prt["BRHNAME"] = prt["BRANCH"].apply(get_branch_name)
 
@@ -363,10 +337,6 @@ def main() -> None:
         + prt["BRHNAME"]
     )
 
-    # ----------------------------------------------------------
-    # OUTPUT DETAIL CSV
-    # ----------------------------------------------------------
-
     output_csv = output_dir / "BT_LIMIT_REPORT.csv"
 
     prt.to_csv(
@@ -374,16 +344,8 @@ def main() -> None:
         index=False,
     )
 
-    # ----------------------------------------------------------
-    # TABULATE-LIKE REPORT
-    # SAS layout:
-    # BRANCH rows, TOTAL columns, CATEGORY columns
-    # ----------------------------------------------------------
-
-    detail = prt.copy()
-
     branch_total = (
-        detail.groupby("BRANCHX", dropna=False)
+        prt.groupby("BRANCHX", dropna=False)
         .agg(
             TOTAL_ACCTS=("ACCT", "sum"),
             TOTAL_LIMITS_RM=("APPRLIMT", "sum"),
@@ -391,7 +353,7 @@ def main() -> None:
         .reset_index()
     )
 
-    category_pivot = detail.pivot_table(
+    category_pivot = prt.pivot_table(
         index="BRANCHX",
         columns="CATEGORY",
         values=["ACCT", "APPRLIMT"],
@@ -421,10 +383,6 @@ def main() -> None:
         report_csv,
         index=False,
     )
-
-    # ----------------------------------------------------------
-    # SASLIST REPORT
-    # ----------------------------------------------------------
 
     saslist = output_dir / "SASLIST.txt"
 
@@ -484,4 +442,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
