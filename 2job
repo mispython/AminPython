@@ -86,28 +86,17 @@ def resolve_input_path(path: Path) -> Path:
     return path
 
 
-def read_semicolon_file(path: Path) -> pd.DataFrame:
+def read_bt_file(path: Path) -> pd.DataFrame:
+    # Auto-detect comma / semicolon / tab. Your sample BT.txt is comma-delimited.
     df = pd.read_csv(
         path,
-        sep=";",
+        sep=None,
+        engine="python",
         dtype=str,
         encoding="utf-8",
     )
 
     df.columns = [col.upper().strip() for col in df.columns]
-
-    if all(col in df.columns for col in REQUIRED_COLUMNS):
-        return df
-
-    df = pd.read_csv(
-        path,
-        sep=";",
-        dtype=str,
-        encoding="utf-8",
-        header=None,
-        names=REQUIRED_COLUMNS,
-    )
-
     return df
 
 
@@ -145,9 +134,21 @@ def fmt_amt(value: float | int, width: int = 20) -> str:
     return f"{float(value):>{width},.2f}"
 
 
+def get_number(row: pd.Series, column: str, default: float = 0.0) -> float:
+    if column not in row.index:
+        return default
+
+    value = row[column]
+
+    if pd.isna(value):
+        return default
+
+    return float(value)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Convert SAS EIBMBTMY to Python using semicolon BT.txt"
+        description="Convert SAS EIBMBTMY to Python using BT.txt"
     )
 
     parser.add_argument(
@@ -160,7 +161,7 @@ def main() -> None:
         "--bnm",
         type=Path,
         default=None,
-        help="Input semicolon file. Default: BT.txt",
+        help="Input file. Default: BT.txt",
     )
 
     parser.add_argument(
@@ -189,14 +190,15 @@ def main() -> None:
     else:
         bnm_path = resolve_input_path(args.base_dir / "BT.txt")
 
-    df = read_semicolon_file(bnm_path)
-    df.columns = [col.upper().strip() for col in df.columns]
+    df = read_bt_file(bnm_path)
 
     missing_columns = [col for col in REQUIRED_COLUMNS if col not in df.columns]
     if missing_columns:
         raise ValueError(
             "Missing required columns in input file: "
             + ", ".join(missing_columns)
+            + "\nAvailable columns: "
+            + ", ".join(df.columns)
         )
 
     df["ACCTNO"] = clean_char_column(df["ACCTNO"])
@@ -306,22 +308,14 @@ def main() -> None:
         )
         f.write("-" * 133 + "\n")
 
-        grand_total_acct = 0
+        grand_total_acct = 0.0
         grand_total_limit = 0.0
-        grand_blank_acct = 0
+        grand_blank_acct = 0.0
         grand_blank_limit = 0.0
-        grand_corp_acct = 0
+        grand_corp_acct = 0.0
         grand_corp_limit = 0.0
-        grand_retail_acct = 0
+        grand_retail_acct = 0.0
         grand_retail_limit = 0.0
-
-        def get_number(row: pd.Series, column: str, default: float = 0.0) -> float:
-            if column not in row.index:
-                return default
-            value = row[column]
-            if pd.isna(value):
-                return default
-            return float(value)
 
         for _, row in report.iterrows():
             total_acct = get_number(row, "TOTAL_ACCTS")
@@ -372,6 +366,8 @@ def main() -> None:
         f.write("-" * 133 + "\n")
 
     print(f"BNM Input  : {bnm_path}")
+    print(f"Rows input : {len(df):,}")
+    print(f"Rows approve: {len(approve):,}")
     print(f"Detail CSV : {detail_csv}")
     print(f"Report CSV : {report_csv}")
     print(f"SASLIST    : {saslist}")
