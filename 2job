@@ -6,142 +6,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
+from pbbdpfmt2 import BRANCHCD
 
 
-DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
-DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+DEFAULT_INPUT = Path("bt251029.sas7bdat")
+DEFAULT_OUTPUT_DIR = Path("output")
 
-REQUIRED_COLUMNS = [
-    "LEVELS",
-    "D",
-    "ACCTNO",
-    "RETAILID",
-    "BRANCH",
-    "APPRLIMT",
-]
-
-BRANCHCD = {
-    1: "HEAD OFFICE", 2: "JLN SULTAN SULAIMAN", 3: "JLN RAJA CHULAN",
-    4: "MELAKA", 5: "IPOH MAIN OFFICE", 6: "PENANG", 7: "JOHOR BAHRU",
-    8: "KUANTAN", 9: "JLN YANG KALSOM", 10: "ALOR SETAR", 11: "GURUN",
-    12: "PASIR PUTEH", 13: "KOTA BHARU", 14: "TANAH MERAH", 15: "KEPUNG",
-    16: "NILAI", 17: "TAMPIN", 18: "PJ NEW TOWN", 19: "DAMANSARA UTAMA",
-    20: "TMN CHI LIUNG", 21: "BATU PAHAT", 22: "SEMENYIH", 23: "KAMUNTING",
-    24: "RASAH", 25: "SHAH ALAM", 26: "SERI PETALING", 27: "NIBONG TEBAL",
-    28: "MUAR", 29: "JLN RAJA LAUT", 30: "KUALA TRENGGANU",
-    31: "SEKINCHAN", 32: "WISMA SABERKAS (WSS)", 33: "KOTA KINABALU",
-    34: "KANGAR", 35: "SERI SETIA", 36: "S S 2", 37: "TMN SENTOSA",
-    38: "JLN KELANG LAMA", 39: "KUALA KELAWANG", 40: "JLN SUNGEI BESI",
-    41: "JLN IPOH", 42: "BKT MERTAJAM", 43: "BANTING", 44: "TAWAU",
-    45: "SEREMBAN", 46: "AMPANG", 47: "SEGAMAT", 48: "MENTAKAB",
-    49: "JELAPANG", 50: "MIRI", 51: "SERI MANJUNG", 52: "ULU TIRAM",
-    53: "TMN MALURI", 54: "BDR BAYAN BARU", 55: "LABUAN", 56: "KAJANG",
-    57: "SG PETANI", 58: "SIBU", 59: "PONTIAN KECIL", 60: "BAGAN AJAM",
-    61: "KULAI", 62: "SANDAKAN", 63: "GEMAS", 64: "PORT DICKSON",
-    65: "BAHAU", 66: "BKT DAMANSARA", 67: "CHEMOR", 68: "SIMPANG AMPAT",
-    69: "BATANG KALI", 70: "POKOK SENA", 71: "BRINCHANG", 72: "PAPAR",
-    73: "SG PELEK", 74: "SIK", 75: "CHAAH", 76: "PANTAI REMIS",
-    77: "PULAU LANGKAWI", 78: "SUBANG JAYA", 79: "MASAI", 80: "MENGLEMBU",
-    81: "SG BULOH", 82: "MACHANG", 83: "JLN BUKIT BINTANG", 84: "PASIR MAS",
-    85: "SG SIPUT", 86: "CHANGLUN", 87: "MERSING", 88: "KULIM",
-    89: "TAMPOI", 90: "BINTULU", 91: "KLUANG", 92: "KLANG", 93: "ENDAU",
-    94: "SETAPAK", 95: "TELUK INTAN", 96: "SERI GOMBAK",
-    97: "JLN TUN H S LEE", 98: "TMN CENTURY", 101: "KAMPONG BAHRU",
-    102: "PARIT RAJA", 103: "JINJANG", 104: "KUALA KETIL",
-    105: "KOTA TINGGI", 106: "CHUKAI", 107: "JELUTONG", 108: "BAGAN SERAI",
-    109: "KUALA SELANGOR", 110: "TMN JOHOR JAYA", 111: "AIR KEROH",
-    112: "LIDO", 113: "TEMERLOH", 114: "BANDAR BARU AIR ITAM",
-    115: "KENINGAU", 116: "TRIANG", 117: "KUALA KRAI", 118: "TMN MELAWATI",
-    120: "PANDAN INDAH", 121: "PRAI", 122: "SERI KEMBANGAN",
-    123: "IPOH GARDEN", 124: "SECTION 14", 125: "KELANA JAYA",
-    126: "PULAU TIKUS", 127: "TMN SERI MUDA", 128: "SEGAMBUT",
-    129: "BANGSAR", 130: "PADUNGAN", 131: "TMN MAYANG", 133: "PORT KLANG",
-    134: "RANTAU PANJANG", 135: "BDR SUNWAY", 136: "TMN CHERAS",
-    137: "JLN PASIR PUTEH", 138: "WANGSA MAJU", 139: "JERANTUT",
-    140: "CITY PARADE", 141: "SENTUL", 142: "KOTA BELUD", 143: "LAHAD DATU",
-    144: "KAHANG", 145: "BDR SRI DAMANSARA", 146: "PUSING",
-    147: "PEKAN NENAS", 148: "PJ OLD TOWN", 149: "BEAUFORT",
-    150: "LEBOH MACALLUM", 151: "SELAYANG", 152: "AIR TAWAR", 153: "USJ",
-    154: "BDR SEBERANG JAYA", 155: "TMN TAMING JAYA", 156: "TMN MELAKA RAYA",
-    157: "BDR PUCHONG JAYA", 158: "SIMPANG PULAI", 159: "RELAU",
-    160: "MASJID TANAH", 161: "DONGGONGON", 162: "SEA PARK",
-    163: "JLN KUCHAI LAMA", 164: "KEPALA BATAS", 165: "TENGKERA",
-    166: "PASIR GUDANG", 167: "BKT BERUNTUNG", 168: "KLCITY MAIN",
-    169: "CKT THAMBI DOLLAH", 170: "PANDAN JAYA", 171: "JLN MACALLISTER",
-    172: "TMN MALIM JAYA", 173: "SG CHUA", 174: "BDR BARU PERMAS JAYA",
-    175: "LIMBANG", 176: "TMN PERLING", 177: "JLN RAJA UDA",
-    178: "MEDAN IDAMAN", 179: "OVERSEAS UNION GDN", 180: "KG BARU SUBANG",
-    183: "JLN CENTRAL, SIBU", 184: "JLN PENRISSEN, KUCHING",
-    185: "KUCHING CITY (KCY)", 186: "JLN TUN ZAIDI, KUCHING",
-    188: "PELITA, MIRI", 189: "BATU NIAH", 190: "BINTANGOR", 191: "KAPIT",
-    192: "MARUDI", 193: "MUKAH", 194: "SARIKEI", 195: "BINTANG WALK, KL",
-    196: "JLN HANG LEKIU", 197: "TIONG NAM, KL",
-    198: "TMN DESA,JLN KELANG LAMA", 199: "JLN TAPAH,KLANG",
-    201: "PANDAMARAN, KLANG", 202: "RAWANG", 203: "SG JAROM",
-    204: "BUTTERWORTH", 205: "SG NIBONG", 206: "TAMAN BUKIT MAS",
-    207: "BERCHAM (BCM)", 208: "JLN SULTAN IDRIS SHAH, IPOH",
-    209: "SITIAWAN", 210: "TANJUNG MALIM", 211: "TANJUNG PIANDANG",
-    214: "JLN GEREJA, JOHOR BARU", 215: "JLN KUKUP, PONTIAN KECHIL",
-    216: "SKUDAI", 217: "TMN MUNSHI IBRAHIM, TAMPOI",
-    220: "GENTING HIGHLANDS, PAHANG", 221: "TMN SENTOSA, KLANG",
-    222: "TMN DESA CEMERLANG,JOHOR", 224: "JLN ABDULLAH, MUAR",
-    225: "TMN INDAH, SELANGOR", 226: "JLN PASAR, KUALA LUMPUR",
-    228: "INANAM, KOTA KINABALU", 230: "SALAK SOUTH, KUALA LUMPUR",
-    231: "BATU BERENDAM, MELAKA", 232: "TMN MIDAH, KUALA LUMPUR",
-    233: "BENTONG", 234: "SIMPANG RENGAM", 235: "SABAK BERNAM, SELANGOR",
-    237: "KUALA LIPIS, PAHANG", 238: "JALAN KOTA, KEDAH",
-    239: "KEMAYAN, PAHANG", 240: "KAPAR, SELANGOR",
-    241: "DAMANSARA JAYA, SELANGOR", 242: "TANGKAK JOHOR",
-    243: "KUALA KANGSAR PERAK", 244: "GUNUNG RAPAT IPOH PERAK",
-    245: "BIDOR PERAK", 247: "BUKIT PASIR MUAR JOHOR",
-    248: "JLN TUN SAMBANTHAN KL", 249: "TAIPING PERAK",
-    250: "TAMAN ENG ANN SELANGOR", 251: "KAMPAR PERAK",
-    252: "TAMAN MUDA SELANGOR", 253: "JLN TANJONG TOKONG P.PINANG",
-    254: "KUALA PILAH N. SEMBILAN", 256: "PARIT BUNTAR PERAK",
-    257: "RAUB PAHANG", 258: "JITRA KEDAH", 259: "SRI AMAN SARAWAK",
-    260: "KUALA DUNGUN TERENGGANU", 261: "GUA MUSANG KELANTAN",
-    262: "TAMAN CONNAUGHT CHERAS", 263: "BENTA PAHANG",
-    264: "JALAN BESERAH PAHANG", 265: "JALAN AIR ITAM PENANG",
-    266: "JALAN DATUK KERAMAT PENANG", 267: "TMN TUN DR ISMAIL WILAYAH",
-    268: "BANDAR BUKIT TINGGI", 269: "MONT KIARA",
-    270: "BANDAR PUTERI PUCHONG", 273: "LI HUA SARAWAK",
-    274: "STUTONG SARAWAK", 275: "MEDAN SENTRAL SARAWAK",
-    276: "JALAN APAS SABAH", 277: "WAKAF SIKU KELANTAN",
-    278: "JALAN PANTAI SABAH", 279: "PUTRAJAYA", 280: "KOTA DAMANSARA",
-    281: "PELITA", 282: "PUTATAN", 283: "PRIMA SQUARE",
-    284: "BANDAR SRI PERMAISURI", 285: "BANDAR MAHKOTA CHERAS",
-    286: "BUKIT INDAH BRANCH", 287: "SUTERA UTAMA", 288: "STARPARC POINT",
-    289: "TAMAN EQUINE", 290: "TAMAN DAYA", 291: "BANDAR SUNGAI LONG",
-    292: "BANDAR MENJALARA", 293: "BANDAR SETIA ALAM",
-    294: "KOTA KEMUNING", 295: "BANDAR KINRARA", 296: "BUKIT JALIL",
-    702: "PUTRAJAYA", 703: "ISLAMIC WAKAF SIKU", 704: "ISLAMIC JALAN KOTA",
-}
-
-
-def get_report_variables(reptdate: date) -> dict[str, str]:
-    day = reptdate.day
-    week_map = {
-        8: ("1", "4", "", "", 1),
-        15: ("2", "1", "", "", 9),
-        22: ("3", "2", "", "", 16),
-    }
-    wk, wk1, wk2, wk3, sdd = week_map.get(day, ("4", "3", "2", "1", 23))
-    mm = reptdate.month
-    mm1 = 12 if wk == "1" and mm == 1 else mm - 1 if wk == "1" else mm
-    sdate = date(reptdate.year, mm, sdd)
-
-    return {
-        "NOWK": wk,
-        "NOWK1": wk1,
-        "NOWK2": wk2,
-        "NOWK3": wk3,
-        "REPTMON": f"{mm:02d}",
-        "REPTMON1": f"{mm1:02d}",
-        "REPTYEAR": str(reptdate.year),
-        "REPTDAY": f"{day:02d}",
-        "RDATE": reptdate.strftime("%d/%m/%y"),
-        "SDATE": sdate.strftime("%d/%m/%y"),
-    }
+REQUIRED_COLUMNS = ["LEVELS", "D", "ACCTNO", "RETAILID", "BRANCH", "APPRLIMT"]
 
 
 def parse_report_date(value: str | None) -> date:
@@ -157,93 +28,39 @@ def parse_report_date(value: str | None) -> date:
     raise ValueError("Invalid report date. Use YYYY-MM-DD, DD/MM/YYYY, or DD/MM/YY.")
 
 
-def resolve_input_path(path: Path) -> Path:
-    if path.exists():
-        return path
-
-    sas_path = path.with_suffix(".sas7bdat")
-    if sas_path.exists():
-        return sas_path
-
-    return path
+def sas_date(value: date) -> str:
+    return value.strftime("%d/%m/%y")
 
 
-def read_bt_sas7bdat(path: Path) -> pd.DataFrame:
+def read_input(path: Path) -> pd.DataFrame:
     df = pd.read_sas(path, format="sas7bdat", encoding="utf-8")
     df.columns = [col.upper().strip() for col in df.columns]
-    return df
 
-
-def clean_char_column(series: pd.Series) -> pd.Series:
-    return series.fillna("").astype(str).str.strip()
-
-
-def get_branch_name(branch: int) -> str:
-    return BRANCHCD.get(branch, "")
-
-
-def fmt_int(value: float | int, width: int = 8) -> str:
-    if pd.isna(value) or value == 0:
-        return f"{'.':>{width}}"
-    return f"{int(value):>{width},}"
-
-
-def fmt_amt(value: float | int, width: int = 20) -> str:
-    if pd.isna(value) or value == 0:
-        return f"{'.':>{width}}"
-    return f"{float(value):>{width},.2f}"
-
-
-def get_number(row: pd.Series, column: str, default: float = 0.0) -> float:
-    if column not in row.index:
-        return default
-    value = row[column]
-    if pd.isna(value):
-        return default
-    return float(value)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Convert SAS EIBMBTMY to Python using SAS7BDAT"
-    )
-    parser.add_argument("--base-dir", type=Path, default=DEFAULT_BASE)
-    parser.add_argument("--bnm", type=Path, default=None, help="Input SAS7BDAT file. Default: BT.sas7bdat")
-    parser.add_argument("--report-date", type=str, default=None, help="Example: 2026-05-15 or 15/05/2026")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-
-    args = parser.parse_args()
-
-    output_dir = args.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    reptdate = parse_report_date(args.report_date)
-    vars_ = get_report_variables(reptdate)
-
-    if args.bnm:
-        bnm_path = resolve_input_path(args.bnm)
-    else:
-        bnm_path = resolve_input_path(args.base_dir / "BT.sas7bdat")
-
-    df = read_bt_sas7bdat(bnm_path)
-
-    missing_columns = [col for col in REQUIRED_COLUMNS if col not in df.columns]
-    if missing_columns:
+    missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+    if missing:
         raise ValueError(
-            "Missing required columns in input file: "
-            + ", ".join(missing_columns)
+            "Missing required columns: "
+            + ", ".join(missing)
             + "\nAvailable columns: "
             + ", ".join(df.columns)
         )
 
-    df["ACCTNO"] = clean_char_column(df["ACCTNO"])
-    df["RETAILID"] = clean_char_column(df["RETAILID"])
+    return df[REQUIRED_COLUMNS].copy()
+
+
+def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    df["ACCTNO"] = df["ACCTNO"].fillna("").astype(str).str.strip()
+    df["RETAILID"] = df["RETAILID"].fillna("").astype(str).str.strip()
 
     df["LEVELS"] = pd.to_numeric(df["LEVELS"], errors="coerce")
     df["D"] = pd.to_numeric(df["D"], errors="coerce")
     df["BRANCH"] = pd.to_numeric(df["BRANCH"], errors="coerce")
     df["APPRLIMT"] = pd.to_numeric(df["APPRLIMT"], errors="coerce")
 
+    return df
+
+
+def build_report(df: pd.DataFrame) -> pd.DataFrame:
     approve = df[
         (df["LEVELS"] == 1)
         & (df["D"] == 1)
@@ -256,25 +73,28 @@ def main() -> None:
 
     prt = (
         approve.groupby(["BRANCH", "CATEGORY"], dropna=False)
-        .agg(ACCT=("APPRLIMT", "size"), APPRLIMT=("APPRLIMT", "sum"))
+        .agg(
+            ACCT=("APPRLIMT", "size"),
+            APPRLIMT=("APPRLIMT", "sum"),
+        )
         .reset_index()
     )
 
     prt = prt[prt["BRANCH"] > 0].copy()
     prt["BRANCH"] = prt["BRANCH"].astype(int)
-    prt["BRHNAME"] = prt["BRANCH"].apply(get_branch_name)
+    prt["BRHNAME"] = prt["BRANCH"].map(BRANCHCD).fillna("")
     prt["BRANCHX"] = prt["BRANCH"].astype(str).str.zfill(3) + "-" + prt["BRHNAME"]
 
-    detail_csv = output_dir / "PBB_BT_LIMIT_REPORT.csv"
-    prt.to_csv(detail_csv, index=False)
-
-    branch_total = (
+    totals = (
         prt.groupby("BRANCHX", dropna=False)
-        .agg(TOTAL_ACCTS=("ACCT", "sum"), TOTAL_LIMITS_RM=("APPRLIMT", "sum"))
+        .agg(
+            TOTAL_ACCTS=("ACCT", "sum"),
+            TOTAL_LIMITS=("APPRLIMT", "sum"),
+        )
         .reset_index()
     )
 
-    category_pivot = prt.pivot_table(
+    categories = prt.pivot_table(
         index="BRANCHX",
         columns="CATEGORY",
         values=["ACCT", "APPRLIMT"],
@@ -282,106 +102,138 @@ def main() -> None:
         fill_value=0,
         dropna=False,
     )
-    category_pivot.columns = [
-        f"{category}_{measure}"
-        for measure, category in category_pivot.columns
+
+    categories.columns = [
+        f"{category}_{measure}" for measure, category in categories.columns
     ]
-    category_pivot = category_pivot.reset_index()
 
-    report = branch_total.merge(category_pivot, on="BRANCHX", how="left")
-    report = report.sort_values("BRANCHX")
+    report = totals.merge(categories.reset_index(), on="BRANCHX", how="left")
+    return report.sort_values("BRANCHX")
 
-    report_csv = output_dir / "PBB_BT_LIMIT_REPORT_TABULATE.csv"
-    report.to_csv(report_csv, index=False)
 
-    saslist = output_dir / "SASLIST_EIBMBTMY.txt"
+def num(row: pd.Series, col: str) -> float:
+    if col not in row.index or pd.isna(row[col]):
+        return 0.0
+    return float(row[col])
 
-    with saslist.open("w", encoding="utf-8") as f:
-        f.write("PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY\n")
-        f.write(
-            "MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS "
-            f"{vars_['RDATE']}\n\n"
-        )
 
-        f.write("-" * 133 + "\n")
-        f.write(
-            f"|{'BRANCH':<28}"
-            f"|{'TOTAL':^31}"
-            f"|{'':^29}"
-            f"|{'CORPORATE':^29}"
-            f"|{'RETAIL':^29}|\n"
-        )
-        f.write(
-            f"|{'':<28}"
-            f"|{'ACCTS':>8}"
-            f"|{'TOTAL LIMITS(RM)':>22}"
-            f"|{'ACCTS':>8}"
-            f"|{'LIMITS(RM)':>20}"
-            f"|{'ACCTS':>8}"
-            f"|{'LIMITS(RM)':>20}"
-            f"|{'ACCTS':>8}"
-            f"|{'LIMITS(RM)':>20}|\n"
-        )
-        f.write("-" * 133 + "\n")
+def fmt_count(value: float, width: int = 8) -> str:
+    return f"{'.':>{width}}" if value == 0 else f"{int(value):>{width},}"
 
-        totals = {
-            "total_acct": 0.0, "total_limit": 0.0,
-            "blank_acct": 0.0, "blank_limit": 0.0,
-            "corp_acct": 0.0, "corp_limit": 0.0,
-            "retail_acct": 0.0, "retail_limit": 0.0,
+
+def fmt_amt(value: float, width: int = 20) -> str:
+    return f"{'.':>{width}}" if value == 0 else f"{value:>{width},.2f}"
+
+
+def write_saslist(report: pd.DataFrame, output: Path, report_date: date) -> None:
+    title1 = "PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY"
+    title2 = f"MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS {sas_date(report_date)}"
+
+    rows = []
+    totals = {
+        "total_acct": 0.0,
+        "total_limit": 0.0,
+        "blank_acct": 0.0,
+        "blank_limit": 0.0,
+        "corp_acct": 0.0,
+        "corp_limit": 0.0,
+        "retail_acct": 0.0,
+        "retail_limit": 0.0,
+    }
+
+    for _, row in report.iterrows():
+        item = {
+            "branch": str(row["BRANCHX"])[:28],
+            "total_acct": num(row, "TOTAL_ACCTS"),
+            "total_limit": num(row, "TOTAL_LIMITS"),
+            "blank_acct": num(row, "_ACCT"),
+            "blank_limit": num(row, "_APPRLIMT"),
+            "corp_acct": num(row, "CORPORATE_ACCT"),
+            "corp_limit": num(row, "CORPORATE_APPRLIMT"),
+            "retail_acct": num(row, "RETAIL_ACCT"),
+            "retail_limit": num(row, "RETAIL_APPRLIMT"),
         }
+        rows.append(item)
 
-        for _, row in report.iterrows():
-            total_acct = get_number(row, "TOTAL_ACCTS")
-            total_limit = get_number(row, "TOTAL_LIMITS_RM")
-            blank_acct = get_number(row, "_ACCT")
-            blank_limit = get_number(row, "_APPRLIMT")
-            corp_acct = get_number(row, "CORPORATE_ACCT")
-            corp_limit = get_number(row, "CORPORATE_APPRLIMT")
-            retail_acct = get_number(row, "RETAIL_ACCT")
-            retail_limit = get_number(row, "RETAIL_APPRLIMT")
+        for key in totals:
+            totals[key] += item[key]
 
-            totals["total_acct"] += total_acct
-            totals["total_limit"] += total_limit
-            totals["blank_acct"] += blank_acct
-            totals["blank_limit"] += blank_limit
-            totals["corp_acct"] += corp_acct
-            totals["corp_limit"] += corp_limit
-            totals["retail_acct"] += retail_acct
-            totals["retail_limit"] += retail_limit
+    with output.open("w", encoding="utf-8") as f:
+        f.write(f"{title1}\n{title2}\n\n")
+        f.write("-" * 133 + "\n")
+        f.write(
+            f"|{'BRANCH':<28}|{'TOTAL':^31}|{'':^29}|"
+            f"{'CORPORATE':^29}|{'RETAIL':^8}|\n"
+        )
+        f.write(
+            f"|{'':<28}|{'ACCTS':^8}|{'TOTAL LIMITS(RM)':^22}|"
+            f"{'ACCTS':^8}|{'LIMITS(RM)':^20}|"
+            f"{'ACCTS':^8}|{'LIMITS(RM)':^20}|{'ACCTS':^8}|\n"
+        )
+        f.write("-" * 133 + "\n")
 
+        for row in rows:
             f.write(
-                f"|{row['BRANCHX']:<28}"
-                f"|{fmt_int(total_acct)}"
-                f"|{fmt_amt(total_limit, 22)}"
-                f"|{fmt_int(blank_acct)}"
-                f"|{fmt_amt(blank_limit, 20)}"
-                f"|{fmt_int(corp_acct)}"
-                f"|{fmt_amt(corp_limit, 20)}"
-                f"|{fmt_int(retail_acct)}"
-                f"|{fmt_amt(retail_limit, 20)}|\n"
+                f"|{row['branch']:<28}"
+                f"|{fmt_count(row['total_acct'])}"
+                f"|{fmt_amt(row['total_limit'], 22)}"
+                f"|{fmt_count(row['blank_acct'])}"
+                f"|{fmt_amt(row['blank_limit'])}"
+                f"|{fmt_count(row['corp_acct'])}"
+                f"|{fmt_amt(row['corp_limit'])}"
+                f"|{fmt_count(row['retail_acct'])}|\n"
             )
 
-        f.write("-" * 133 + "\n")
         f.write(
             f"|{'TOTAL':<28}"
-            f"|{fmt_int(totals['total_acct'])}"
+            f"|{fmt_count(totals['total_acct'])}"
             f"|{fmt_amt(totals['total_limit'], 22)}"
-            f"|{fmt_int(totals['blank_acct'])}"
-            f"|{fmt_amt(totals['blank_limit'], 20)}"
-            f"|{fmt_int(totals['corp_acct'])}"
-            f"|{fmt_amt(totals['corp_limit'], 20)}"
-            f"|{fmt_int(totals['retail_acct'])}"
-            f"|{fmt_amt(totals['retail_limit'], 20)}|\n"
+            f"|{fmt_count(totals['blank_acct'])}"
+            f"|{fmt_amt(totals['blank_limit'])}"
+            f"|{fmt_count(totals['corp_acct'])}"
+            f"|{fmt_amt(totals['corp_limit'])}"
+            f"|{fmt_count(totals['retail_acct'])}|\n"
         )
-        f.write("-" * 133 + "\n")
+        f.write("-" * 133 + "\n\n")
 
-    print(f"BNM Input    : {bnm_path}")
-    print(f"Rows input   : {len(df):,}")
-    print(f"Rows approve : {len(approve):,}")
-    print(f"Detail CSV   : {detail_csv}")
-    print(f"Report CSV   : {report_csv}")
-    print(f"SASLIST      : {saslist}")
+        f.write("(Continued)\n")
+        f.write(f"{title1}\n{title2}\n\n")
+        f.write("-" * 51 + "\n")
+        f.write(f"|{'BRANCH':<28}|{'RETAIL':^20}|\n")
+        f.write(f"|{'':<28}|{'LIMITS(RM)':^20}|\n")
+        f.write(f"|{'-' * 28}+{'-' * 20}|\n")
+
+        for row in rows:
+            f.write(f"|{row['branch']:<28}|{fmt_amt(row['retail_limit'])}|\n")
+
+        f.write(f"|{'TOTAL':<28}|{fmt_amt(totals['retail_limit'])}|\n")
+        f.write("-" * 51 + "\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIBMBTMY SAS7BDAT conversion")
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--report-date", type=str, default=None)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    args = parser.parse_args()
+
+    report_date = parse_report_date(args.report_date)
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    df = clean_data(read_input(args.input))
+    report = build_report(df)
+
+    report_csv = args.output_dir / "PBB_BT_LIMIT_REPORT_TABULATE.csv"
+    saslist = args.output_dir / "SASLIST_EIBMBTMY.txt"
+
+    report.to_csv(report_csv, index=False)
+    write_saslist(report, saslist, report_date)
+
+    print(f"Input       : {args.input}")
+    print(f"Rows input  : {len(df):,}")
+    print(f"Report CSV  : {report_csv}")
+    print(f"SASLIST     : {saslist}")
 
 
 if __name__ == "__main__":
