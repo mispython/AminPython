@@ -1,3 +1,401 @@
+#!/usr/bin/env python3
+"""
+Python conversion of mainframe SAS job EIBMBTMY.
+
+Input:
+- Semicolon-delimited text file
+- Default input name follows SAS:
+  BTMAST{REPTMON}{NOWK}.txt
+  Example: BTMAST054.txt
+
+Expected input columns:
+LEVELS;D;ACCTNO;RETAILID;BRANCH;APPRLIMT
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date, datetime
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+
+
+def get_report_variables(reptdate: date) -> dict[str, str]:
+    day = reptdate.day
+
+    week_map = {
+        8: ("1", "4", "", "", 1),
+        15: ("2", "1", "", "", 9),
+        22: ("3", "2", "", "", 16),
+    }
+
+    wk, wk1, wk2, wk3, sdd = week_map.get(
+        day,
+        ("4", "3", "2", "1", 23),
+    )
+
+    mm = reptdate.month
+
+    if wk == "1":
+        mm1 = 12 if mm == 1 else mm - 1
+    else:
+        mm1 = mm
+
+    sdate = date(reptdate.year, mm, sdd)
+
+    return {
+        "NOWK": wk,
+        "NOWK1": wk1,
+        "NOWK2": wk2,
+        "NOWK3": wk3,
+        "REPTMON": f"{mm:02d}",
+        "REPTMON1": f"{mm1:02d}",
+        "REPTYEAR": str(reptdate.year),
+        "REPTDAY": f"{day:02d}",
+        "RDATE": reptdate.strftime("%d/%m/%y"),
+        "SDATE": sdate.strftime("%d/%m/%y"),
+    }
+
+
+def parse_report_date(value: str | None) -> date:
+    if not value:
+        return date.today()
+
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            pass
+
+    raise ValueError("Invalid report date. Use YYYY-MM-DD, DD/MM/YYYY, or DD/MM/YY.")
+
+
+def resolve_input_path(path: Path) -> Path:
+    if path.exists():
+        return path
+
+    txt_path = path.with_suffix(".txt")
+    if txt_path.exists():
+        return txt_path
+
+    csv_path = path.with_suffix(".csv")
+    if csv_path.exists():
+        return csv_path
+
+    return path
+
+
+def read_semicolon_file(path: Path) -> pd.DataFrame:
+    return pd.read_csv(
+        path,
+        sep=";",
+        dtype=str,
+        encoding="utf-8",
+    )
+
+
+def clean_char_column(series: pd.Series) -> pd.Series:
+    return series.fillna("").astype(str).str.strip()
+
+
+def get_branch_name(branch: int) -> str:
+    """
+    SAS:
+        BRHNAME = PUT(BRANCH, BRANCHCD.);
+
+    Fill this mapping from PBBDPFMT if available.
+    """
+    branch_map: dict[int, str] = {
+        # 1: "MAIN BRANCH",
+        # 2: "IPOH",
+    }
+
+    return branch_map.get(branch, "")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Convert SAS EIBMBTMY to Python"
+    )
+
+    parser.add_argument(
+        "--base-dir",
+        type=Path,
+        default=DEFAULT_BASE,
+        help="Base input directory",
+    )
+
+    parser.add_argument(
+        "--bnm",
+        type=Path,
+        default=None,
+        help=(
+            "Optional semicolon-delimited input file. "
+            "If not supplied, uses BTMAST{REPTMON}{NOWK}.txt"
+        ),
+    )
+
+    parser.add_argument(
+        "--report-date",
+        type=str,
+        default=None,
+        help="Report date. Example: 2026-05-24 or 24/05/2026",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+    )
+
+    args = parser.parse_args()
+
+    output_dir = args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ----------------------------------------------------------
+    # REPORT VARIABLES
+    # SAS source: LOAN.REPTDATE
+    # ----------------------------------------------------------
+
+    reptdate = parse_report_date(args.report_date)
+    vars_ = get_report_variables(reptdate)
+
+    # ----------------------------------------------------------
+    # INPUT
+    # SAS:
+    # SET BNM.BTMAST&REPTMON&NOWK;
+    # Example: BTMAST054.txt
+    # ----------------------------------------------------------
+
+    if args.bnm:
+        bnm_path = resolve_input_path(args.bnm)
+    else:
+        bnm_name = f"BTMAST{vars_['REPTMON']}{vars_['NOWK']}.txt"
+        bnm_path = resolve_input_path(args.base_dir / bnm_name)
+
+    df = read_semicolon_file(bnm_path)
+    df.columns = [col.upper().strip() for col in df.columns]
+
+    required_columns = [
+        "LEVELS",
+        "D",
+        "ACCTNO",
+        "RETAILID",
+        "BRANCH",
+        "APPRLIMT",
+    ]
+
+    missing_columns = [col for col in required_columns if col not in df.columns]
+
+    if missing_columns:
+        raise ValueError(
+            "Missing required columns in input file: "
+            + ", ".join(missing_columns)
+        )
+
+    # ----------------------------------------------------------
+    # CLEAN / TYPE CONVERSION
+    # ----------------------------------------------------------
+
+    df["ACCTNO"] = clean_char_column(df["ACCTNO"])
+    df["RETAILID"] = clean_char_column(df["RETAILID"])
+
+    df["LEVELS"] = pd.to_numeric(df["LEVELS"], errors="coerce")
+    df["D"] = pd.to_numeric(df["D"], errors="coerce")
+    df["BRANCH"] = pd.to_numeric(df["BRANCH"], errors="coerce")
+    df["APPRLIMT"] = pd.to_numeric(df["APPRLIMT"], errors="coerce").fillna(0)
+
+    # ----------------------------------------------------------
+    # FILTER APPROVE
+    # SAS:
+    # WHERE LEVELS = 1 AND D = 1 AND SUBSTR(ACCTNO,1,2)='25';
+    # ----------------------------------------------------------
+
+    approve = df[
+        (df["LEVELS"] == 1)
+        & (df["D"] == 1)
+        & (df["ACCTNO"].str[:2] == "25")
+    ].copy()
+
+    # ----------------------------------------------------------
+    # CATEGORY
+    # SAS:
+    # IF RETAILID='C' THEN CATEGORY='CORPORATE';
+    # ELSE IF RETAILID='R' THEN CATEGORY='RETAIL   ';
+    # ----------------------------------------------------------
+
+    approve["CATEGORY"] = ""
+
+    approve.loc[approve["RETAILID"] == "C", "CATEGORY"] = "CORPORATE"
+    approve.loc[approve["RETAILID"] == "R", "CATEGORY"] = "RETAIL"
+
+    # ----------------------------------------------------------
+    # SUMMARY
+    # SAS PROC SUMMARY:
+    # CLASS BRANCH CATEGORY;
+    # VAR APPRLIMT;
+    # _FREQ_ renamed to ACCT.
+    # Use size to match SAS _FREQ_ row count.
+    # ----------------------------------------------------------
+
+    prt = (
+        approve.groupby(
+            ["BRANCH", "CATEGORY"],
+            dropna=False,
+        )
+        .agg(
+            ACCT=("APPRLIMT", "size"),
+            APPRLIMT=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    # ----------------------------------------------------------
+    # BRANCH FILTER
+    # SAS:
+    # IF BRANCH > 0;
+    # Note: This EIBMBTMY job has no BRANCH >= 3000 adjustment.
+    # ----------------------------------------------------------
+
+    prt = prt[prt["BRANCH"] > 0].copy()
+    prt["BRANCH"] = prt["BRANCH"].astype(int)
+
+    # ----------------------------------------------------------
+    # BRANCH NAME
+    # SAS:
+    # BRHNAME=PUT(BRANCH,BRANCHCD.);
+    # BRANCHX=PUT(BRANCH,Z3.)||"-"||BRHNAME;
+    # ----------------------------------------------------------
+
+    prt["BRHNAME"] = prt["BRANCH"].apply(get_branch_name)
+
+    prt["BRANCHX"] = (
+        prt["BRANCH"].astype(str).str.zfill(3)
+        + "-"
+        + prt["BRHNAME"]
+    )
+
+    # ----------------------------------------------------------
+    # OUTPUT DETAIL CSV
+    # ----------------------------------------------------------
+
+    output_csv = output_dir / "PBB_BT_LIMIT_REPORT.csv"
+
+    prt.to_csv(output_csv, index=False)
+
+    # ----------------------------------------------------------
+    # TABULATE-LIKE REPORT DATA
+    # ----------------------------------------------------------
+
+    branch_total = (
+        prt.groupby("BRANCHX", dropna=False)
+        .agg(
+            TOTAL_ACCTS=("ACCT", "sum"),
+            TOTAL_LIMITS_RM=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    category_pivot = prt.pivot_table(
+        index="BRANCHX",
+        columns="CATEGORY",
+        values=["ACCT", "APPRLIMT"],
+        aggfunc="sum",
+        fill_value=0,
+        dropna=False,
+    )
+
+    category_pivot.columns = [
+        f"{category}_{measure}"
+        for measure, category in category_pivot.columns
+    ]
+
+    category_pivot = category_pivot.reset_index()
+
+    report = branch_total.merge(
+        category_pivot,
+        on="BRANCHX",
+        how="left",
+    )
+
+    report = report.sort_values("BRANCHX")
+
+    report_csv = output_dir / "PBB_BT_LIMIT_REPORT_TABULATE.csv"
+
+    report.to_csv(report_csv, index=False)
+
+    # ----------------------------------------------------------
+    # SASLIST REPORT
+    # ----------------------------------------------------------
+
+    saslist = output_dir / "SASLIST_EIBMBTMY.txt"
+
+    with saslist.open("w", encoding="utf-8") as f:
+        f.write("PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY\n")
+        f.write(
+            "MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS "
+            f"{vars_['RDATE']}\n\n"
+        )
+
+        f.write(
+            f"{'BRANCH':<30}"
+            f"{'TOTAL ACCTS':>12}"
+            f"{'TOTAL LIMITS(RM)':>22}"
+            f"{'CORP ACCTS':>12}"
+            f"{'CORP LIMITS(RM)':>22}"
+            f"{'RETAIL ACCTS':>14}"
+            f"{'RETAIL LIMITS(RM)':>22}\n"
+        )
+
+        f.write("-" * 134 + "\n")
+
+        grand_total_acct = 0
+        grand_total_limit = 0.0
+
+        for _, row in report.iterrows():
+            corp_acct = row.get("CORPORATE_ACCT", 0)
+            corp_limit = row.get("CORPORATE_APPRLIMT", 0.0)
+            retail_acct = row.get("RETAIL_ACCT", 0)
+            retail_limit = row.get("RETAIL_APPRLIMT", 0.0)
+
+            grand_total_acct += row["TOTAL_ACCTS"]
+            grand_total_limit += row["TOTAL_LIMITS_RM"]
+
+            f.write(
+                f"{row['BRANCHX']:<30}"
+                f"{int(row['TOTAL_ACCTS']):>12,}"
+                f"{row['TOTAL_LIMITS_RM']:>22,.2f}"
+                f"{int(corp_acct):>12,}"
+                f"{corp_limit:>22,.2f}"
+                f"{int(retail_acct):>14,}"
+                f"{retail_limit:>22,.2f}\n"
+            )
+
+        f.write("-" * 134 + "\n")
+        f.write(
+            f"{'TOTAL':<30}"
+            f"{int(grand_total_acct):>12,}"
+            f"{grand_total_limit:>22,.2f}\n"
+        )
+
+    print(f"BNM Input  : {bnm_path}")
+    print(f"CSV Output : {output_csv}")
+    print(f"Report CSV : {report_csv}")
+    print(f"SASLIST    : {saslist}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
 //EIBMBTMY JOB MISEIS,EIBMBTMY,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID,       JOB10766
 //         USER=OPCC,REGION=8M
 /*JOBPARM S=S1M1
