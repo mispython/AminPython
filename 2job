@@ -1,564 +1,32 @@
 #!/usr/bin/env python3
-"""Fast streaming Python conversion of SAS job EIBMSCRA.
+"""
+Python conversion of mainframe SAS job EIIMBTMY.
 
-This version keeps all outputs but avoids storing every account-level row.
-It aggregates SRSBR, SRSHO, and SRSP while reading the fixed-width text files.
+Input:
+- Semicolon-delimited text file
+- Default file naming follows SAS dataset logic:
+  IBTMAST{REPTMON}{NOWK}.txt
+  Example: IBTMAST054.txt
+
+Expected text file:
+- First row contains column headers
+- Delimiter is semicolon ;
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
-from collections import defaultdict
-from dataclasses import dataclass
 from datetime import date, datetime
-from pathlib import Path
-from typing import Iterable
-
-
-DEFAULT_BASE = Path("input/prod")
-DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
-SUM_FIELDS = ("c1cnt", "c2cnt", "c3cnt", "c1bal", "c2bal", "c3bal")
-
-
-try:
-    import pbbdpfmt  # noqa: F401
-    import pbmisfmt  # noqa: F401
-except ImportError:
-    try:
-        from includes import pbbdpfmt, pbmisfmt  # noqa: F401
-    except ImportError:
-        pbbdpfmt = pbmisfmt = None
-
-
-@dataclass(frozen=True)
-class Branch:
-    branch: int
-    brchcd: str
-
-
-@dataclass(frozen=True)
-class HrBranch:
-    staff: int
-    branch: int
-    brchcd: str
-
-
-@dataclass(frozen=True)
-class HrHo:
-    staff: int
-    hoe: str
-
-
-@dataclass
-class MiniRecord:
-    staff: int
-    product: str
-    ncore: str
-    branch: int = 0
-    brchcd: str = ""
-    hoe: str = ""
-    tag: str = ""
-    acctno: int | None = None
-    aanum: str = ""
-    c1cnt: int = 0
-    c2cnt: int = 0
-    c3cnt: int = 0
-    c1bal: float = 0.0
-    c2bal: float = 0.0
-    c3bal: float = 0.0
-
-
-def parse_sas_number(raw: str, implied_decimals: int = 0) -> float:
-    value = raw.strip()
-    if not value or value == "." or value.startswith("."):
-        return 0.0
-    if "." in value:
-        return float(value)
-    return int(value) / (10**implied_decimals)
-
-
-def parse_int(raw: str) -> int:
-    return int(parse_sas_number(raw))
-
-
-def resolve_input_path(path: Path) -> Path:
-    variants = [path]
-    if path.suffix.lower() != ".txt":
-        variants.append(path.with_name(f"{path.name}.txt"))
-
-    if path.is_absolute():
-        for variant in variants:
-            if variant.exists():
-                return variant
-        return path
-
-    for base in (Path.cwd(), *Path.cwd().parents):
-        for variant in variants:
-            candidate = base / variant
-            if candidate.exists():
-                return candidate
-    return Path.cwd() / path
-
-
-def existing_paths(paths: Iterable[Path]) -> list[Path]:
-    resolved = []
-    for path in paths:
-        item = resolve_input_path(path)
-        if item.exists():
-            resolved.append(item)
-    return resolved
-
-
-def format_report_date(value: str, output_format: str = "%d/%m/%Y") -> str:
-    value = value.strip()
-    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%Y%m%d", "%d%m%Y", "%d%m%y"):
-        try:
-            return datetime.strptime(value, fmt).strftime(output_format)
-        except ValueError:
-            pass
-    raise ValueError(f"Cannot parse report date: {value!r}")
-
-
-def read_report_date(path: Path | None, override: str | None) -> str:
-    if override:
-        return format_report_date(override)
-    if path is None or not path.exists():
-        return date.today().strftime("%d/%m/%Y")
-    text = path.read_text(encoding="utf-8").strip()
-    if not text:
-        return date.today().strftime("%d/%m/%Y")
-    first_line = text.splitlines()[0]
-    if "," in first_line:
-        rows = list(csv.DictReader(text.splitlines()))
-        if rows:
-            raw = rows[0].get("REPTDATE") or rows[0].get("reptdate")
-            if raw:
-                return format_report_date(raw)
-    return format_report_date(text.replace(",", " ").split()[0])
-
-
-def add_sums(target: list[float], row: MiniRecord) -> None:
-    target[0] += row.c1cnt
-    target[1] += row.c2cnt
-    target[2] += row.c3cnt
-    target[3] += row.c1bal
-    target[4] += row.c2bal
-    target[5] += row.c3bal
-
-
-def empty_sums() -> list[float]:
-    return [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-
-
-class Aggregator:
-    def __init__(self, hr_ho_by_staff: dict[int, HrHo], hr_branch_by_staff: dict[int, HrBranch]) -> None:
-        self.hr_ho_by_staff = hr_ho_by_staff
-        self.hr_branch_by_staff = hr_branch_by_staff
-        self.srsbr: dict[tuple[str, int, str, str], list[float]] = defaultdict(empty_sums)
-        self.srsho: dict[tuple[str, int, str, str], list[float]] = defaultdict(empty_sums)
-        self.staff_product_ncore: dict[tuple[int, str, str], list[float]] = defaultdict(empty_sums)
-        self.exception_lines = ["EXCEPTION REPORT : UMMATCHED STAFF ID AGAINST HR FILE", "", "ELDS"]
-        self.exception_lines.append(f"{'AANUM':<14}{'STAFF':>8}  {'PRODUCT':<18}{'YTDBAL':>14}")
-        self.depo_exception_lines = ["", "DEPO"]
-        self.depo_exception_lines.append(f"{'ACCTNO':<14}{'STAFF':>8}  {'PRODUCT':<18}{'YTDBAL':>14}")
-
-    def add_srs(self, row: MiniRecord) -> None:
-        hr_ho = self.hr_ho_by_staff.get(row.staff)
-        if hr_ho:
-            row.hoe = hr_ho.hoe
-            add_sums(self.srsho[(row.hoe, row.staff, row.product, row.ncore)], row)
-            add_sums(self.staff_product_ncore[(row.staff, row.product, row.ncore)], row)
-        elif row.branch > 0:
-            add_sums(self.srsbr[(row.brchcd, row.staff, row.product, row.ncore)], row)
-            add_sums(self.staff_product_ncore[(row.staff, row.product, row.ncore)], row)
-        else:
-            ytdbal = row.c1bal + row.c2bal + row.c3bal
-            if row.tag == "ELDS":
-                self.exception_lines.append(f"{row.aanum:<14}{row.staff:>8}  {row.product:<18}{ytdbal:>14,.2f}")
-            elif row.tag == "DEPO":
-                self.depo_exception_lines.append(f"{row.acctno or '':<14}{row.staff:>8}  {row.product:<18}{ytdbal:>14,.2f}")
-
-    def add_card(self, row: MiniRecord) -> None:
-        hr_branch = self.hr_branch_by_staff.get(row.staff)
-        if hr_branch:
-            row.branch = hr_branch.branch
-            row.brchcd = hr_branch.brchcd
-            add_sums(self.srsbr[(row.brchcd, row.staff, row.product, row.ncore)], row)
-            add_sums(self.staff_product_ncore[(row.staff, row.product, row.ncore)], row)
-            return
-
-        hr_ho = self.hr_ho_by_staff.get(row.staff)
-        if hr_ho:
-            row.hoe = hr_ho.hoe
-            add_sums(self.srsho[(row.hoe, row.staff, row.product, row.ncore)], row)
-            add_sums(self.staff_product_ncore[(row.staff, row.product, row.ncore)], row)
-
-
-def read_branch_file(path: Path) -> tuple[dict[int, Branch], dict[str, Branch]]:
-    by_branch: dict[int, Branch] = {}
-    by_brchcd: dict[str, Branch] = {}
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            branch = parse_int(line[1:4])
-            brchcd = line[5:8].strip()
-            item = Branch(branch, brchcd)
-            by_branch[branch] = item
-            by_brchcd[brchcd] = item
-    return by_branch, by_brchcd
-
-
-def read_hr_branch(path: Path) -> dict[int, HrBranch]:
-    rows: dict[int, HrBranch] = {}
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            staff = parse_int(line[4:9])
-            branch = parse_int(line[68:71])
-            brchcd = line[71:74].strip()
-            if 2 <= branch <= 267:
-                rows[staff] = HrBranch(staff, branch, brchcd)
-    return rows
-
-
-def read_hr_ho(path: Path) -> dict[int, HrHo]:
-    rows: dict[int, HrHo] = {}
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            rows[parse_int(line[4:9])] = HrHo(parse_int(line[4:9]), line[71:86].strip())
-    return rows
-
-
-def process_cards(paths: Iterable[Path], agg: Aggregator) -> None:
-    for path in paths:
-        print(f"Reading {path}")
-        with path.open("r", encoding="utf-8") as handle:
-            for line_no, line in enumerate(handle, start=1):
-                if line_no % 1_000_000 == 0:
-                    print(f"  {path.name}: {line_no:,} lines")
-                if not line.strip():
-                    continue
-                acctno = parse_int(line[0:11])
-                typec = int(str(acctno)[:5])
-                if typec not in {3301, 3302, 3305, 3306, 3308, 3309, 5503, 5504}:
-                    continue
-                opnmm = parse_int(line[13:15])
-                opnyr = parse_int(line[15:17])
-                seco = line[560:572].strip()
-                if not ((opnyr == 6 and opnmm > 8) or opnyr >= 7):
-                    continue
-                if not (1 < len(seco) < 6):
-                    continue
-                staff = parse_int(seco)
-                if not (1 < staff < 99999):
-                    continue
-                if typec == 3309:
-                    agg.add_card(MiniRecord(staff=staff, product="CARD", ncore="X", acctno=acctno, c1cnt=1))
-                else:
-                    agg.add_card(MiniRecord(staff=staff, product="CARD", ncore="C", acctno=acctno, c2cnt=1))
-
-
-def process_dep(paths: Iterable[Path], branch_by_number: dict[int, Branch], agg: Aggregator) -> None:
-    for path in paths:
-        print(f"Reading {path}")
-        with path.open("r", encoding="utf-8") as handle:
-            for line_no, line in enumerate(handle, start=1):
-                if line_no % 1_000_000 == 0:
-                    print(f"  {path.name}: {line_no:,} lines")
-                if not line.strip():
-                    continue
-                acctno = parse_int(line[1:11])
-                primoff = parse_int(line[49:54])
-                secnoff = parse_int(line[55:60])
-                xcore = line[60:61]
-                ytdbals = parse_sas_number(line[75:89], implied_decimals=2)
-                nummth = parse_int(line[89:91])
-                branch_no = parse_int(line[96:99])
-                branch = branch_by_number.get(branch_no)
-
-                product = ""
-                if 1000000000 <= acctno <= 1999999999 or 7000000000 <= acctno <= 7999999999:
-                    product = "FIXED DEPOSITS"
-                elif 3000000000 <= acctno <= 3999999999:
-                    product = "CURRENT ACCOUNT"
-                elif 4000000000 <= acctno <= 4999999999 or 6000000000 <= acctno <= 6999999999:
-                    product = "SAVING ACCOUNT"
-                if not product:
-                    continue
-
-                ytdbal = round(ytdbals / nummth) if nummth else 0.0
-                brchcd = branch.brchcd if branch else ""
-                if primoff and xcore == " ":
-                    agg.add_srs(
-                        MiniRecord(
-                            staff=primoff, product=product, ncore="X", branch=branch_no,
-                            brchcd=brchcd, tag="DEPO", acctno=acctno, c1cnt=1, c1bal=ytdbal
-                        )
-                    )
-
-                staff = secnoff or primoff
-                if staff and xcore == "C":
-                    agg.add_srs(
-                        MiniRecord(
-                            staff=staff, product=product, ncore="C", branch=branch_no,
-                            brchcd=brchcd, tag="DEPO", acctno=acctno, c2cnt=1, c2bal=ytdbal
-                        )
-                    )
-                elif staff and xcore == "N":
-                    agg.add_srs(
-                        MiniRecord(
-                            staff=staff, product=product, ncore="N", branch=branch_no,
-                            brchcd=brchcd, tag="DEPO", acctno=acctno, c3cnt=1, c3bal=ytdbal
-                        )
-                    )
-
-
-def process_elds(path: Path, branch_by_code: dict[str, Branch], agg: Aggregator) -> None:
-    if not path.exists():
-        return
-    print(f"Reading {path}")
-    with path.open("r", encoding="utf-8") as handle:
-        for line_no, line in enumerate(handle, start=1):
-            if line_no % 1_000_000 == 0:
-                print(f"  {path.name}: {line_no:,} lines")
-            if not line.strip():
-                continue
-            aanum = line[0:13].strip()
-            stafx1 = line[16:21].strip()
-            stafx2 = line[25:30].strip()
-            stafx3 = line[34:39].strip()
-            product = line[50:68].strip()
-            ytdbal = parse_sas_number(line[68:80])
-            branch = branch_by_code.get(aanum[:3])
-            if stafx1 == "*****" or branch is None:
-                continue
-
-            ncore = ""
-            staff_raw = ""
-            if "00001" <= stafx1 <= "99999":
-                ncore, staff_raw = "X", stafx1
-            if "00001" <= stafx2 <= "99999":
-                ncore, staff_raw = "C", stafx2
-            if "00001" <= stafx3 <= "99999":
-                ncore, staff_raw = "N", stafx3
-            if not ncore:
-                continue
-
-            kwargs = {"c1cnt": 0, "c2cnt": 0, "c3cnt": 0, "c1bal": 0.0, "c2bal": 0.0, "c3bal": 0.0}
-            if ncore == "X":
-                kwargs["c1cnt"], kwargs["c1bal"] = 1, ytdbal
-            elif ncore == "C":
-                kwargs["c2cnt"], kwargs["c2bal"] = 1, ytdbal
-            else:
-                kwargs["c3cnt"], kwargs["c3bal"] = 1, ytdbal
-
-            agg.add_srs(
-                MiniRecord(
-                    staff=parse_int(staff_raw), product=product, ncore=ncore,
-                    branch=branch.branch, brchcd=branch.brchcd, tag="ELDS", aanum=aanum, **kwargs
-                )
-            )
-
-
-def rows_from_grouped(grouped: dict[tuple[object, ...], list[float]], fieldnames: tuple[str, ...]) -> list[dict[str, object]]:
-    rows = []
-    for key in sorted(grouped):
-        row = dict(zip(fieldnames, key))
-        for name, value in zip(SUM_FIELDS, grouped[key]):
-            row[name] = value
-        rows.append(row)
-    return rows
-
-
-def write_summary_csv(rows: list[dict[str, object]], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not rows:
-        path.write_text("", encoding="utf-8")
-        return
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def product_summary(staff_grouped: dict[tuple[int, str, str], list[float]]) -> list[dict[str, object]]:
-    product_rows: dict[str, dict[str, float | str]] = {}
-    for (_staff, product, ncore), sums in staff_grouped.items():
-        row = product_rows.setdefault(
-            product,
-            {
-                "product": product, "s1cnt": 0.0, "c1cnt": 0.0, "c1bal": 0.0,
-                "s2cnt": 0.0, "c2cnt": 0.0, "c2bal": 0.0,
-                "s3cnt": 0.0, "c3cnt": 0.0, "c3bal": 0.0,
-            },
-        )
-        c1cnt, c2cnt, c3cnt, c1bal, c2bal, c3bal = sums
-        row["s1cnt"] += 1 if ncore == "X" else 0
-        row["s2cnt"] += 1 if ncore == "C" else 0
-        row["s3cnt"] += 1 if ncore == "N" else 0
-        row["c1cnt"] += c1cnt
-        row["c2cnt"] += c2cnt
-        row["c3cnt"] += c3cnt
-        row["c1bal"] += c1bal
-        row["c2bal"] += c2bal
-        row["c3bal"] += c3bal
-    return [product_rows[key] for key in sorted(product_rows)]
-
-
-def write_exception_report(agg: Aggregator, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(agg.exception_lines + agg.depo_exception_lines) + "\n", encoding="utf-8")
-
-
-def write_print_report(rows: list[dict[str, object]], report_date: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [
-        "SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR BY PRODUCT",
-        f"REPORT DATE: {report_date}",
-        "",
-        (
-            f"{'PRODUCT':<20}{'CAT.1 #STAFF':>14}{'CAT.1 #ACCTS':>14}{'CAT.1 YTD BALANCE':>22}"
-            f"{'CAT.2 #STAFF CORE':>20}{'CAT.2 #ACCTS CORE':>20}{'CAT.2 YTDBAL CORE':>22}"
-            f"{'CAT.2 #STAFF NON-CORE':>24}{'CAT.2 #ACCTS NON-CORE':>24}{'CAT.2 YTDBAL NON-CORE':>26}"
-        ),
-    ]
-    totals = defaultdict(float)
-    for row in rows:
-        for key, value in row.items():
-            if key != "product":
-                totals[key] += float(value)
-        lines.append(
-            f"{str(row['product']):<20}"
-            f"{row['s1cnt']:>14.0f}{row['c1cnt']:>14.0f}{row['c1bal']:>22,.2f}"
-            f"{row['s2cnt']:>20.0f}{row['c2cnt']:>20.0f}{row['c2bal']:>22,.2f}"
-            f"{row['s3cnt']:>24.0f}{row['c3cnt']:>24.0f}{row['c3bal']:>26,.2f}"
-        )
-    lines.append(
-        f"{'TOTAL':<20}"
-        f"{totals['s1cnt']:>14.0f}{totals['c1cnt']:>14.0f}{totals['c1bal']:>22,.2f}"
-        f"{totals['s2cnt']:>20.0f}{totals['c2cnt']:>20.0f}{totals['c2bal']:>22,.2f}"
-        f"{totals['s3cnt']:>24.0f}{totals['c3cnt']:>24.0f}{totals['c3bal']:>26,.2f}"
-    )
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Fast EIBMSCRA conversion with all outputs.")
-    parser.add_argument("--mnitb-reptdate", type=Path, help="Optional report-date text/CSV file.")
-    parser.add_argument("--brhfi", type=Path, default=DEFAULT_BASE / "BRANCH.txt")
-    parser.add_argument("--elds", type=Path, default=DEFAULT_BASE / "ELDS.txt")
-    parser.add_argument("--dep", action="append", type=Path, default=None)
-    parser.add_argument("--cardfile", action="append", type=Path, default=None)
-    parser.add_argument("--hrbr", type=Path, default=DEFAULT_BASE / "BRSTAF.TXT")
-    parser.add_argument("--hrho", type=Path, default=DEFAULT_BASE / "HOSTAF.TXT")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--report-date")
-    args = parser.parse_args()
- 
-    dep_paths = existing_paths(args.dep or [DEFAULT_BASE / "DP_SRR.txt", DEFAULT_BASE / "DP_SCRFFD.txt"])
-    card_paths = existing_paths(args.cardfile or [DEFAULT_BASE / "ACCT33.txt", DEFAULT_BASE / "ACCT55.txt"])
-    report_date_path = resolve_input_path(args.mnitb_reptdate) if args.mnitb_reptdate else None
-    report_date = read_report_date(report_date_path, args.report_date)
-
-    branch_by_number, branch_by_code = read_branch_file(resolve_input_path(args.brhfi))
-    hr_branch_by_staff = read_hr_branch(resolve_input_path(args.hrbr))
-    hr_ho_by_staff = read_hr_ho(resolve_input_path(args.hrho))
-    agg = Aggregator(hr_ho_by_staff, hr_branch_by_staff)
-
-    process_cards(card_paths, agg)
-    process_dep(dep_paths, branch_by_number, agg)
-    process_elds(resolve_input_path(args.elds), branch_by_code, agg)
-
-    output_dir = args.output_dir
-    srsbr_rows = rows_from_grouped(agg.srsbr, ("brchcd", "staff", "product", "ncore"))
-    srsho_rows = rows_from_grouped(agg.srsho, ("hoe", "staff", "product", "ncore"))
-    srsp_rows = product_summary(agg.staff_product_ncore)
-
-    write_exception_report(agg, output_dir / "exception_report.txt")
-    write_summary_csv(srsbr_rows, output_dir / "SRSBR.csv")
-    write_summary_csv(srsho_rows, output_dir / "SRSHO.csv")
-    write_summary_csv(srsp_rows, output_dir / "SRSP.csv")
-    write_print_report(srsp_rows, report_date, output_dir / "SASLIST.txt")
-
-
-if __name__ == "__main__":
-    main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#!/usr/bin/env python3
-"""
-Python conversion of mainframe SAS job EIBMBTMY.
-
-INPUT
-------
-- SAS7BDAT dataset
-
-OUTPUT
--------
-- BT_LIMIT_REPORT.csv
-- SASLIST.txt
-"""
-
-from __future__ import annotations
-
-import argparse
-from datetime import date
 from pathlib import Path
 
 import pandas as pd
-
-
-# ----------------------------------------------------------
-# INCLUDE SECTION
-# ----------------------------------------------------------
-
-try:
-    import pbbdpfmt
-
-except ImportError:
-    pbbdpfmt = None
 
 
 DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
 DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
 
 
-# ----------------------------------------------------------
-# REPORT VARIABLES
-# ----------------------------------------------------------
-
 def get_report_variables(reptdate: date) -> dict[str, str]:
-
     day = reptdate.day
 
     week_map = {
@@ -569,15 +37,15 @@ def get_report_variables(reptdate: date) -> dict[str, str]:
 
     wk, wk1, wk2, wk3, sdd = week_map.get(
         day,
-        ("4", "3", "2", "1", 23)
+        ("4", "3", "2", "1", 23),
     )
 
     mm = reptdate.month
 
-    mm1 = (
-        12 if wk == "1" and mm == 1
-        else (mm - 1 if wk == "1" else mm)
-    )
+    if wk == "1":
+        mm1 = 12 if mm == 1 else mm - 1
+    else:
+        mm1 = mm
 
     sdate = date(reptdate.year, mm, sdd)
 
@@ -595,51 +63,92 @@ def get_report_variables(reptdate: date) -> dict[str, str]:
     }
 
 
-# ----------------------------------------------------------
-# INPUT PATH
-# ----------------------------------------------------------
+def parse_report_date(value: str | None) -> date:
+    if not value:
+        return date.today()
+
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            pass
+
+    raise ValueError(
+        "Invalid report date. Use YYYY-MM-DD, DD/MM/YYYY, or DD/MM/YY."
+    )
+
 
 def resolve_input_path(path: Path) -> Path:
-
     if path.exists():
         return path
 
-    sas_path = path.with_suffix(".sas7bdat")
+    txt_path = path.with_suffix(".txt")
+    if txt_path.exists():
+        return txt_path
 
-    if sas_path.exists():
-        return sas_path
+    csv_path = path.with_suffix(".csv")
+    if csv_path.exists():
+        return csv_path
 
     return path
 
 
-# ----------------------------------------------------------
-# READ SAS DATASET
-# ----------------------------------------------------------
-
-def read_sas_dataset(path: Path) -> pd.DataFrame:
-
-    return pd.read_sas(
+def read_semicolon_file(path: Path) -> pd.DataFrame:
+    return pd.read_csv(
         path,
-        format="sas7bdat",
-        encoding="utf-8"
+        sep=";",
+        dtype=str,
+        encoding="utf-8",
     )
 
 
-# ----------------------------------------------------------
-# MAIN
-# ----------------------------------------------------------
+def clean_char_column(series: pd.Series) -> pd.Series:
+    return series.fillna("").astype(str).str.strip()
+
+
+def get_branch_name(branch: int) -> str:
+    """
+    SAS uses:
+        BRHNAME = PUT(BRANCH, BRANCHCD.);
+
+    Add real branch mapping here if available.
+    """
+    branch_map: dict[int, str] = {
+        # Example:
+        # 1: "MAIN BRANCH",
+        # 2: "IPOH",
+    }
+
+    return branch_map.get(branch, "")
+
 
 def main() -> None:
-
     parser = argparse.ArgumentParser(
-        description="Convert SAS EIBMBTMY to Python"
+        description="Convert SAS EIIMBTMY to Python"
+    )
+
+    parser.add_argument(
+        "--base-dir",
+        type=Path,
+        default=DEFAULT_BASE,
+        help="Base input directory",
     )
 
     parser.add_argument(
         "--bnm",
         type=Path,
-        default=DEFAULT_BASE / "BTMAST.sas7bdat",
-        help="BNM SAS7BDAT dataset",
+        default=None,
+        help=(
+            "Optional semicolon-delimited input file. "
+            "If not supplied, program uses IBTMAST{REPTMON}{NOWK}.txt"
+        ),
+    )
+
+    parser.add_argument(
+        "--report-date",
+        type=str,
+        default=None,
+        help="Report date. Example: 2026-05-24 or 24/05/2026",
     )
 
     parser.add_argument(
@@ -653,215 +162,192 @@ def main() -> None:
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ----------------------------------------------------------
-    # REPORT VARIABLES
-    # ----------------------------------------------------------
+    reptdate = parse_report_date(args.report_date)
+    vars_ = get_report_variables(reptdate)
 
-    reptdate = date.today()
+    if args.bnm:
+        bnm_path = resolve_input_path(args.bnm)
+    else:
+        bnm_name = f"IBTMAST{vars_['REPTMON']}{vars_['NOWK']}.txt"
+        bnm_path = resolve_input_path(args.base_dir / bnm_name)
 
-    vars = get_report_variables(reptdate)
+    df = read_semicolon_file(bnm_path)
+    df.columns = [col.upper().strip() for col in df.columns]
 
-    # ----------------------------------------------------------
-    # INPUT
-    # ----------------------------------------------------------
+    required_columns = [
+        "LEVELS",
+        "D",
+        "ACCTNO",
+        "RETAILID",
+        "BRANCH",
+        "APPRLIMT",
+    ]
 
-    bnm_path = resolve_input_path(args.bnm)
+    missing_columns = [
+        col for col in required_columns if col not in df.columns
+    ]
 
-    print(f"Reading {bnm_path}")
+    if missing_columns:
+        raise ValueError(
+            "Missing required columns in input file: "
+            + ", ".join(missing_columns)
+        )
 
-    df = read_sas_dataset(bnm_path)
+    df["ACCTNO"] = clean_char_column(df["ACCTNO"])
+    df["RETAILID"] = clean_char_column(df["RETAILID"])
 
-    # ----------------------------------------------------------
-    # COLUMN CLEANUP
-    # ----------------------------------------------------------
-
-    df.columns = [str(col).upper() for col in df.columns]
-
-    # ----------------------------------------------------------
-    # CONVERT TYPES
-    # ----------------------------------------------------------
-
-    df["ACCTNO"] = (
-        df["ACCTNO"]
-        .astype(str)
-        .str.strip()
-    )
-
-    df["D"] = (
-        df["D"]
-        .astype(str)
-        .str.strip()
-    )
-
-    df["RETAILID"] = (
-        df["RETAILID"]
-        .astype(str)
-        .str.strip()
-    )
-
-    df["LEVELS"] = pd.to_numeric(
-        df["LEVELS"],
-        errors="coerce"
-    ).fillna(0)
-
-    df["BRANCH"] = pd.to_numeric(
-        df["BRANCH"],
-        errors="coerce"
-    ).fillna(0)
-
-    df["APPRLIMT"] = pd.to_numeric(
-        df["APPRLIMT"],
-        errors="coerce"
-    ).fillna(0)
-
-    # ----------------------------------------------------------
-    # FILTER APPROVE
-    # ----------------------------------------------------------
+    df["LEVELS"] = pd.to_numeric(df["LEVELS"], errors="coerce")
+    df["D"] = pd.to_numeric(df["D"], errors="coerce")
+    df["BRANCH"] = pd.to_numeric(df["BRANCH"], errors="coerce")
+    df["APPRLIMT"] = pd.to_numeric(df["APPRLIMT"], errors="coerce").fillna(0)
 
     approve = df[
         (df["LEVELS"] == 1)
-        & (df["D"] == "D")
-        & (df["ACCTNO"].str[:2] == "25")
+        & (df["D"] == 1)
+        & (df["ACCTNO"].str[:2] == "28")
     ].copy()
-
-    # ----------------------------------------------------------
-    # CATEGORY
-    # ----------------------------------------------------------
 
     approve["CATEGORY"] = ""
 
     approve.loc[
         approve["RETAILID"] == "C",
-        "CATEGORY"
+        "CATEGORY",
     ] = "CORPORATE"
 
     approve.loc[
         approve["RETAILID"] == "R",
-        "CATEGORY"
+        "CATEGORY",
     ] = "RETAIL"
-
-    # ----------------------------------------------------------
-    # SUMMARY
-    # ----------------------------------------------------------
 
     prt = (
         approve.groupby(
             ["BRANCH", "CATEGORY"],
-            dropna=False
+            dropna=False,
         )
         .agg(
-            ACCT=("APPRLIMT", "count"),
+            ACCT=("APPRLIMT", "size"),
             APPRLIMT=("APPRLIMT", "sum"),
         )
         .reset_index()
     )
 
-    # ----------------------------------------------------------
-    # FILTER BRANCH
-    # ----------------------------------------------------------
+    prt = prt[prt["BRANCH"] > 0].copy()
 
-    prt = prt[
-        prt["BRANCH"] > 0
-    ].copy()
+    prt.loc[
+        prt["BRANCH"] >= 3000,
+        "BRANCH",
+    ] = prt["BRANCH"] - 3000
 
-    # ----------------------------------------------------------
-    # BRANCH NAME
-    # ----------------------------------------------------------
+    prt["BRANCH"] = prt["BRANCH"].astype(int)
 
-    prt["BRHNAME"] = ""
+    prt["BRHNAME"] = prt["BRANCH"].apply(get_branch_name)
 
     prt["BRANCHX"] = (
-        prt["BRANCH"]
-        .astype(int)
-        .astype(str)
-        .str.zfill(3)
+        prt["BRANCH"].astype(str).str.zfill(3)
         + "-"
         + prt["BRHNAME"]
     )
-
-    # ----------------------------------------------------------
-    # SORT
-    # ----------------------------------------------------------
-
-    prt = prt.sort_values(
-        by=["BRANCH", "CATEGORY"]
-    )
-
-    # ----------------------------------------------------------
-    # OUTPUT CSV
-    # ----------------------------------------------------------
 
     output_csv = output_dir / "BT_LIMIT_REPORT.csv"
 
     prt.to_csv(
         output_csv,
-        index=False
+        index=False,
     )
 
-    # ----------------------------------------------------------
-    # SASLIST REPORT
-    # ----------------------------------------------------------
+    branch_total = (
+        prt.groupby("BRANCHX", dropna=False)
+        .agg(
+            TOTAL_ACCTS=("ACCT", "sum"),
+            TOTAL_LIMITS_RM=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    category_pivot = prt.pivot_table(
+        index="BRANCHX",
+        columns="CATEGORY",
+        values=["ACCT", "APPRLIMT"],
+        aggfunc="sum",
+        fill_value=0,
+        dropna=False,
+    )
+
+    category_pivot.columns = [
+        f"{category}_{measure}"
+        for measure, category in category_pivot.columns
+    ]
+
+    category_pivot = category_pivot.reset_index()
+
+    report = branch_total.merge(
+        category_pivot,
+        on="BRANCHX",
+        how="left",
+    )
+
+    report = report.sort_values("BRANCHX")
+
+    report_csv = output_dir / "BT_LIMIT_REPORT_TABULATE.csv"
+
+    report.to_csv(
+        report_csv,
+        index=False,
+    )
 
     saslist = output_dir / "SASLIST.txt"
 
-    with saslist.open(
-        "w",
-        encoding="utf-8"
-    ) as f:
-
+    with saslist.open("w", encoding="utf-8") as f:
+        f.write("PUBLIC BANK BERHAD. REPORT-ID: EIIMBTMY\n")
         f.write(
-            "PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY\n"
+            "MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS "
+            f"{vars_['RDATE']}\n\n"
         )
 
         f.write(
-            "MONTHLY TRADE BILLS "
-            "BY APPROVE LIMIT & NO.OF ACCTS\n"
+            f"{'BRANCH':<30}"
+            f"{'TOTAL ACCTS':>12}"
+            f"{'TOTAL LIMITS(RM)':>22}"
+            f"{'CORP ACCTS':>12}"
+            f"{'CORP LIMITS(RM)':>22}"
+            f"{'RETAIL ACCTS':>14}"
+            f"{'RETAIL LIMITS(RM)':>22}\n"
         )
 
-        f.write(
-            f"REPORT DATE : {vars['RDATE']}\n\n"
-        )
+        f.write("-" * 134 + "\n")
 
-        f.write(
-            f"{'BRANCH':<20}"
-            f"{'CATEGORY':<15}"
-            f"{'ACCTS':>12}"
-            f"{'LIMIT(RM)':>20}\n"
-        )
+        grand_total_acct = 0
+        grand_total_limit = 0.0
 
-        f.write("-" * 70 + "\n")
+        for _, row in report.iterrows():
+            corp_acct = row.get("CORPORATE_ACCT", 0)
+            corp_limit = row.get("CORPORATE_APPRLIMT", 0.0)
+            retail_acct = row.get("RETAIL_ACCT", 0)
+            retail_limit = row.get("RETAIL_APPRLIMT", 0.0)
 
-        total_acct = 0
-        total_limit = 0.0
-
-        for _, row in prt.iterrows():
-
-            acct = int(row["ACCT"])
-            limit_amt = float(row["APPRLIMT"])
-
-            total_acct += acct
-            total_limit += limit_amt
+            grand_total_acct += row["TOTAL_ACCTS"]
+            grand_total_limit += row["TOTAL_LIMITS_RM"]
 
             f.write(
-                f"{row['BRANCHX']:<20}"
-                f"{row['CATEGORY']:<15}"
-                f"{acct:>12,}"
-                f"{limit_amt:>20,.2f}\n"
+                f"{row['BRANCHX']:<30}"
+                f"{int(row['TOTAL_ACCTS']):>12,}"
+                f"{row['TOTAL_LIMITS_RM']:>22,.2f}"
+                f"{int(corp_acct):>12,}"
+                f"{corp_limit:>22,.2f}"
+                f"{int(retail_acct):>14,}"
+                f"{retail_limit:>22,.2f}\n"
             )
 
-        f.write("-" * 70 + "\n")
-
+        f.write("-" * 134 + "\n")
         f.write(
-            f"{'TOTAL':<35}"
-            f"{total_acct:>12,}"
-            f"{total_limit:>20,.2f}\n"
+            f"{'TOTAL':<30}"
+            f"{int(grand_total_acct):>12,}"
+            f"{grand_total_limit:>22,.2f}\n"
         )
 
-    # ----------------------------------------------------------
-    # COMPLETE
-    # ----------------------------------------------------------
-
+    print(f"BNM Input  : {bnm_path}")
     print(f"CSV Output : {output_csv}")
+    print(f"Report CSV : {report_csv}")
     print(f"SASLIST    : {saslist}")
 
 
