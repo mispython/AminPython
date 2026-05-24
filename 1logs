@@ -1,3 +1,20 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMBTMY_TXT.py", line 395, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMBTMY_TXT.py", line 198, in main
+    raise ValueError(
+ValueError: Missing required columns in input file: LEVELS, D, ACCTNO, RETAILID, BRANCH, APPRLIMT
+
+
+
+
+
+
+
+
+
+
+
 approve["RETAILID"] = (
     approve["RETAILID"]
     .astype(str)
