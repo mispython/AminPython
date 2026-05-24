@@ -9,8 +9,9 @@ import pandas as pd
 from pbbdpfmt2 import BRANCHCD
 
 
-DEFAULT_INPUT = Path("bt251029.sas7bdat")
-DEFAULT_OUTPUT_DIR = Path("output")
+DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_INPUT = DEFAULT_BASE / "bt251029.sas7bdat"
+DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
 
 REQUIRED_COLUMNS = ["LEVELS", "D", "ACCTNO", "RETAILID", "BRANCH", "APPRLIMT"]
 
@@ -153,6 +154,7 @@ def write_saslist(report: pd.DataFrame, output: Path, report_date: date) -> None
             "retail_acct": num(row, "RETAIL_ACCT"),
             "retail_limit": num(row, "RETAIL_APPRLIMT"),
         }
+
         rows.append(item)
 
         for key in totals:
