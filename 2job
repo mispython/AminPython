@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Python conversion of mainframe SAS job EIBMBTMY.
-
-Input:
-- Semicolon-delimited text file
-- Default input file: BT.txt
-- If file has no header, assumed column order is:
-  LEVELS;D;ACCTNO;RETAILID;BRANCH;APPRLIMT
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -126,44 +116,58 @@ def clean_char_column(series: pd.Series) -> pd.Series:
 
 
 def get_branch_name(branch: int) -> str:
-    """
-    SAS:
-        BRHNAME = PUT(BRANCH, BRANCHCD.);
-
-    Fill this mapping from PBBDPFMT if available.
-    """
     branch_map: dict[int, str] = {
-        # 1: "MAIN BRANCH",
-        # 2: "IPOH",
+        2: "JLN SULTAN SULAIMAN",
+        6: "PENANG",
+        7: "JOHOR BAHRU",
+        11: "GURUN",
+        16: "NILAI",
+        29: "JLN RAJA LAUT",
+        55: "LABUAN",
+        66: "BKT DAMANSARA",
+        130: "PADUNGAN",
+        145: "BDR SRI DAMANSARA",
+        224: "JLN ABDULLAH, MUAR",
     }
 
     return branch_map.get(branch, "")
 
 
+def fmt_int(value: float | int, width: int = 8) -> str:
+    if pd.isna(value) or value == 0:
+        return f"{'.':>{width}}"
+    return f"{int(value):>{width},}"
+
+
+def fmt_amt(value: float | int, width: int = 20) -> str:
+    if pd.isna(value) or value == 0:
+        return f"{'.':>{width}}"
+    return f"{float(value):>{width},.2f}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Convert SAS EIBMBTMY to Python"
+        description="Convert SAS EIBMBTMY to Python using semicolon BT.txt"
     )
 
     parser.add_argument(
         "--base-dir",
         type=Path,
         default=DEFAULT_BASE,
-        help="Base input directory",
     )
 
     parser.add_argument(
         "--bnm",
         type=Path,
         default=None,
-        help="Optional semicolon-delimited input file. Default: BT.txt",
+        help="Input semicolon file. Default: BT.txt",
     )
 
     parser.add_argument(
         "--report-date",
         type=str,
         default=None,
-        help="Report date. Example: 2026-05-24 or 24/05/2026",
+        help="Example: 2026-05-15 or 15/05/2026",
     )
 
     parser.add_argument(
@@ -189,7 +193,6 @@ def main() -> None:
     df.columns = [col.upper().strip() for col in df.columns]
 
     missing_columns = [col for col in REQUIRED_COLUMNS if col not in df.columns]
-
     if missing_columns:
         raise ValueError(
             "Missing required columns in input file: "
@@ -211,15 +214,11 @@ def main() -> None:
     ].copy()
 
     approve["CATEGORY"] = ""
-
     approve.loc[approve["RETAILID"] == "C", "CATEGORY"] = "CORPORATE"
     approve.loc[approve["RETAILID"] == "R", "CATEGORY"] = "RETAIL"
 
     prt = (
-        approve.groupby(
-            ["BRANCH", "CATEGORY"],
-            dropna=False,
-        )
+        approve.groupby(["BRANCH", "CATEGORY"], dropna=False)
         .agg(
             ACCT=("APPRLIMT", "size"),
             APPRLIMT=("APPRLIMT", "sum"),
@@ -238,8 +237,8 @@ def main() -> None:
         + prt["BRHNAME"]
     )
 
-    output_csv = output_dir / "PBB_BT_LIMIT_REPORT.csv"
-    prt.to_csv(output_csv, index=False)
+    detail_csv = output_dir / "PBB_BT_LIMIT_REPORT.csv"
+    prt.to_csv(detail_csv, index=False)
 
     branch_total = (
         prt.groupby("BRANCHX", dropna=False)
@@ -286,49 +285,94 @@ def main() -> None:
             f"{vars_['RDATE']}\n\n"
         )
 
+        f.write("-" * 133 + "\n")
         f.write(
-            f"{'BRANCH':<30}"
-            f"{'TOTAL ACCTS':>12}"
-            f"{'TOTAL LIMITS(RM)':>22}"
-            f"{'CORP ACCTS':>12}"
-            f"{'CORP LIMITS(RM)':>22}"
-            f"{'RETAIL ACCTS':>14}"
-            f"{'RETAIL LIMITS(RM)':>22}\n"
+            f"|{'BRANCH':<28}"
+            f"|{'TOTAL':^31}"
+            f"|{'':^29}"
+            f"|{'CORPORATE':^29}"
+            f"|{'RETAIL':^29}|\n"
         )
-
-        f.write("-" * 134 + "\n")
+        f.write(
+            f"|{'':<28}"
+            f"|{'ACCTS':>8}"
+            f"|{'TOTAL LIMITS(RM)':>22}"
+            f"|{'ACCTS':>8}"
+            f"|{'LIMITS(RM)':>20}"
+            f"|{'ACCTS':>8}"
+            f"|{'LIMITS(RM)':>20}"
+            f"|{'ACCTS':>8}"
+            f"|{'LIMITS(RM)':>20}|\n"
+        )
+        f.write("-" * 133 + "\n")
 
         grand_total_acct = 0
         grand_total_limit = 0.0
+        grand_blank_acct = 0
+        grand_blank_limit = 0.0
+        grand_corp_acct = 0
+        grand_corp_limit = 0.0
+        grand_retail_acct = 0
+        grand_retail_limit = 0.0
+
+        def get_number(row: pd.Series, column: str, default: float = 0.0) -> float:
+            if column not in row.index:
+                return default
+            value = row[column]
+            if pd.isna(value):
+                return default
+            return float(value)
 
         for _, row in report.iterrows():
-            corp_acct = row.get("CORPORATE_ACCT", 0)
-            corp_limit = row.get("CORPORATE_APPRLIMT", 0.0)
-            retail_acct = row.get("RETAIL_ACCT", 0)
-            retail_limit = row.get("RETAIL_APPRLIMT", 0.0)
+            total_acct = get_number(row, "TOTAL_ACCTS")
+            total_limit = get_number(row, "TOTAL_LIMITS_RM")
 
-            grand_total_acct += row["TOTAL_ACCTS"]
-            grand_total_limit += row["TOTAL_LIMITS_RM"]
+            blank_acct = get_number(row, "_ACCT")
+            blank_limit = get_number(row, "_APPRLIMT")
+
+            corp_acct = get_number(row, "CORPORATE_ACCT")
+            corp_limit = get_number(row, "CORPORATE_APPRLIMT")
+
+            retail_acct = get_number(row, "RETAIL_ACCT")
+            retail_limit = get_number(row, "RETAIL_APPRLIMT")
+
+            grand_total_acct += total_acct
+            grand_total_limit += total_limit
+            grand_blank_acct += blank_acct
+            grand_blank_limit += blank_limit
+            grand_corp_acct += corp_acct
+            grand_corp_limit += corp_limit
+            grand_retail_acct += retail_acct
+            grand_retail_limit += retail_limit
 
             f.write(
-                f"{row['BRANCHX']:<30}"
-                f"{int(row['TOTAL_ACCTS']):>12,}"
-                f"{row['TOTAL_LIMITS_RM']:>22,.2f}"
-                f"{int(corp_acct):>12,}"
-                f"{corp_limit:>22,.2f}"
-                f"{int(retail_acct):>14,}"
-                f"{retail_limit:>22,.2f}\n"
+                f"|{row['BRANCHX']:<28}"
+                f"|{fmt_int(total_acct)}"
+                f"|{fmt_amt(total_limit, 22)}"
+                f"|{fmt_int(blank_acct)}"
+                f"|{fmt_amt(blank_limit, 20)}"
+                f"|{fmt_int(corp_acct)}"
+                f"|{fmt_amt(corp_limit, 20)}"
+                f"|{fmt_int(retail_acct)}"
+                f"|{fmt_amt(retail_limit, 20)}|\n"
             )
 
-        f.write("-" * 134 + "\n")
+        f.write("-" * 133 + "\n")
         f.write(
-            f"{'TOTAL':<30}"
-            f"{int(grand_total_acct):>12,}"
-            f"{grand_total_limit:>22,.2f}\n"
+            f"|{'TOTAL':<28}"
+            f"|{fmt_int(grand_total_acct)}"
+            f"|{fmt_amt(grand_total_limit, 22)}"
+            f"|{fmt_int(grand_blank_acct)}"
+            f"|{fmt_amt(grand_blank_limit, 20)}"
+            f"|{fmt_int(grand_corp_acct)}"
+            f"|{fmt_amt(grand_corp_limit, 20)}"
+            f"|{fmt_int(grand_retail_acct)}"
+            f"|{fmt_amt(grand_retail_limit, 20)}|\n"
         )
+        f.write("-" * 133 + "\n")
 
     print(f"BNM Input  : {bnm_path}")
-    print(f"CSV Output : {output_csv}")
+    print(f"Detail CSV : {detail_csv}")
     print(f"Report CSV : {report_csv}")
     print(f"SASLIST    : {saslist}")
 
