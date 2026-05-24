@@ -7,6 +7,11 @@ from pathlib import Path
 
 import pandas as pd
 
+try:
+    from pbbdpfmt2 import BRANCHCD
+except ImportError:
+    from PBBDPFMT2 import BRANCHCD
+
 
 DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
 DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
@@ -87,7 +92,6 @@ def resolve_input_path(path: Path) -> Path:
 
 
 def read_bt_file(path: Path) -> pd.DataFrame:
-    # Auto-detect comma / semicolon / tab. Your sample BT.txt is comma-delimited.
     df = pd.read_csv(
         path,
         sep=None,
@@ -105,21 +109,7 @@ def clean_char_column(series: pd.Series) -> pd.Series:
 
 
 def get_branch_name(branch: int) -> str:
-    branch_map: dict[int, str] = {
-        2: "JLN SULTAN SULAIMAN",
-        6: "PENANG",
-        7: "JOHOR BAHRU",
-        11: "GURUN",
-        16: "NILAI",
-        29: "JLN RAJA LAUT",
-        55: "LABUAN",
-        66: "BKT DAMANSARA",
-        130: "PADUNGAN",
-        145: "BDR SRI DAMANSARA",
-        224: "JLN ABDULLAH, MUAR",
-    }
-
-    return branch_map.get(branch, "")
+    return BRANCHCD.get(branch, "")
 
 
 def fmt_int(value: float | int, width: int = 8) -> str:
