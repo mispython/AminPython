@@ -120,25 +120,14 @@ BRANCHCD = {
 
 def get_report_variables(reptdate: date) -> dict[str, str]:
     day = reptdate.day
-
     week_map = {
         8: ("1", "4", "", "", 1),
         15: ("2", "1", "", "", 9),
         22: ("3", "2", "", "", 16),
     }
-
-    wk, wk1, wk2, wk3, sdd = week_map.get(
-        day,
-        ("4", "3", "2", "1", 23),
-    )
-
+    wk, wk1, wk2, wk3, sdd = week_map.get(day, ("4", "3", "2", "1", 23))
     mm = reptdate.month
-
-    if wk == "1":
-        mm1 = 12 if mm == 1 else mm - 1
-    else:
-        mm1 = mm
-
+    mm1 = 12 if wk == "1" and mm == 1 else mm - 1 if wk == "1" else mm
     sdate = date(reptdate.year, mm, sdd)
 
     return {
@@ -172,26 +161,15 @@ def resolve_input_path(path: Path) -> Path:
     if path.exists():
         return path
 
-    txt_path = path.with_suffix(".txt")
-    if txt_path.exists():
-        return txt_path
-
-    csv_path = path.with_suffix(".csv")
-    if csv_path.exists():
-        return csv_path
+    sas_path = path.with_suffix(".sas7bdat")
+    if sas_path.exists():
+        return sas_path
 
     return path
 
 
-def read_bt_file(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(
-        path,
-        sep=None,
-        engine="python",
-        dtype=str,
-        encoding="utf-8",
-    )
-
+def read_bt_sas7bdat(path: Path) -> pd.DataFrame:
+    df = pd.read_sas(path, format="sas7bdat", encoding="utf-8")
     df.columns = [col.upper().strip() for col in df.columns]
     return df
 
@@ -219,45 +197,20 @@ def fmt_amt(value: float | int, width: int = 20) -> str:
 def get_number(row: pd.Series, column: str, default: float = 0.0) -> float:
     if column not in row.index:
         return default
-
     value = row[column]
-
     if pd.isna(value):
         return default
-
     return float(value)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Convert SAS EIBMBTMY to Python using BT.txt"
+        description="Convert SAS EIBMBTMY to Python using SAS7BDAT"
     )
-
-    parser.add_argument(
-        "--base-dir",
-        type=Path,
-        default=DEFAULT_BASE,
-    )
-
-    parser.add_argument(
-        "--bnm",
-        type=Path,
-        default=None,
-        help="Input file. Default: BT.txt",
-    )
-
-    parser.add_argument(
-        "--report-date",
-        type=str,
-        default=None,
-        help="Example: 2026-05-15 or 15/05/2026",
-    )
-
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-    )
+    parser.add_argument("--base-dir", type=Path, default=DEFAULT_BASE)
+    parser.add_argument("--bnm", type=Path, default=None, help="Input SAS7BDAT file. Default: BT.sas7bdat")
+    parser.add_argument("--report-date", type=str, default=None, help="Example: 2026-05-15 or 15/05/2026")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
 
     args = parser.parse_args()
 
@@ -270,9 +223,9 @@ def main() -> None:
     if args.bnm:
         bnm_path = resolve_input_path(args.bnm)
     else:
-        bnm_path = resolve_input_path(args.base_dir / "BT.txt")
+        bnm_path = resolve_input_path(args.base_dir / "BT.sas7bdat")
 
-    df = read_bt_file(bnm_path)
+    df = read_bt_sas7bdat(bnm_path)
 
     missing_columns = [col for col in REQUIRED_COLUMNS if col not in df.columns]
     if missing_columns:
@@ -289,7 +242,7 @@ def main() -> None:
     df["LEVELS"] = pd.to_numeric(df["LEVELS"], errors="coerce")
     df["D"] = pd.to_numeric(df["D"], errors="coerce")
     df["BRANCH"] = pd.to_numeric(df["BRANCH"], errors="coerce")
-    df["APPRLIMT"] = pd.to_numeric(df["APPRLIMT"], errors="coerce").fillna(0)
+    df["APPRLIMT"] = pd.to_numeric(df["APPRLIMT"], errors="coerce")
 
     approve = df[
         (df["LEVELS"] == 1)
@@ -303,33 +256,21 @@ def main() -> None:
 
     prt = (
         approve.groupby(["BRANCH", "CATEGORY"], dropna=False)
-        .agg(
-            ACCT=("APPRLIMT", "size"),
-            APPRLIMT=("APPRLIMT", "sum"),
-        )
+        .agg(ACCT=("APPRLIMT", "size"), APPRLIMT=("APPRLIMT", "sum"))
         .reset_index()
     )
 
     prt = prt[prt["BRANCH"] > 0].copy()
     prt["BRANCH"] = prt["BRANCH"].astype(int)
-
     prt["BRHNAME"] = prt["BRANCH"].apply(get_branch_name)
-
-    prt["BRANCHX"] = (
-        prt["BRANCH"].astype(str).str.zfill(3)
-        + "-"
-        + prt["BRHNAME"]
-    )
+    prt["BRANCHX"] = prt["BRANCH"].astype(str).str.zfill(3) + "-" + prt["BRHNAME"]
 
     detail_csv = output_dir / "PBB_BT_LIMIT_REPORT.csv"
     prt.to_csv(detail_csv, index=False)
 
     branch_total = (
         prt.groupby("BRANCHX", dropna=False)
-        .agg(
-            TOTAL_ACCTS=("ACCT", "sum"),
-            TOTAL_LIMITS_RM=("APPRLIMT", "sum"),
-        )
+        .agg(TOTAL_ACCTS=("ACCT", "sum"), TOTAL_LIMITS_RM=("APPRLIMT", "sum"))
         .reset_index()
     )
 
@@ -341,20 +282,13 @@ def main() -> None:
         fill_value=0,
         dropna=False,
     )
-
     category_pivot.columns = [
         f"{category}_{measure}"
         for measure, category in category_pivot.columns
     ]
-
     category_pivot = category_pivot.reset_index()
 
-    report = branch_total.merge(
-        category_pivot,
-        on="BRANCHX",
-        how="left",
-    )
-
+    report = branch_total.merge(category_pivot, on="BRANCHX", how="left")
     report = report.sort_values("BRANCHX")
 
     report_csv = output_dir / "PBB_BT_LIMIT_REPORT_TABULATE.csv"
@@ -390,36 +324,31 @@ def main() -> None:
         )
         f.write("-" * 133 + "\n")
 
-        grand_total_acct = 0.0
-        grand_total_limit = 0.0
-        grand_blank_acct = 0.0
-        grand_blank_limit = 0.0
-        grand_corp_acct = 0.0
-        grand_corp_limit = 0.0
-        grand_retail_acct = 0.0
-        grand_retail_limit = 0.0
+        totals = {
+            "total_acct": 0.0, "total_limit": 0.0,
+            "blank_acct": 0.0, "blank_limit": 0.0,
+            "corp_acct": 0.0, "corp_limit": 0.0,
+            "retail_acct": 0.0, "retail_limit": 0.0,
+        }
 
         for _, row in report.iterrows():
             total_acct = get_number(row, "TOTAL_ACCTS")
             total_limit = get_number(row, "TOTAL_LIMITS_RM")
-
             blank_acct = get_number(row, "_ACCT")
             blank_limit = get_number(row, "_APPRLIMT")
-
             corp_acct = get_number(row, "CORPORATE_ACCT")
             corp_limit = get_number(row, "CORPORATE_APPRLIMT")
-
             retail_acct = get_number(row, "RETAIL_ACCT")
             retail_limit = get_number(row, "RETAIL_APPRLIMT")
 
-            grand_total_acct += total_acct
-            grand_total_limit += total_limit
-            grand_blank_acct += blank_acct
-            grand_blank_limit += blank_limit
-            grand_corp_acct += corp_acct
-            grand_corp_limit += corp_limit
-            grand_retail_acct += retail_acct
-            grand_retail_limit += retail_limit
+            totals["total_acct"] += total_acct
+            totals["total_limit"] += total_limit
+            totals["blank_acct"] += blank_acct
+            totals["blank_limit"] += blank_limit
+            totals["corp_acct"] += corp_acct
+            totals["corp_limit"] += corp_limit
+            totals["retail_acct"] += retail_acct
+            totals["retail_limit"] += retail_limit
 
             f.write(
                 f"|{row['BRANCHX']:<28}"
@@ -436,14 +365,14 @@ def main() -> None:
         f.write("-" * 133 + "\n")
         f.write(
             f"|{'TOTAL':<28}"
-            f"|{fmt_int(grand_total_acct)}"
-            f"|{fmt_amt(grand_total_limit, 22)}"
-            f"|{fmt_int(grand_blank_acct)}"
-            f"|{fmt_amt(grand_blank_limit, 20)}"
-            f"|{fmt_int(grand_corp_acct)}"
-            f"|{fmt_amt(grand_corp_limit, 20)}"
-            f"|{fmt_int(grand_retail_acct)}"
-            f"|{fmt_amt(grand_retail_limit, 20)}|\n"
+            f"|{fmt_int(totals['total_acct'])}"
+            f"|{fmt_amt(totals['total_limit'], 22)}"
+            f"|{fmt_int(totals['blank_acct'])}"
+            f"|{fmt_amt(totals['blank_limit'], 20)}"
+            f"|{fmt_int(totals['corp_acct'])}"
+            f"|{fmt_amt(totals['corp_limit'], 20)}"
+            f"|{fmt_int(totals['retail_acct'])}"
+            f"|{fmt_amt(totals['retail_limit'], 20)}|\n"
         )
         f.write("-" * 133 + "\n")
 
