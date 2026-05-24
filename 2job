@@ -7,10 +7,29 @@ from pathlib import Path
 
 import pandas as pd
 
+
 try:
-    from pbbdpfmt2 import BRANCHCD
+    from pbmisfmt2 import BRANCHCD
 except ImportError:
-    from PBBDPFMT2 import BRANCHCD
+    try:
+        from pbbdpfmt2 import BRANCHCD
+    except ImportError:
+        try:
+            from pbmisfmt import BRANCHCD
+        except ImportError:
+            try:
+                from pbbdpfmt import BRANCHCD
+            except ImportError:
+                try:
+                    from includes.pbmisfmt2 import BRANCHCD
+                except ImportError:
+                    try:
+                        from includes.pbbdpfmt2 import BRANCHCD
+                    except ImportError:
+                        try:
+                            from includes.pbmisfmt import BRANCHCD
+                        except ImportError:
+                            from includes.pbbdpfmt import BRANCHCD
 
 
 DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
@@ -28,27 +47,15 @@ REQUIRED_COLUMNS = [
 
 def get_report_variables(reptdate: date) -> dict[str, str]:
     day = reptdate.day
-
     week_map = {
         8: ("1", "4", "", "", 1),
         15: ("2", "1", "", "", 9),
         22: ("3", "2", "", "", 16),
     }
-
-    wk, wk1, wk2, wk3, sdd = week_map.get(
-        day,
-        ("4", "3", "2", "1", 23),
-    )
-
+    wk, wk1, wk2, wk3, sdd = week_map.get(day, ("4", "3", "2", "1", 23))
     mm = reptdate.month
-
-    if wk == "1":
-        mm1 = 12 if mm == 1 else mm - 1
-    else:
-        mm1 = mm
-
+    mm1 = 12 if wk == "1" and mm == 1 else (mm - 1 if wk == "1" else mm)
     sdate = date(reptdate.year, mm, sdd)
-
     return {
         "NOWK": wk,
         "NOWK1": wk1,
@@ -66,46 +73,39 @@ def get_report_variables(reptdate: date) -> dict[str, str]:
 def parse_report_date(value: str | None) -> date:
     if not value:
         return date.today()
-
     for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
         try:
             return datetime.strptime(value, fmt).date()
         except ValueError:
             pass
-
     raise ValueError("Invalid report date. Use YYYY-MM-DD, DD/MM/YYYY, or DD/MM/YY.")
 
 
 def resolve_input_path(path: Path) -> Path:
     if path.exists():
         return path
-
-    txt_path = path.with_suffix(".txt")
-    if txt_path.exists():
-        return txt_path
-
-    csv_path = path.with_suffix(".csv")
-    if csv_path.exists():
-        return csv_path
-
+    for suffix in (".txt", ".TXT", ".csv", ".CSV"):
+        candidate = path.with_suffix(suffix)
+        if candidate.exists():
+            return candidate
     return path
 
 
 def read_bt_file(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(
-        path,
-        sep=None,
-        engine="python",
-        dtype=str,
-        encoding="utf-8",
-    )
-
+    df = pd.read_csv(path, sep=None, engine="python", dtype=str, encoding="utf-8")
     df.columns = [col.upper().strip() for col in df.columns]
     return df
 
 
 def clean_char_column(series: pd.Series) -> pd.Series:
     return series.fillna("").astype(str).str.strip()
+
+
+def clean_numeric_column(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(
+        series.fillna("").astype(str).str.replace(",", "", regex=False).str.strip(),
+        errors="coerce",
+    )
 
 
 def get_branch_name(branch: int) -> str:
@@ -127,61 +127,29 @@ def fmt_amt(value: float | int, width: int = 20) -> str:
 def get_number(row: pd.Series, column: str, default: float = 0.0) -> float:
     if column not in row.index:
         return default
-
     value = row[column]
-
     if pd.isna(value):
         return default
-
     return float(value)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Convert SAS EIBMBTMY to Python using BT.txt"
-    )
-
-    parser.add_argument(
-        "--base-dir",
-        type=Path,
-        default=DEFAULT_BASE,
-    )
-
-    parser.add_argument(
-        "--bnm",
-        type=Path,
-        default=None,
-        help="Input file. Default: BT.txt",
-    )
-
-    parser.add_argument(
-        "--report-date",
-        type=str,
-        default=None,
-        help="Example: 2026-05-15 or 15/05/2026",
-    )
-
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-    )
-
+    parser = argparse.ArgumentParser(description="Convert SAS EIBMBTMY to Python using BT.txt")
+    parser.add_argument("--base-dir", type=Path, default=DEFAULT_BASE)
+    parser.add_argument("--bnm", type=Path, default=None, help="Input file. Default: BT.txt")
+    parser.add_argument("--report-date", type=str, default=None, help="Example: 2026-05-15 or 15/05/2026")
+    parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args()
 
-    output_dir = args.output_dir
+    base_dir = args.base_dir
+    output_dir = args.output_dir or base_dir / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     reptdate = parse_report_date(args.report_date)
     vars_ = get_report_variables(reptdate)
-
-    if args.bnm:
-        bnm_path = resolve_input_path(args.bnm)
-    else:
-        bnm_path = resolve_input_path(args.base_dir / "BT.txt")
+    bnm_path = resolve_input_path(args.bnm) if args.bnm else resolve_input_path(base_dir / "BT.txt")
 
     df = read_bt_file(bnm_path)
-
     missing_columns = [col for col in REQUIRED_COLUMNS if col not in df.columns]
     if missing_columns:
         raise ValueError(
@@ -192,12 +160,11 @@ def main() -> None:
         )
 
     df["ACCTNO"] = clean_char_column(df["ACCTNO"])
-    df["RETAILID"] = clean_char_column(df["RETAILID"])
-
-    df["LEVELS"] = pd.to_numeric(df["LEVELS"], errors="coerce")
-    df["D"] = pd.to_numeric(df["D"], errors="coerce")
-    df["BRANCH"] = pd.to_numeric(df["BRANCH"], errors="coerce")
-    df["APPRLIMT"] = pd.to_numeric(df["APPRLIMT"], errors="coerce").fillna(0)
+    df["RETAILID"] = clean_char_column(df["RETAILID"]).str.upper()
+    df["LEVELS"] = clean_numeric_column(df["LEVELS"])
+    df["D"] = clean_numeric_column(df["D"])
+    df["BRANCH"] = clean_numeric_column(df["BRANCH"])
+    df["APPRLIMT"] = clean_numeric_column(df["APPRLIMT"]).fillna(0)
 
     approve = df[
         (df["LEVELS"] == 1)
@@ -211,33 +178,21 @@ def main() -> None:
 
     prt = (
         approve.groupby(["BRANCH", "CATEGORY"], dropna=False)
-        .agg(
-            ACCT=("APPRLIMT", "size"),
-            APPRLIMT=("APPRLIMT", "sum"),
-        )
+        .agg(ACCT=("APPRLIMT", "size"), APPRLIMT=("APPRLIMT", "sum"))
         .reset_index()
     )
 
     prt = prt[prt["BRANCH"] > 0].copy()
     prt["BRANCH"] = prt["BRANCH"].astype(int)
-
     prt["BRHNAME"] = prt["BRANCH"].apply(get_branch_name)
-
-    prt["BRANCHX"] = (
-        prt["BRANCH"].astype(str).str.zfill(3)
-        + "-"
-        + prt["BRHNAME"]
-    )
+    prt["BRANCHX"] = prt["BRANCH"].astype(str).str.zfill(3) + "-" + prt["BRHNAME"]
 
     detail_csv = output_dir / "PBB_BT_LIMIT_REPORT.csv"
     prt.to_csv(detail_csv, index=False)
 
     branch_total = (
         prt.groupby("BRANCHX", dropna=False)
-        .agg(
-            TOTAL_ACCTS=("ACCT", "sum"),
-            TOTAL_LIMITS_RM=("APPRLIMT", "sum"),
-        )
+        .agg(TOTAL_ACCTS=("ACCT", "sum"), TOTAL_LIMITS_RM=("APPRLIMT", "sum"))
         .reset_index()
     )
 
@@ -249,34 +204,19 @@ def main() -> None:
         fill_value=0,
         dropna=False,
     )
-
     category_pivot.columns = [
-        f"{category}_{measure}"
-        for measure, category in category_pivot.columns
+        f"{category}_{measure}" for measure, category in category_pivot.columns
     ]
-
     category_pivot = category_pivot.reset_index()
 
-    report = branch_total.merge(
-        category_pivot,
-        on="BRANCHX",
-        how="left",
-    )
-
-    report = report.sort_values("BRANCHX")
-
+    report = branch_total.merge(category_pivot, on="BRANCHX", how="left").sort_values("BRANCHX")
     report_csv = output_dir / "PBB_BT_LIMIT_REPORT_TABULATE.csv"
     report.to_csv(report_csv, index=False)
 
     saslist = output_dir / "SASLIST_EIBMBTMY.txt"
-
     with saslist.open("w", encoding="utf-8") as f:
         f.write("PUBLIC BANK BERHAD. REPORT-ID: EIBMBTMY\n")
-        f.write(
-            "MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS "
-            f"{vars_['RDATE']}\n\n"
-        )
-
+        f.write(f"MONTHLY TRADE BILLS BY APPROVE LIMIT & NO.OF ACCTS {vars_['RDATE']}\n\n")
         f.write("-" * 133 + "\n")
         f.write(
             f"|{'BRANCH':<28}"
@@ -298,25 +238,18 @@ def main() -> None:
         )
         f.write("-" * 133 + "\n")
 
-        grand_total_acct = 0.0
-        grand_total_limit = 0.0
-        grand_blank_acct = 0.0
-        grand_blank_limit = 0.0
-        grand_corp_acct = 0.0
-        grand_corp_limit = 0.0
-        grand_retail_acct = 0.0
-        grand_retail_limit = 0.0
+        grand_total_acct = grand_total_limit = 0.0
+        grand_blank_acct = grand_blank_limit = 0.0
+        grand_corp_acct = grand_corp_limit = 0.0
+        grand_retail_acct = grand_retail_limit = 0.0
 
         for _, row in report.iterrows():
             total_acct = get_number(row, "TOTAL_ACCTS")
             total_limit = get_number(row, "TOTAL_LIMITS_RM")
-
             blank_acct = get_number(row, "_ACCT")
             blank_limit = get_number(row, "_APPRLIMT")
-
             corp_acct = get_number(row, "CORPORATE_ACCT")
             corp_limit = get_number(row, "CORPORATE_APPRLIMT")
-
             retail_acct = get_number(row, "RETAIL_ACCT")
             retail_limit = get_number(row, "RETAIL_APPRLIMT")
 
@@ -355,12 +288,12 @@ def main() -> None:
         )
         f.write("-" * 133 + "\n")
 
-    print(f"BNM Input  : {bnm_path}")
-    print(f"Rows input : {len(df):,}")
-    print(f"Rows approve: {len(approve):,}")
-    print(f"Detail CSV : {detail_csv}")
-    print(f"Report CSV : {report_csv}")
-    print(f"SASLIST    : {saslist}")
+    print(f"BNM Input    : {bnm_path}")
+    print(f"Rows input   : {len(df):,}")
+    print(f"Rows approve : {len(approve):,}")
+    print(f"Detail CSV   : {detail_csv}")
+    print(f"Report CSV   : {report_csv}")
+    print(f"SASLIST      : {saslist}")
 
 
 if __name__ == "__main__":
