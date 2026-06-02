@@ -2,5 +2,12 @@ I BELIEVE TEH RECORD LENGTH IS 81.
 
 /stgsrcsys/host/uat/DBRANCH.TXT
 B001 PCS   BANK-ATMC                             C     
-
+\
+DATA BRANCH(KEEP=BRANCH BRABBR);
+  	INFILE BRHFILE;
+  	INPUT @002 BRANCH   3.
+          @006 BRABBR  $3.
+          ;
+RUN;
+PROC SORT DATA=BRANCH; BY BRANCH; RUN;
 
