@@ -1,0 +1,76 @@
+//EIDETBRH JOB SAS,MISEIS,CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID             00010008
+/*JOBPARM S=S1M1                                                        00011014
+//DELETE   EXEC PGM=IEFBR14                                             00020000
+//DD1      DD DSN=SAP.AML.DETICA.BRCHCTR,                               00030011
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,                      00040000
+//            SPACE=(CYL,0)                                             00050000
+//DD2      DD DSN=SAP.AML.DETICA.COSTCTR,                               00051011
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,                      00052003
+//            SPACE=(CYL,0)                                             00053003
+//*                                                                     00060000
+//EIDETBRH EXEC SAS609                                                  00070009
+//BRHFILE  DD DSN=RBP2.B033.PBB.BRANCH,DISP=SHR                         00110012
+//BRHCTR   DD DSN=SAP.AML.DETICA.BRCHCTR,                               00150011
+//            DISP=(NEW,CATLG,DELETE),                                  00160000
+//            DCB=(RECFM=FB,LRECL=320,BLKSIZE=0),                       00170000
+//            SPACE=(CYL,(50,50),RLSE),UNIT=(SYSDA,5)                   00180000
+//COSTCTR  DD DSN=SAP.AML.DETICA.COSTCTR,                               00181011
+//            DISP=(NEW,CATLG,DELETE),                                  00182003
+//            DCB=(RECFM=FB,LRECL=320,BLKSIZE=0),                       00183003
+//            SPACE=(CYL,(50,50),RLSE),UNIT=(SYSDA,5)                   00184003
+//SASLIST  DD SYSOUT=(,)                                                00190000
+//SYSIN    DD *                                                         00200000
+DATA BRANCH;                                                            00210000
+   INFILE BRHFILE;                                                      00220000
+   INPUT @002 BRANCH   3.                                               00230000
+         @012 NAME   $30.                                               00240004
+         @050 STATUS  $1.                                               00240113
+         ;                                                              00241004
+   IF STATUS = 'C' OR BRANCH IN (101,884) THEN DELETE;                  00242013
+RUN;                                                                    00250000
+                                                                        00260000
+DATA PBB PIBB;                                                          00270000
+   SET BRANCH;                                                          00280000
+   FORMAT COSTCTR 4. ORGUNIT $4.;                                       00281004
+   COSTCTR=BRANCH;                                                      00282000
+   ORGUNIT='PBB';                                                       00283004
+   OUTPUT PBB;                                                          00290000
+   COSTCTR=SUM(3000,BRANCH);                                            00300000
+   ORGUNIT='PIBB';                                                      00301004
+   OUTPUT PIBB;                                                         00310000
+RUN;                                                                    00320000
+                                                                        00330000
+DATA BRHCOSTCTR;                                                        00340000
+   SET PBB PIBB;                                                        00350000
+RUN;                                                                    00360000
+DATA DUMMY;                                                             00361006
+  ORGUNIT = 'PBB'; COSTCTR = 999;                                       00362006
+RUN;                                                                    00363006
+PROC APPEND DATA=DUMMY BASE=BRCHCOSTCTR;RUN;                            00364006
+PROC SORT DATA=BRHCOSTCTR;BY BRANCH;RUN;                                00370000
+ ************************************;                                  00371010
+ * BRANCH_COST_CENTRE_LINK_YYYYMMDD *;                                  00372010
+ ************************************;                                  00373010
+DATA _NULL_;                                                            00380001
+   SET BRHCOSTCTR;                                                      00390001
+   FILE BRHCTR;                                                         00400001
+   DELIM = '1D'X;                                                       00400107
+   PUT BRANCH       +(-1)DELIM+(-1)                                     00401007
+       COSTCTR      +(-1)DELIM+(-1)                                     00402007
+       ;                                                                00403006
+RUN;                                                                    00420001
+                                                                        00421010
+ ************************;                                              00422010
+ * COST_CENTRE_YYYYMMDD *;                                              00423010
+ ************************;                                              00424010
+DATA _NULL_;                                                            00430004
+   SET BRHCOSTCTR;                                                      00440004
+   FILE COSTCTR;                                                        00450004
+   DELIM = '1D'X;                                                       00460007
+   PUT COSTCTR            +(-1)DELIM+(-1)                               00470007
+       NAME               +(-1)DELIM+(-1)                               00480007
+       ' '                +(-1)DELIM+(-1)                               00490007
+       ORGUNIT            +(-1)DELIM+(-1)                               00500007
+       ' '                +(-1)DELIM+(-1)                               00510007
+       ;                                                                00520007
+RUN;                                                                    00530007
