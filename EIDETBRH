@@ -74,3 +74,57 @@ DATA _NULL_;                                                            00430004
        ' '                +(-1)DELIM+(-1)                               00510007
        ;                                                                00520007
 RUN;                                                                    00530007
+
+
+
+from pathlib import Path
+
+
+INPUT_FILE = Path("/stgsrcsys/host/ftpfiles/DBRANCH.TXT")
+OUTPUT_FILE = Path("BRH.csv")
+
+
+def read_branch_file(input_file):
+    brh = []
+
+    with input_file.open("r", encoding="utf-8", errors="ignore") as infile:
+        for line in infile:
+            # SAS positions are 1-based:
+            # @002 3.  -> Python [1:4]
+            # @006 $3. -> Python [5:8]
+            # @050 $1. -> Python [49:50]
+            brchcode_text = line[1:4].strip()
+            branch = line[5:8].strip()
+            status = line[49:50]
+
+            if not brchcode_text:
+                continue
+
+            brchcode = int(brchcode_text)
+
+            if status == "O" and brchcode not in (101, 187, 279):
+                brh.append(
+                    {
+                        "D_TRX_BRANCH": branch,
+                        "D_TRX_BRCHCODE": brchcode,
+                    }
+                )
+
+    return brh
+
+
+def write_output(rows, output_file):
+    with output_file.open("w", encoding="utf-8", newline="") as outfile:
+        outfile.write("D_TRX_BRANCH,D_TRX_BRCHCODE\n")
+        for row in rows:
+            outfile.write(f"{row['D_TRX_BRANCH']},{row['D_TRX_BRCHCODE']}\n")
+
+
+def main():
+    brh = read_branch_file(INPUT_FILE)
+    brh.sort(key=lambda row: row["D_TRX_BRANCH"])
+    write_output(brh, OUTPUT_FILE)
+
+
+if __name__ == "__main__":
+    main()
