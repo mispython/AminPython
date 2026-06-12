@@ -76,12 +76,10 @@ DATA _NULL_;                                                            00430004
 RUN;                                                                    00530007
 
 
-
 from pathlib import Path
 
-
-INPUT_FILE = Path("/stgsrcsys/host/ftpfiles/DBRANCH.TXT")
-OUTPUT_FILE = Path("BRH.csv")
+INPUT_FILE = Path("Data_Warehouse/MIS/XMIS/input/prod/DBRANCH.TXT")
+OUTPUT_FILE = Path("Data_Warehouse/MIS/XMIS/input/prod/output/BRH.csv")
 
 
 def read_branch_file(input_file):
@@ -89,10 +87,6 @@ def read_branch_file(input_file):
 
     with input_file.open("r", encoding="utf-8", errors="ignore") as infile:
         for line in infile:
-            # SAS positions are 1-based:
-            # @002 3.  -> Python [1:4]
-            # @006 $3. -> Python [5:8]
-            # @050 $1. -> Python [49:50]
             brchcode_text = line[1:4].strip()
             branch = line[5:8].strip()
             status = line[49:50]
@@ -103,17 +97,17 @@ def read_branch_file(input_file):
             brchcode = int(brchcode_text)
 
             if status == "O" and brchcode not in (101, 187, 279):
-                brh.append(
-                    {
-                        "D_TRX_BRANCH": branch,
-                        "D_TRX_BRCHCODE": brchcode,
-                    }
-                )
+                brh.append({
+                    "D_TRX_BRANCH": branch,
+                    "D_TRX_BRCHCODE": brchcode,
+                })
 
     return brh
 
 
 def write_output(rows, output_file):
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
     with output_file.open("w", encoding="utf-8", newline="") as outfile:
         outfile.write("D_TRX_BRANCH,D_TRX_BRCHCODE\n")
         for row in rows:
