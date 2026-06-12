@@ -1,3 +1,46 @@
+**********************************************************
+* Job:      EIDETBRH_PAS                                 *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Friday, June 12, 2026, 11:28:15 AM           *
+**********************************************************
+Program start : 2026/06/12 11:28:30
+
+1       from pathlib import Path
+2       INPUT_FILE = Path("Data_Warehouse/MIS/XMIS/input/prod/DBRANCH.TXT")
+3       OUTPUT_FILE = Path("Data_Warehouse/MIS/XMIS/input/prod/output/BRH.csv")
+4       def read_branch_file(input_file):
+5       def write_output(rows, output_file):
+6       def main():
+7       if __name__ == "__main__":
+8           main()
+9           brh = read_branch_file(INPUT_FILE)
+10          brh = []
+11          with input_file.open("r", encoding="utf-8", errors="ignore") as infile:
+12              for line in infile:
+13                  brchcode_text = line[1:4].strip()
+14                  branch = line[5:8].strip()
+15                  status = line[49:50]
+16                  if not brchcode_text:
+17                  brchcode = int(brchcode_text)
+18                  if status == "O" and brchcode not in (101, 187, 279):
+19                      brh.append(
+20                              "D_TRX_BRANCH": branch,
+21                              "D_TRX_BRCHCODE": brchcode,
+22                          {
+23          return brh
+24          brh.sort(key=lambda row: row["D_TRX_BRANCH"])
+25          write_output(brh, OUTPUT_FILE)
+26          with output_file.open("w", encoding="utf-8", newline="") as outfile:
+27              outfile.write("D_TRX_BRANCH,D_TRX_BRCHCODE\n")
+28              for row in rows:
+29                  outfile.write(f"{row['D_TRX_BRANCH']},{row['D_TRX_BRCHCODE']}\n")
+
+Total time elapsed : 00:00:00
+Memory used: 0.55 MB
+Program end : 2026/06/12 11:28:30
+
+
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBMBTMY_TXT.py", line 395, in <module>
     main()
