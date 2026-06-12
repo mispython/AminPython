@@ -1,3 +1,30 @@
+
+
+
+/stgsrcsys/host/ftpfiles/DBRANCH.TXT
+
+DATA BRH (KEEP=D_TRX_BRANCH D_TRX_BRCHCODE);
+  	INFILE BRHFILE;
+  	INPUT @002 D_TRX_BRCHCODE   3.
+          @006 D_TRX_BRANCH    $3.
+          @050 STATUS   $1.
+          ;
+  	IF STATUS = 'O' AND D_TRX_BRCHCODE  NOT IN (101,187,279);
+RUN;
+PROC SORT DATA=BRH; BY D_TRX_BRANCH; RUN;
+
+
+
+
+
+
+
+
+
+
+
+
+
 //EIIMRPTC JOB MISEIS,EIBMRPTC,COND=(4,LT),CLASS=A,MSGCLASS=X,
 //         NOTIFY=&SYSUID
 //*-------------------------------------------------------------------
