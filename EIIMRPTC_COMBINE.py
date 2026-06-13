@@ -16,8 +16,10 @@ from pbbdpfmt import ddcustcd
 
 
 DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_MIS_DIR = DEFAULT_INPUT_DIR / "cumm"
 DEFAULT_OUTPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod/output")
 DATE_FILE_FORMAT = "%m4%y"
+MIS_DATE_FILE_FORMAT = "%m"
 
 # Input file names are kept here so operation changes are easy to find.
 SAVING_INPUT_PREFIX = "ISA"
@@ -26,17 +28,17 @@ DEPOSIT_FD_INPUT_PREFIX = "IFD"
 CERTIFICATE_FD_INPUT_PREFIX = "IFDCD"
 BRANCH_INPUT = "DBRANCH.TXT"
 
-PREVIOUS_SAVG_PREFIX = "ISA"
-PREVIOUS_CURR_PREFIX = "ICA"
-PREVIOUS_FD_PREFIX = "IFD"
+PREVIOUS_SAVG_PREFIX = "SAVGF"
+PREVIOUS_CURR_PREFIX = "CURRF"
+PREVIOUS_FD_PREFIX = "FDF"
 
-SAVG_CLOSED_OUTPUT_PREFIX = "ISACLOSE"
-CURR_CLOSED_OUTPUT_PREFIX = "ICACLOSE"
-FD_CLOSED_OUTPUT_PREFIX = "IFDCLOSE"
+SAVG_CLOSED_OUTPUT_PREFIX = "SAVGC"
+CURR_CLOSED_OUTPUT_PREFIX = "CURRC"
+FD_CLOSED_OUTPUT_PREFIX = "FDC"
 
-SAVG_FINAL_OUTPUT_PREFIX = "ISAX"
-CURR_FINAL_OUTPUT_PREFIX = "ICAX"
-FD_FINAL_OUTPUT_PREFIX = "IFDX"
+SAVG_FINAL_OUTPUT_PREFIX = "SAVGF"
+CURR_FINAL_OUTPUT_PREFIX = "CURRF"
+FD_FINAL_OUTPUT_PREFIX = "FDF"
 
 SAVG_REPORT_OUTPUT = "IOPCLSAVG.TXT"
 CURR_REPORT_OUTPUT = "IOPCLCURR.TXT"
@@ -106,8 +108,8 @@ def reporting_dates(run_date: date | None = None) -> dict[str, str]:
     return {
         "RDATE": date_value.strftime("%d/%m/%y"),
         "INPUT_FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
-        "PREVIOUS_INPUT_FILEDATE": previous_month_end.strftime(DATE_FILE_FORMAT),
-        "FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
+        "PREVIOUS_MIS_FILEDATE": previous_month_end.strftime(MIS_DATE_FILE_FORMAT),
+        "FILEDATE": date_value.strftime(MIS_DATE_FILE_FORMAT),
         "RYEAR": date_value.strftime("%Y"),
         "RMONTH": date_value.strftime("%m"),
         "REPTMON": f"{month:02d}",
@@ -202,6 +204,13 @@ def apply_cumulative(
     current = current.copy()
     if previous is not None:
         previous = previous.copy()
+        missing = [column for column in (previous_open, previous_close) if column not in previous.columns]
+        if missing:
+            raise ValueError(
+                "Previous cumulative dataset is missing required column(s) "
+                f"{', '.join(missing)}. Use the prior final summary dataset "
+                "(SAVGF, CURRF, or FDF), not the raw ISA, ICA, or IFD input."
+            )
         if remap_227_to_81:
             previous.loc[previous["BRANCH"] == 227, "BRANCH"] = 81
         previous.loc[previous["BRANCH"] == 250, "BRANCH"] = 92
@@ -455,7 +464,7 @@ def run_savg(config: RunConfig) -> dict[str, Path]:
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"{PREVIOUS_SAVG_PREFIX}{dates['PREVIOUS_INPUT_FILEDATE']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_SAVG_PREFIX}{dates['PREVIOUS_MIS_FILEDATE']}")
     savg = apply_cumulative(savg, previous, remap_227_to_81=True)
 
     final_path = write_dataset(savg, config.mis_dir, f"{SAVG_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
@@ -499,7 +508,7 @@ def run_curr(config: RunConfig) -> dict[str, Path]:
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"{PREVIOUS_CURR_PREFIX}{dates['PREVIOUS_INPUT_FILEDATE']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_CURR_PREFIX}{dates['PREVIOUS_MIS_FILEDATE']}")
     curr = apply_cumulative(curr, previous)
 
     final_path = write_dataset(curr, config.mis_dir, f"{CURR_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
@@ -540,7 +549,7 @@ def run_fd(config: RunConfig) -> dict[str, Path]:
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"{PREVIOUS_FD_PREFIX}{dates['PREVIOUS_INPUT_FILEDATE']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_FD_PREFIX}{dates['PREVIOUS_MIS_FILEDATE']}")
     fd = apply_cumulative(fd, previous)
 
     final_path = write_dataset(fd, config.mis_dir, f"{FD_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
@@ -580,9 +589,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mis-dir",
-        default=DEFAULT_INPUT_DIR,
+        default=DEFAULT_MIS_DIR,
         type=Path,
-        help=f"Folder for MIS monthly input/output datasets. Default: {DEFAULT_INPUT_DIR}",
+        help=f"Folder for MIS monthly input/output datasets. Default: {DEFAULT_MIS_DIR}",
     )
     parser.add_argument(
         "--output-dir",
