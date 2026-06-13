@@ -1,27 +1,267 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Iterable
 
-from common import (
-    RunConfig,
-    add_close_and_account_counts,
-    apply_cumulative,
-    keep_open_or_closed_this_month,
-    make_closed_extract,
-    normalize_branch,
-    normalize_open_indicator,
-    read_dataset,
-    reporting_dates,
-    summary_by_branch_product,
-    write_dataset,
-    write_report,
-)
+import pandas as pd
+
 from pbbdpfmt import ddcustcd
 
 
 # PBBDPFMT and PBBELF are intentionally not combined into this job.
 # They are maintained by another team and should remain as separate include-style modules.
+
+
+DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod/output")
+DATE_FILE_FORMAT = "%y%m%d"
+
+# Input file names are kept here so operation changes are easy to find.
+SAVING_INPUT_PREFIX = "SA"
+CURRENT_INPUT_PREFIX = "CA"
+DEPOSIT_FD_INPUT_PREFIX = "FD"
+CERTIFICATE_FD_INPUT_PREFIX = "FDCD"
+BRANCH_INPUT = "DBRANCH.TXT"
+
+PREVIOUS_SAVG_PREFIX = "SA"
+PREVIOUS_CURR_PREFIX = "CA"
+PREVIOUS_FD_PREFIX = "FD"
+
+SAVG_CLOSED_OUTPUT_PREFIX = "SAVGC"
+CURR_CLOSED_OUTPUT_PREFIX = "CURRC"
+FD_CLOSED_OUTPUT_PREFIX = "FDC"
+
+SAVG_FINAL_OUTPUT_PREFIX = "SA"
+CURR_FINAL_OUTPUT_PREFIX = "CURRF"
+FD_FINAL_OUTPUT_PREFIX = "FDF"
+
+SAVG_REPORT_OUTPUT = "IOPCLSAVG.TXT"
+CURR_REPORT_OUTPUT = "IOPCLCURR.TXT"
+FD_REPORT_OUTPUT = "IOPCLFDAC.TXT"
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    deposit_dir: Path
+    fd_dir: Path
+    mis_dir: Path
+    output_dir: Path
+    branch_file: Path | None = None
+    run_date: date | None = None
+
+
+def read_dataset(directory: Path, name: str) -> pd.DataFrame:
+    directory = Path(directory)
+    path = directory / f"{name.lower()}.sas7bdat"
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset {path} not found")
+
+    frame = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    frame.columns = [str(column).upper() for column in frame.columns]
+    return frame
+
+
+def write_dataset(frame: pd.DataFrame, directory: Path, name: str) -> Path:
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{name}.csv"
+    frame.to_csv(path, index=False)
+    return path
+
+
+def read_branch_file(path: Path, record_length: int = 81) -> pd.DataFrame:
+    rows = []
+    with Path(path).open("r", encoding="utf-8", errors="replace") as branch_file:
+        for line in branch_file:
+            record = line.rstrip("\r\n")
+            if not record.strip():
+                continue
+            record = record[:record_length].ljust(record_length)
+            branch_code_raw = record[1:4].strip()
+            rows.append(
+                {
+                    "D_TRX_BRCHCODE": int(branch_code_raw) if branch_code_raw.isdigit() else pd.NA,
+                    "D_TRX_BRANCH": record[5:8].strip(),
+                    "STATUS": record[49:50].strip(),
+                }
+            )
+    frame = pd.DataFrame(rows, columns=["D_TRX_BRCHCODE", "D_TRX_BRANCH", "STATUS"])
+    frame = frame[
+        frame["STATUS"].eq("O")
+        & ~frame["D_TRX_BRCHCODE"].isin([101, 187, 279])
+    ].copy()
+    return frame[["D_TRX_BRANCH", "D_TRX_BRCHCODE"]].sort_values("D_TRX_BRANCH").reset_index(drop=True)
+
+
+def reporting_dates(run_date: date | None = None) -> dict[str, str]:
+    selected_date = run_date or date.today()
+    date_value = selected_date.replace(day=1)
+    previous_month_end = date_value - timedelta(days=1)
+    previous_date_value = previous_month_end.replace(day=1)
+    month = date_value.month
+    previous_month = month - 1 or 12
+    return {
+        "RDATE": date_value.strftime("%d/%m/%y"),
+        "FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
+        "PREVIOUS_FILEDATE": previous_date_value.strftime(DATE_FILE_FORMAT),
+        "RYEAR": date_value.strftime("%Y"),
+        "RMONTH": date_value.strftime("%m"),
+        "REPTMON": f"{month:02d}",
+        "REPTMON1": f"{previous_month:02d}",
+        "RDAY": date_value.strftime("%d"),
+    }
+
+
+def normalize_branch(frame: pd.DataFrame, delete_227: bool = False) -> pd.DataFrame:
+    frame = frame.copy()
+    if delete_227:
+        frame = frame[frame["BRANCH"] != 227]
+    frame.loc[frame["BRANCH"] == 250, "BRANCH"] = 92
+    return frame
+
+
+def normalize_open_indicator(frame: pd.DataFrame) -> pd.DataFrame:
+    frame = frame.copy()
+    is_z = frame["OPENIND"].eq("Z")
+    frame.loc[is_z, "OPENIND"] = "O"
+    frame.loc[is_z, "CLOSEMH"] = 0
+    return frame
+
+
+def keep_open_or_closed_this_month(frame: pd.DataFrame) -> pd.DataFrame:
+    is_open = frame["OPENIND"].eq("O")
+    is_closed_this_month = frame["OPENIND"].isin(["B", "C", "P"]) & frame["CLOSEMH"].eq(1)
+    return frame[is_open | is_closed_this_month].copy()
+
+
+def add_close_and_account_counts(frame: pd.DataFrame, bank_customer_split: bool) -> pd.DataFrame:
+    frame = frame.copy()
+    frame["NOACCT"] = 0
+    if bank_customer_split:
+        frame["BCLOSE"] = 0
+        frame["CCLOSE"] = 0
+        closed = frame["OPENIND"].isin(["B", "C", "P"])
+        frame.loc[closed & frame["OPENIND"].eq("C"), "CCLOSE"] = frame.loc[
+            closed & frame["OPENIND"].eq("C"), "CLOSEMH"
+        ]
+        frame.loc[closed & ~frame["OPENIND"].eq("C"), "BCLOSE"] = frame.loc[
+            closed & ~frame["OPENIND"].eq("C"), "CLOSEMH"
+        ]
+    frame.loc[~frame["OPENIND"].isin(["B", "C", "P"]), "NOACCT"] = 1
+    return frame
+
+
+def parse_mni_date(series: pd.Series, total_width: int, take_width: int, fmt: str) -> pd.Series:
+    def convert(value):
+        if pd.isna(value) or value == 0:
+            return pd.NaT
+        text = str(int(value)).zfill(total_width)[:take_width]
+        return datetime.strptime(text, fmt).date()
+
+    return series.map(convert)
+
+
+def make_closed_extract(frame: pd.DataFrame, keep_columns: Iterable[str]) -> pd.DataFrame:
+    extract = frame[frame["OPENIND"].isin(["B", "C", "P"]) & frame["CLOSEMH"].eq(1)].copy()
+    if "YTDAVAMT" in extract.columns:
+        extract["YTDAVBAL"] = extract["YTDAVAMT"]
+    if "LASTTRAN" in extract.columns:
+        extract["LASTTRAN"] = parse_mni_date(extract["LASTTRAN"], 9, 6, "%m%d%y")
+    if "BDATE" in extract.columns:
+        extract["DOBMNI"] = parse_mni_date(extract["BDATE"], 11, 8, "%m%d%Y")
+    for column in keep_columns:
+        if column not in extract.columns:
+            extract[column] = pd.NA
+    return extract[list(keep_columns)]
+
+
+def summary_by_branch_product(frame: pd.DataFrame, variables: Iterable[str]) -> pd.DataFrame:
+    variables = list(variables)
+    for variable in variables:
+        if variable not in frame.columns:
+            frame[variable] = 0
+    return (
+        frame.groupby(["BRANCH", "PRODUCT"], dropna=False)[variables]
+        .sum(numeric_only=True)
+        .reset_index()
+        .sort_values(["BRANCH", "PRODUCT"])
+    )
+
+
+def apply_cumulative(
+    current: pd.DataFrame,
+    previous: pd.DataFrame | None,
+    previous_open: str = "OPENCUM",
+    previous_close: str = "CLOSECUM",
+    remap_227_to_81: bool = False,
+) -> pd.DataFrame:
+    current = current.copy()
+    if previous is not None:
+        previous = previous.copy()
+        if remap_227_to_81:
+            previous.loc[previous["BRANCH"] == 227, "BRANCH"] = 81
+        previous.loc[previous["BRANCH"] == 250, "BRANCH"] = 92
+        previous["OPENCUX"] = previous[previous_open]
+        previous["CLOSECUX"] = previous[previous_close]
+        previous = summary_by_branch_product(previous, ["OPENCUX", "CLOSECUX"])
+        current = previous.merge(current, on=["BRANCH", "PRODUCT"], how="outer")
+    else:
+        current["OPENCUX"] = 0
+        current["CLOSECUX"] = 0
+
+    numeric_columns = [
+        "OPENCUX", "CLOSECUX", "OPENMH", "CLOSEMH", "BCLOSE",
+        "CCLOSE", "NOACCT", "NOCD", "CURBAL",
+    ]
+    for column in numeric_columns:
+        if column not in current.columns:
+            current[column] = 0
+        current[column] = current[column].fillna(0)
+
+    current["OPENCUM"] = current["OPENMH"] + current["OPENCUX"]
+    current["CLOSECUM"] = current["CLOSEMH"] + current["CLOSECUX"]
+    current["NETCHGMH"] = current["OPENMH"] - current["CLOSEMH"]
+    current["NETCHGYR"] = current["OPENCUM"] - current["CLOSECUM"]
+    return current.sort_values(["BRANCH", "PRODUCT"]).reset_index(drop=True)
+
+
+def write_report(
+    frame: pd.DataFrame,
+    output_path: Path,
+    title2: str,
+    variables: list[tuple[str, str, str]],
+) -> Path:
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    grouped = frame.groupby("BRANCH", dropna=False)[[name for name, _, _ in variables]].sum().reset_index()
+    total = grouped[[name for name, _, _ in variables]].sum(numeric_only=True)
+    total_row = {"BRANCH": "TOTAL", **total.to_dict()}
+    grouped = pd.concat([grouped, pd.DataFrame([total_row])], ignore_index=True)
+
+    headers = ["BRANCH", *[heading for _, heading, _ in variables]]
+    rows = []
+    for _, row in grouped.iterrows():
+        values = [str(row["BRANCH"])]
+        for name, _, fmt in variables:
+            value = row[name]
+            values.append(f"{value:,.2f}" if fmt == "money" else f"{value:,.0f}")
+        rows.append(values)
+
+    widths = [max(len(header), *(len(row[i]) for row in rows)) for i, header in enumerate(headers)]
+    with output_path.open("w", encoding="utf-8") as report:
+        report.write("PUBLIC ISLAMIC BANK BERHAD\n")
+        report.write(f"{title2}\n\n")
+        report.write(" ".join(header.rjust(widths[i]) for i, header in enumerate(headers)))
+        report.write("\n")
+        report.write(" ".join("-" * width for width in widths))
+        report.write("\n")
+        for row in rows:
+            report.write(" ".join(row[i].rjust(widths[i]) for i in range(len(headers))))
+            report.write("\n")
+    return output_path
 
 
 SAVG_PRODUCT_RANGES = [
@@ -159,16 +399,16 @@ def delete_previous_outputs(config: RunConfig) -> None:
     #   SAP.PIBB.OPCL.CURR
     #   SAP.PIBB.OPCL.FD
     #   SAP.PIBB.OPCL.SAVG
-    for name in ["IOPCLCURR.TXT", "IOPCLFDAC.TXT", "IOPCLSAVG.TXT"]:
+    for name in [CURR_REPORT_OUTPUT, FD_REPORT_OUTPUT, SAVG_REPORT_OUTPUT]:
         path = config.output_dir / name
         if path.exists():
             path.unlink()
 
 
 def run_savg(config: RunConfig) -> dict[str, Path]:
-    dates = reporting_dates(config.deposit_dir)
+    dates = reporting_dates(config.run_date)
 
-    savg = read_dataset(config.deposit_dir, "SAVING")
+    savg = read_dataset(config.deposit_dir, f"{SAVING_INPUT_PREFIX}{dates['FILEDATE']}")
     savg = savg[product_mask(savg["PRODUCT"], SAVG_PRODUCT_RANGES, SAVG_PRODUCTS)].copy()
     savg = normalize_branch(savg, delete_227=True)
     savg = normalize_open_indicator(savg)
@@ -179,20 +419,20 @@ def run_savg(config: RunConfig) -> dict[str, Path]:
     closed_path = write_dataset(
         make_closed_extract(savg, SAVG_CLOSED_COLUMNS),
         config.mis_dir,
-        f"SAVGC{dates['REPTMON']}",
+        f"{SAVG_CLOSED_OUTPUT_PREFIX}{dates['FILEDATE']}",
     )
 
     savg = summary_by_branch_product(savg, SAVG_SUMMARY_COLUMNS)
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"SAVGF{dates['REPTMON1']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_SAVG_PREFIX}{dates['PREVIOUS_FILEDATE']}")
     savg = apply_cumulative(savg, previous, remap_227_to_81=True)
 
-    final_path = write_dataset(savg, config.mis_dir, f"SAVGF{dates['REPTMON']}")
+    final_path = write_dataset(savg, config.mis_dir, f"{SAVG_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
     report_path = write_report(
         savg,
-        config.output_dir / "IOPCLSAVG.TXT",
+        config.output_dir / SAVG_REPORT_OUTPUT,
         f"SAVINGS ACCOUNT OPENED/CLOSED FOR THE MONTH AS AT {dates['RDATE']}",
         SAVG_REPORT_COLUMNS,
     )
@@ -204,9 +444,9 @@ def current_product_mask(product):
 
 
 def run_curr(config: RunConfig) -> dict[str, Path]:
-    dates = reporting_dates(config.deposit_dir)
+    dates = reporting_dates(config.run_date)
 
-    curr = read_dataset(config.deposit_dir, "CURRENT")
+    curr = read_dataset(config.deposit_dir, f"{CURRENT_INPUT_PREFIX}{dates['FILEDATE']}")
     curr.loc[curr["BRANCH"] == 996, "BRANCH"] = 168
     curr.loc[curr["BRANCH"] == 250, "BRANCH"] = 92
     curr = curr[current_product_mask(curr["PRODUCT"])].copy()
@@ -223,20 +463,20 @@ def run_curr(config: RunConfig) -> dict[str, Path]:
     closed_path = write_dataset(
         make_closed_extract(curr, CURR_CLOSED_COLUMNS),
         config.mis_dir,
-        f"CURRC{dates['REPTMON']}",
+        f"{CURR_CLOSED_OUTPUT_PREFIX}{dates['FILEDATE']}",
     )
 
     curr = summary_by_branch_product(curr, CURR_SUMMARY_COLUMNS)
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"CURRF{dates['REPTMON1']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_CURR_PREFIX}{dates['PREVIOUS_FILEDATE']}")
     curr = apply_cumulative(curr, previous)
 
-    final_path = write_dataset(curr, config.mis_dir, f"CURRF{dates['REPTMON']}")
+    final_path = write_dataset(curr, config.mis_dir, f"{CURR_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
     report_path = write_report(
         curr,
-        config.output_dir / "IOPCLCURR.TXT",
+        config.output_dir / CURR_REPORT_OUTPUT,
         f"CURRENT ACCOUNT OPENED/CLOSED FOR THE MONTH AS AT {dates['RDATE']}",
         CURR_REPORT_COLUMNS,
     )
@@ -244,14 +484,14 @@ def run_curr(config: RunConfig) -> dict[str, Path]:
 
 
 def run_fd(config: RunConfig) -> dict[str, Path]:
-    dates = reporting_dates(config.deposit_dir)
+    dates = reporting_dates(config.run_date)
 
-    fdc = read_dataset(config.fd_dir, "FD")
+    fdc = read_dataset(config.fd_dir, f"{CERTIFICATE_FD_INPUT_PREFIX}{dates['FILEDATE']}")
     fdc = fdc[fdc["OPENIND"].isin(["O", "D"])].copy()
     fdc = fdc.sort_values("ACCTNO")
     fdc = fdc.groupby("ACCTNO", as_index=False).size().rename(columns={"size": "NOCD"})
 
-    fd = read_dataset(config.deposit_dir, "FD")
+    fd = read_dataset(config.deposit_dir, f"{DEPOSIT_FD_INPUT_PREFIX}{dates['FILEDATE']}")
     fd = normalize_branch(fd, delete_227=True)
     fd = fd[product_mask(fd["PRODUCT"], FD_PRODUCT_RANGES, FD_PRODUCTS)].copy()
     fd = normalize_open_indicator(fd)
@@ -262,7 +502,7 @@ def run_fd(config: RunConfig) -> dict[str, Path]:
     closed_path = write_dataset(
         make_closed_extract(fd, FD_CLOSED_COLUMNS),
         config.mis_dir,
-        f"FDC{dates['REPTMON']}",
+        f"{FD_CLOSED_OUTPUT_PREFIX}{dates['FILEDATE']}",
     )
 
     fd = fdc.merge(fd, on="ACCTNO", how="right")
@@ -271,13 +511,13 @@ def run_fd(config: RunConfig) -> dict[str, Path]:
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"FDF{dates['REPTMON1']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_FD_PREFIX}{dates['PREVIOUS_FILEDATE']}")
     fd = apply_cumulative(fd, previous)
 
-    final_path = write_dataset(fd, config.mis_dir, f"FDF{dates['REPTMON']}")
+    final_path = write_dataset(fd, config.mis_dir, f"{FD_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
     report_path = write_report(
         fd,
-        config.output_dir / "IOPCLFDAC.TXT",
+        config.output_dir / FD_REPORT_OUTPUT,
         f"FD ACCOUNT OPENED/CLOSED FOR THE MONTH AS AT {dates['RDATE']}",
         FD_REPORT_COLUMNS,
     )
@@ -299,18 +539,39 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--deposit-dir",
-        required=True,
+        default=DEFAULT_INPUT_DIR,
         type=Path,
-        help="Folder containing REPTDATE, SAVING, CURRENT, and FD datasets.",
+        help=f"Folder containing REPTDATE, SAVING, CURRENT, and FD datasets. Default: {DEFAULT_INPUT_DIR}",
     )
-    parser.add_argument("--fd-dir", required=True, type=Path, help="Folder containing the FD certificate dataset.")
-    parser.add_argument("--mis-dir", required=True, type=Path, help="Folder for MIS monthly input/output datasets.")
-    parser.add_argument("--output-dir", required=True, type=Path, help="Folder for IOPCLSAVG/CURR/FDAC text reports.")
+    parser.add_argument(
+        "--fd-dir",
+        default=DEFAULT_INPUT_DIR,
+        type=Path,
+        help=f"Folder containing the FD certificate dataset. Default: {DEFAULT_INPUT_DIR}",
+    )
+    parser.add_argument(
+        "--mis-dir",
+        default=DEFAULT_INPUT_DIR,
+        type=Path,
+        help=f"Folder for MIS monthly input/output datasets. Default: {DEFAULT_INPUT_DIR}",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=DEFAULT_OUTPUT_DIR,
+        type=Path,
+        help=f"Folder for IOPCLSAVG/CURR/FDAC text reports. Default: {DEFAULT_OUTPUT_DIR}",
+    )
     parser.add_argument(
         "--branch-file",
         type=Path,
-        default=None,
+        default=DEFAULT_INPUT_DIR / BRANCH_INPUT,
         help="Optional BRHFILE fixed-width input, for example /stgsrcsys/host/uat/DBRANCH.TXT.",
+    )
+    parser.add_argument(
+        "--run-date",
+        type=lambda value: datetime.strptime(value, "%Y-%m-%d").date(),
+        default=None,
+        help="Optional rerun date in YYYY-MM-DD. Any day chosen is normalized to the 1st of that month.",
     )
     return parser.parse_args()
 
@@ -323,6 +584,7 @@ def main() -> None:
         mis_dir=args.mis_dir,
         output_dir=args.output_dir,
         branch_file=args.branch_file,
+        run_date=args.run_date,
     )
     results = run(config)
     for step, files in results.items():
