@@ -20,6 +20,7 @@ DEFAULT_MIS_DIR = DEFAULT_INPUT_DIR / "cumm"
 DEFAULT_OUTPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod/output")
 DATE_FILE_FORMAT = "%m4%y"
 MIS_DATE_FILE_FORMAT = "%m"
+CLOSED_DATE_FILE_FORMAT = "%m%y"
 
 # Input file names are kept here so operation changes are easy to find.
 SAVING_INPUT_PREFIX = "ISA"
@@ -32,9 +33,9 @@ PREVIOUS_SAVG_PREFIX = "SAVGF"
 PREVIOUS_CURR_PREFIX = "CURRF"
 PREVIOUS_FD_PREFIX = "FDF"
 
-SAVG_CLOSED_OUTPUT_PREFIX = "SAVGC"
-CURR_CLOSED_OUTPUT_PREFIX = "CURRC"
-FD_CLOSED_OUTPUT_PREFIX = "FDC"
+SAVG_CLOSED_OUTPUT_PREFIX = "ISACLOSE"
+CURR_CLOSED_OUTPUT_PREFIX = "ICACLOSE"
+FD_CLOSED_OUTPUT_PREFIX = "IFDCLOSE"
 
 SAVG_FINAL_OUTPUT_PREFIX = "SAVGF"
 CURR_FINAL_OUTPUT_PREFIX = "CURRF"
@@ -109,6 +110,7 @@ def reporting_dates(run_date: date | None = None) -> dict[str, str]:
         "RDATE": date_value.strftime("%d/%m/%y"),
         "INPUT_FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
         "PREVIOUS_MIS_FILEDATE": previous_month_end.strftime(MIS_DATE_FILE_FORMAT),
+        "CLOSED_FILEDATE": date_value.strftime(CLOSED_DATE_FILE_FORMAT),
         "FILEDATE": date_value.strftime(MIS_DATE_FILE_FORMAT),
         "RYEAR": date_value.strftime("%Y"),
         "RMONTH": date_value.strftime("%m"),
@@ -457,7 +459,7 @@ def run_savg(config: RunConfig) -> dict[str, Path]:
     closed_path = write_dataset(
         make_closed_extract(savg, SAVG_CLOSED_COLUMNS),
         config.mis_dir,
-        f"{SAVG_CLOSED_OUTPUT_PREFIX}{dates['FILEDATE']}",
+        f"{SAVG_CLOSED_OUTPUT_PREFIX}{dates['CLOSED_FILEDATE']}",
     )
 
     savg = summary_by_branch_product(savg, SAVG_SUMMARY_COLUMNS)
@@ -501,7 +503,7 @@ def run_curr(config: RunConfig) -> dict[str, Path]:
     closed_path = write_dataset(
         make_closed_extract(curr, CURR_CLOSED_COLUMNS),
         config.mis_dir,
-        f"{CURR_CLOSED_OUTPUT_PREFIX}{dates['FILEDATE']}",
+        f"{CURR_CLOSED_OUTPUT_PREFIX}{dates['CLOSED_FILEDATE']}",
     )
 
     curr = summary_by_branch_product(curr, CURR_SUMMARY_COLUMNS)
@@ -540,7 +542,7 @@ def run_fd(config: RunConfig) -> dict[str, Path]:
     closed_path = write_dataset(
         make_closed_extract(fd, FD_CLOSED_COLUMNS),
         config.mis_dir,
-        f"{FD_CLOSED_OUTPUT_PREFIX}{dates['FILEDATE']}",
+        f"{FD_CLOSED_OUTPUT_PREFIX}{dates['CLOSED_FILEDATE']}",
     )
 
     fd = fdc.merge(fd, on="ACCTNO", how="right")
