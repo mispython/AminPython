@@ -1,3 +1,291 @@
+source /sas/python/virt_edw/bin/activate
+/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRPTC_COMBINE.py
+[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRPTC_COMBINE.py
+**********************************************************
+* Job:      EIIMRPTC_COMBINE                             *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Saturday, June 13, 2026, 12:20:01 PM         *
+**********************************************************
+Program start : 2026/06/13 12:20:14
+
+1       from __future__ import annotations
+2       import argparse
+3       from dataclasses import dataclass
+4       from datetime import date, datetime, timedelta
+5       from pathlib import Path
+6       from typing import Iterable
+7       import pandas as pd
+8       from pbbdpfmt import ddcustcd
+9       DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+10      DEFAULT_OUTPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod/output")
+11      DATE_FILE_FORMAT = "%m4%y"
+12      SAVING_INPUT_PREFIX = "ISA"
+13      CURRENT_INPUT_PREFIX = "ICA"
+14      DEPOSIT_FD_INPUT_PREFIX = "IFD"
+15      CERTIFICATE_FD_INPUT_PREFIX = "IFDCD"
+16      BRANCH_INPUT = "DBRANCH.TXT"
+17      PREVIOUS_SAVG_PREFIX = "ISA"
+18      PREVIOUS_CURR_PREFIX = "ICA"
+19      PREVIOUS_FD_PREFIX = "IFD"
+20      SAVG_CLOSED_OUTPUT_PREFIX = "ISACLOSE"
+21      CURR_CLOSED_OUTPUT_PREFIX = "ICACLOSE"
+22      FD_CLOSED_OUTPUT_PREFIX = "IFDCLOSE"
+23      SAVG_FINAL_OUTPUT_PREFIX = "ISAX"
+24      CURR_FINAL_OUTPUT_PREFIX = "ICAX"
+25      FD_FINAL_OUTPUT_PREFIX = "IFDX"
+26      SAVG_REPORT_OUTPUT = "IOPCLSAVG.TXT"
+27      CURR_REPORT_OUTPUT = "IOPCLCURR.TXT"
+28      FD_REPORT_OUTPUT = "IOPCLFDAC.TXT"
+29      @dataclass(frozen=True)
+30      class RunConfig:
+31          deposit_dir: Path
+32          fd_dir: Path
+33          mis_dir: Path
+34          output_dir: Path
+35          branch_file: Path | None = None
+36          run_date: date | None = None
+37      def read_dataset(directory: Path, name: str) -> pd.DataFrame:
+38      def write_dataset(frame: pd.DataFrame, directory: Path, name: str) -> Path:
+39      def read_branch_file(path: Path, record_length: int = 81) -> pd.DataFrame:
+40      def reporting_dates(run_date: date | None = None) -> dict[str, str]:
+41      def normalize_branch(frame: pd.DataFrame, delete_227: bool = False) -> pd.DataFrame:
+42      def normalize_open_indicator(frame: pd.DataFrame) -> pd.DataFrame:
+43      def keep_open_or_closed_this_month(frame: pd.DataFrame) -> pd.DataFrame:
+44      def add_close_and_account_counts(frame: pd.DataFrame, bank_customer_split: bool) -> pd.DataFrame:
+45      def parse_mni_date(series: pd.Series, total_width: int, take_width: int, fmt: str) -> pd.Series:
+46      def make_closed_extract(frame: pd.DataFrame, keep_columns: Iterable[str]) -> pd.DataFrame:
+47      def summary_by_branch_product(frame: pd.DataFrame, variables: Iterable[str]) -> pd.DataFrame:
+48      def apply_cumulative(
+49      def write_report(
+50      SAVG_PRODUCT_RANGES = [
+51      SAVG_PRODUCTS = {218}
+52      CURR_PRODUCT_RANGES = [
+53      CURR_PRODUCTS = {81}
+54          (300, 316),  # 300,301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316
+55      FD_PRODUCT_RANGES = [
+56      FD_PRODUCTS = {393, 394, 396}
+57      DNBFI_KEEP = {f"{value:02d}" for value in [*range(4, 7), *range(30, 36), *range(37, 41), 45]}
+58      def product_mask(product, ranges, values=()):
+59      SAVG_CLOSED_COLUMNS = [
+60      CURR_CLOSED_COLUMNS = [
+61      FD_CLOSED_COLUMNS = [
+62      SAVG_SUMMARY_COLUMNS = ["OPENMH", "CURBAL", "NOACCT", "CLOSEMH", "BCLOSE", "CCLOSE"]
+63      CURR_SUMMARY_COLUMNS = ["OPENMH", "CLOSEMH", "NOACCT", "CURBAL", "BCLOSE", "CCLOSE"]
+64      FD_SUMMARY_COLUMNS = ["OPENMH", "CLOSEMH", "NOACCT", "NOCD", "CURBAL"]
+65      SAVG_REPORT_COLUMNS = [
+66      CURR_REPORT_COLUMNS = [
+67      FD_REPORT_COLUMNS = [
+68      def delete_previous_outputs(config: RunConfig) -> None:
+69      def run_savg(config: RunConfig) -> dict[str, Path]:
+70      def current_product_mask(product):
+71      def run_curr(config: RunConfig) -> dict[str, Path]:
+72      def run_fd(config: RunConfig) -> dict[str, Path]:
+73      def run(config: RunConfig) -> dict[str, dict[str, Path]]:
+74      def parse_args() -> argparse.Namespace:
+75      def main() -> None:
+76      if __name__ == "__main__":
+77          main()
+78          args = parse_args()
+79          parser = argparse.ArgumentParser(
+80              description="Combined Python conversion of EIIMRPTC with EIIMDPN1, EIIMDPN2, and EIIMDPN3 in one job."
+81          parser.add_argument(
+82              "--deposit-dir",
+83              default=DEFAULT_INPUT_DIR,
+84              type=Path,
+85              help=f"Folder containing REPTDATE, SAVING, CURRENT, and FD datasets. Default: {DEFAULT_INPUT_DIR}",
+86          parser.add_argument(
+87              "--fd-dir",
+88              default=DEFAULT_INPUT_DIR,
+89              type=Path,
+90              help=f"Folder containing the FD certificate dataset. Default: {DEFAULT_INPUT_DIR}",
+91          parser.add_argument(
+92              "--mis-dir",
+93              default=DEFAULT_INPUT_DIR,
+94              type=Path,
+95              help=f"Folder for MIS monthly input/output datasets. Default: {DEFAULT_INPUT_DIR}",
+96          parser.add_argument(
+97              "--output-dir",
+98              default=DEFAULT_OUTPUT_DIR,
+99              type=Path,
+100             help=f"Folder for IOPCLSAVG/CURR/FDAC text reports. Default: {DEFAULT_OUTPUT_DIR}",
+101         parser.add_argument(
+102             "--branch-file",
+103             type=Path,
+104             default=DEFAULT_INPUT_DIR / BRANCH_INPUT,
+105             help="Optional BRHFILE fixed-width input, for example /stgsrcsys/host/uat/DBRANCH.TXT.",
+106         parser.add_argument(
+107             "--run-date",
+108             type=lambda value: datetime.strptime(value, "%Y-%m-%d").date(),
+109             default=None,
+110             help="Optional rerun date in YYYY-MM-DD. Any day chosen is normalized to the 1st of that month.",
+111         return parser.parse_args()
+112         config = RunConfig(
+113             deposit_dir=args.deposit_dir,
+114             fd_dir=args.fd_dir,
+115             mis_dir=args.mis_dir,
+116             output_dir=args.output_dir,
+117             branch_file=args.branch_file,
+118             run_date=args.run_date,
+119         results = run(config)
+120         delete_previous_outputs(config)
+121         for name in [CURR_REPORT_OUTPUT, FD_REPORT_OUTPUT, SAVG_REPORT_OUTPUT]:
+122             path = config.output_dir / name
+123             if path.exists():
+124             "EIIMDPN1": run_savg(config),
+125         dates = reporting_dates(config.run_date)
+126         selected_date = run_date or date.today()
+127         run_month_start = selected_date.replace(day=1)
+128         date_value = run_month_start - timedelta(days=1)
+129         previous_month_end = date_value.replace(day=1) - timedelta(days=1)
+130         month = date_value.month
+131         previous_month = month - 1 or 12
+132             "RDATE": date_value.strftime("%d/%m/%y"),
+133             "INPUT_FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
+134             "PREVIOUS_INPUT_FILEDATE": previous_month_end.strftime(DATE_FILE_FORMAT),
+135             "FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
+136             "RYEAR": date_value.strftime("%Y"),
+137             "RMONTH": date_value.strftime("%m"),
+138             "REPTMON": f"{month:02d}",
+139             "REPTMON1": f"{previous_month:02d}",
+140             "RDAY": date_value.strftime("%d"),
+141         return {
+142         savg = read_dataset(config.deposit_dir, f"{SAVING_INPUT_PREFIX}{dates['INPUT_FILEDATE']}")
+143         directory = Path(directory)
+144         path = directory / f"{name.lower()}.sas7bdat"
+145         if not path.exists():
+146         frame = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+147         frame.columns = [str(column).upper() for column in frame.columns]
+148         return frame
+149         savg = savg[product_mask(savg["PRODUCT"], SAVG_PRODUCT_RANGES, SAVG_PRODUCTS)].copy()
+150         mask = product.isin(values)
+151         for start, end in ranges:
+152             mask = mask | product.between(start, end)
+153         return mask
+154         savg = normalize_branch(savg, delete_227=True)
+155         frame = frame.copy()
+156         if delete_227:
+157             frame = frame[frame["BRANCH"] != 227]
+158         frame.loc[frame["BRANCH"] == 250, "BRANCH"] = 92
+159         return frame
+160         savg = normalize_open_indicator(savg)
+161         frame = frame.copy()
+162         is_z = frame["OPENIND"].eq("Z")
+163         frame.loc[is_z, "OPENIND"] = "O"
+164         frame.loc[is_z, "CLOSEMH"] = 0
+165         return frame
+166         savg = keep_open_or_closed_this_month(savg)
+167         is_open = frame["OPENIND"].eq("O")
+168         is_closed_this_month = frame["OPENIND"].isin(["B", "C", "P"]) & frame["CLOSEMH"].eq(1)
+169         return frame[is_open | is_closed_this_month].copy()
+170         savg = add_close_and_account_counts(savg, bank_customer_split=True)
+171         frame = frame.copy()
+172         frame["NOACCT"] = 0
+173         if bank_customer_split:
+174             frame["BCLOSE"] = 0
+175             frame["CCLOSE"] = 0
+176             closed = frame["OPENIND"].isin(["B", "C", "P"])
+177             frame.loc[closed & frame["OPENIND"].eq("C"), "CCLOSE"] = frame.loc[
+178                 closed & frame["OPENIND"].eq("C"), "CLOSEMH"
+179             frame.loc[closed & ~frame["OPENIND"].eq("C"), "BCLOSE"] = frame.loc[
+180                 closed & ~frame["OPENIND"].eq("C"), "CLOSEMH"
+181         frame.loc[~frame["OPENIND"].isin(["B", "C", "P"]), "NOACCT"] = 1
+182         return frame
+183         savg["CUSTFISS"] = 0
+184         closed_path = write_dataset(
+185             make_closed_extract(savg, SAVG_CLOSED_COLUMNS),
+186         extract = frame[frame["OPENIND"].isin(["B", "C", "P"]) & frame["CLOSEMH"].eq(1)].copy()
+187         if "YTDAVAMT" in extract.columns:
+188             extract["YTDAVBAL"] = extract["YTDAVAMT"]
+189         if "LASTTRAN" in extract.columns:
+190             extract["LASTTRAN"] = parse_mni_date(extract["LASTTRAN"], 9, 6, "%m%d%y")
+191         def convert(value):
+192         return series.map(convert)
+193         if "BDATE" in extract.columns:
+194         for column in keep_columns:
+195             if column not in extract.columns:
+196         return extract[list(keep_columns)]
+197             config.mis_dir,
+198             f"{SAVG_CLOSED_OUTPUT_PREFIX}{dates['FILEDATE']}",
+199         directory = Path(directory)
+200         directory.mkdir(parents=True, exist_ok=True)
+201         path = directory / f"{name}.csv"
+202         frame.to_csv(path, index=False)
+203         return path
+204         savg = summary_by_branch_product(savg, SAVG_SUMMARY_COLUMNS)
+205         variables = list(variables)
+206         for variable in variables:
+207             if variable not in frame.columns:
+208                 frame[variable] = 0
+209             frame.groupby(["BRANCH", "PRODUCT"], dropna=False)[variables]
+210             .sum(numeric_only=True)
+211             .sort_values(["BRANCH", "PRODUCT"])
+212         return (
+213         previous = None
+214         if dates["REPTMON"] > "01":
+215             previous = read_dataset(config.mis_dir, f"{PREVIOUS_SAVG_PREFIX}{dates['PREVIOUS_INPUT_FILEDATE']}")
+216         savg = apply_cumulative(savg, previous, remap_227_to_81=True)
+217         current = current.copy()
+218         if previous is not None:
+219             previous = previous.copy()
+220             if remap_227_to_81:
+221                 previous.loc[previous["BRANCH"] == 227, "BRANCH"] = 81
+222             previous.loc[previous["BRANCH"] == 250, "BRANCH"] = 92
+223             previous["OPENCUX"] = previous[previous_open]
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3805, in get_loc
+    return self._engine.get_loc(casted_key)
+  File "index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7081, in pandas._libs.hashtable.PyObjectHashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 7089, in pandas._libs.hashtable.PyObjectHashTable.get_item
+KeyError: 'OPENCUM'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRPTC_COMBINE.py", line 626, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRPTC_COMBINE.py", line 618, in main
+    results = run(config)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRPTC_COMBINE.py", line 559, in run
+    "EIIMDPN1": run_savg(config),
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRPTC_COMBINE.py", line 459, in run_savg
+    savg = apply_cumulative(savg, previous, remap_227_to_81=True)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRPTC_COMBINE.py", line 208, in apply_cumulative
+    previous["OPENCUX"] = previous[previous_open]
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/frame.py", line 4102, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3812, in get_loc
+    raise KeyError(key) from err
+KeyError: 'OPENCUM'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 **********************************************************
 * Job:      EIDETBRH_PAS                                 *
 * Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
