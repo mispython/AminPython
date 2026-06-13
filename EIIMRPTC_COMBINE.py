@@ -32,7 +32,7 @@ PREVIOUS_FD_PREFIX = "FD"
 
 SAVG_CLOSED_OUTPUT_PREFIX = "SAVGC"
 CURR_CLOSED_OUTPUT_PREFIX = "CURRC"
-FD_CLOSED_OUTPUT_PREFIX = "FDC"
+FD_CLOSED_OUTPUT_PREFIX = "FDCD"
 
 SAVG_FINAL_OUTPUT_PREFIX = "SA"
 CURR_FINAL_OUTPUT_PREFIX = "CURRF"
@@ -104,7 +104,7 @@ def reporting_dates(run_date: date | None = None) -> dict[str, str]:
     month = date_value.month
     previous_month = month - 1 or 12
     return {
-        "RDATE": date_value.strftime("%d/%m/%y"),
+        "RDATE": previous_month_end.strftime("%d/%m/%y"),
         "FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
         "PREVIOUS_FILEDATE": previous_date_value.strftime(DATE_FILE_FORMAT),
         "RYEAR": date_value.strftime("%Y"),
@@ -236,30 +236,58 @@ def write_report(
 ) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    grouped = frame.groupby("BRANCH", dropna=False)[[name for name, _, _ in variables]].sum().reset_index()
-    total = grouped[[name for name, _, _ in variables]].sum(numeric_only=True)
+    fields = [name for name, _, _ in variables]
+    grouped = frame.groupby("BRANCH", dropna=False)[fields].sum().reset_index()
+    total = grouped[fields].sum(numeric_only=True)
     total_row = {"BRANCH": "TOTAL", **total.to_dict()}
     grouped = pd.concat([grouped, pd.DataFrame([total_row])], ignore_index=True)
 
-    headers = ["BRANCH", *[heading for _, heading, _ in variables]]
-    rows = []
-    for _, row in grouped.iterrows():
-        values = [str(row["BRANCH"])]
-        for name, _, fmt in variables:
-            value = row[name]
-            values.append(f"{value:,.2f}" if fmt == "money" else f"{value:,.0f}")
-        rows.append(values)
+    layouts = {
+        "BRANCH": (8, ("BRANCH", "", "")),
+        "OPENMH": (12, ("CURRENT", "MONTH", "OPENED")),
+        "OPENCUM": (12, ("", "CUMULATIVE", "OPENED")),
+        "CLOSEMH": (12, ("CURRENT", "MONTH", "CLOSED")),
+        "BCLOSE": (11, ("", "CLOSED BY", "BANK")),
+        "CCLOSE": (11, ("", "CLOSED BY", "CUSTOMER")),
+        "CLOSECUM": (12, ("", "CUMULATIVE", "CLOSED")),
+        "NOACCT": (10, ("", "NO.OF", "ACCTS")),
+        "NOCD": (10, ("", "NO.OF", "CDS")),
+        "CURBAL": (19, ("", "", "TOTAL (RM) O/S")),
+        "NETCHGMH": (11, ("NET CHANGE", "FOR THE", "MONTH")),
+        "NETCHGYR": (11, ("NET CHANGE", "YEAR TO", "DATE")),
+    }
+    ordered_fields = ["BRANCH", *fields]
 
-    widths = [max(len(header), *(len(row[i]) for row in rows)) for i, header in enumerate(headers)]
+    def render_header_line(line_number: int) -> str:
+        cells = []
+        for field in ordered_fields:
+            width, header_lines = layouts[field]
+            cells.append(header_lines[line_number].center(width))
+        return "".join(cells).rstrip()
+
+    def format_branch(value) -> str:
+        if isinstance(value, str):
+            return value
+        return f"{value:.0f}"
+
+    def render_data_row(row: pd.Series) -> str:
+        cells = [format_branch(row["BRANCH"]).rjust(layouts["BRANCH"][0])]
+        for name, _, value_format in variables:
+            width = layouts[name][0]
+            value = row[name]
+            text = f"{value:,.2f}" if value_format == "money" else f"{value:,.0f}"
+            cells.append(text.rjust(width))
+        return "".join(cells).rstrip()
+
     with output_path.open("w", encoding="utf-8") as report:
         report.write("PUBLIC ISLAMIC BANK BERHAD\n")
-        report.write(f"{title2}\n\n")
-        report.write(" ".join(header.rjust(widths[i]) for i, header in enumerate(headers)))
+        report.write(f"{title2}\n\n\n\n")
+        for line_number in range(3):
+            report.write(render_header_line(line_number))
+            report.write("\n")
         report.write("\n")
-        report.write(" ".join("-" * width for width in widths))
-        report.write("\n")
-        for row in rows:
-            report.write(" ".join(row[i].rjust(widths[i]) for i in range(len(headers))))
+        for _, row in grouped.iterrows():
+            report.write(render_data_row(row))
             report.write("\n")
     return output_path
 
