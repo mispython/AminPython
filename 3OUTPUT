@@ -1,3 +1,48 @@
+PUBLIC ISLAMIC BANK BERHAD                                                                                                           
+FD ACCOUNT OPENED/CLOSED FOR THE MONTH AS AT 31/05/26                                                                                
+                                                                                                                                     
+                                                                                                                                     
+ BRANCH    CURRENT               CURRENT                                                       NET CHANGE NET CHANGE                 
+            MONTH    CUMULATIVE   MONTH    CUMULATIVE   NO.OF                                   FOR THE    YEAR TO                   
+            OPENED     OPENED     CLOSED     CLOSED     ACCTS    NO.OF CDS    TOTAL (RM) O/S     MONTH       DATE                    
+                                                                                                                                     
+ 2                 3         24          4         18        246        394      50,767,143.34         -1          6                 
+ 3                 9         97          7         49      1,020      2,690     425,829,139.67          2         48                 
+ 4                14        100          4         33        844      1,914     169,056,738.07         10         67          
+
+
+
+PUBLIC ISLAMIC BANK BERHAD                                                                                                           
+SAVINGS ACCOUNT OPENED/CLOSED FOR THE MONTH AS AT 31/05/26                                                                           
+                                                                                                                                     
+                                                                                                                                     
+ BRANCH  CURRENT               CURRENT                                                                 NET CHANGE NET CHANGE         
+          MONTH    CUMULATIVE   MONTH    CLOSED BY  CLOSED BY  CUMULATIVE   NO.OF                       FOR THE    YEAR TO           
+          OPENED     OPENED     CLOSED      BANK     CUSTOMER    CLOSED     ACCTS     TOTAL (RM) O/S     MONTH       DATE            
+                                                                                                                                     
+ 2              34        215          4          3          1        160      6,156     25,080,889.78         30         55         
+ 3              10         68          6          6          0        105      4,840     20,564,184.74          4        -37         
+ 4              15         86          3          1          2        176      6,723     44,997,529.43         12        -90         
+ 5             119        760          7          2          5        199     12,761     52,377,620.50        112        561         
+
+
+
+PUBLIC ISLAMIC BANK BERHAD                                                                                                           
+CURRENT ACCOUNT OPENED/CLOSED FOR THE MONTH AS AT 31/05/26                                                                           
+                                                                                                                                     
+                                                                                                                                     
+ BRANCH    CURRENT               CURRENT                                                                 NET CHANGE NET CHANGE       
+            MONTH    CUMULATIVE   MONTH    CLOSED BY  CLOSED BY  CUMULATIVE   NO. OF                      FOR THE    YEAR TO         
+            OPENED     OPENED     CLOSED      BANK     CUSTOMER    CLOSED     ACCTS      TOTAL(RM) O/S     MONTH       DATE          
+                                                                                                                                     
+ 2                 0          1          2          0          2          6        221      5,213,426.81         -2         -5       
+ 3                 0          1          0          0          0          5        199     76,169,200.92          0         -4       
+ 4                 1         12          0          0          0         10        438    -10,632,993.28          1          2       
+ 5                 3          4          0          0          0          6        401     -4,066,890.51          3         -2       
+
+
+
+
 _FREQ_,_TYPE_,ACCTNO,AMTIND,APPLCODE,APPRLIMT,APVDATE,ASCORE_LTST,ASCORE_PERM,BIRTHDT,BIRTHDTX,BRANCH,BTREL,BUSREGN,CCRISFAC,COLLATER,CURRENCY,CUSTCD,CUSTCODE,CUSTCODX,D,DBALANCE,DCURBAL,DCURBALX,DIRCTIND,DUNDRAWN,EXPRDATE,FICODE,I,IA_LRU,ICURBAL,ICURBALX,INDUSTRIAL_SECTOR_CD,INTRECV,ISSDTE,IUNDRAWN,KEYFACI,LEVEL1,LEVEL2,LEVEL3,LEVEL4,LEVEL5,LEVELS,NAME,ORI_AALIMIT,ORIGMT,POSTCODE,RETAILID,SCORE1,SCORE2,SECTOR,SECTORCD,SETTLED,SINDICAT,SM_DATE,SM_STATUS,STATE,SUBACCT,TFID,TRANXMT
 2,992,1234567890,as,123,,02,C,01,,,123,11112014,1111,S,N,,,,,20039,00000,11112014,,,,,,,,,,,,,,,,,,,,,,,,,,,,02,,,,,,,10,1111,D
 47,7,2007357110,K & T TRADING,25150,,47,R,06,,Aa3,,06052000,3110,S,N,,,,,19943,00000,6052000,,,,,,,,,,,,,,,,,,,,,,,,,,,,47,,,,,,,10,3110,D
