@@ -101,15 +101,14 @@ def reporting_dates(run_date: date | None = None) -> dict[str, str]:
     selected_date = run_date or date.today()
     run_month_start = selected_date.replace(day=1)
     date_value = run_month_start - timedelta(days=1)
-    previous_month_start = date_value.replace(day=1)
-    previous_date_value = previous_month_start - timedelta(days=1)
+    previous_month_end = date_value.replace(day=1) - timedelta(days=1)
     month = date_value.month
     previous_month = month - 1 or 12
     return {
         "RDATE": date_value.strftime("%d/%m/%y"),
         "INPUT_FILEDATE": date_value.strftime(INPUT_DATE_FILE_FORMAT),
+        "PREVIOUS_INPUT_FILEDATE": previous_month_end.strftime(INPUT_DATE_FILE_FORMAT),
         "FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
-        "PREVIOUS_FILEDATE": previous_date_value.strftime(DATE_FILE_FORMAT),
         "RYEAR": date_value.strftime("%Y"),
         "RMONTH": date_value.strftime("%m"),
         "REPTMON": f"{month:02d}",
@@ -457,7 +456,7 @@ def run_savg(config: RunConfig) -> dict[str, Path]:
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"{PREVIOUS_SAVG_PREFIX}{dates['PREVIOUS_FILEDATE']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_SAVG_PREFIX}{dates['PREVIOUS_INPUT_FILEDATE']}")
     savg = apply_cumulative(savg, previous, remap_227_to_81=True)
 
     final_path = write_dataset(savg, config.mis_dir, f"{SAVG_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
@@ -501,7 +500,7 @@ def run_curr(config: RunConfig) -> dict[str, Path]:
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"{PREVIOUS_CURR_PREFIX}{dates['PREVIOUS_FILEDATE']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_CURR_PREFIX}{dates['PREVIOUS_INPUT_FILEDATE']}")
     curr = apply_cumulative(curr, previous)
 
     final_path = write_dataset(curr, config.mis_dir, f"{CURR_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
@@ -542,7 +541,7 @@ def run_fd(config: RunConfig) -> dict[str, Path]:
 
     previous = None
     if dates["REPTMON"] > "01":
-        previous = read_dataset(config.mis_dir, f"{PREVIOUS_FD_PREFIX}{dates['PREVIOUS_FILEDATE']}")
+        previous = read_dataset(config.mis_dir, f"{PREVIOUS_FD_PREFIX}{dates['PREVIOUS_INPUT_FILEDATE']}")
     fd = apply_cumulative(fd, previous)
 
     final_path = write_dataset(fd, config.mis_dir, f"{FD_FINAL_OUTPUT_PREFIX}{dates['FILEDATE']}")
