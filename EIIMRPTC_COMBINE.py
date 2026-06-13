@@ -17,8 +17,7 @@ from pbbdpfmt import ddcustcd
 
 DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
 DEFAULT_OUTPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod/output")
-INPUT_DATE_FILE_FORMAT = "%m4%y"
-DATE_FILE_FORMAT = "%m%y"
+DATE_FILE_FORMAT = "%m4%y"
 
 # Input file names are kept here so operation changes are easy to find.
 SAVING_INPUT_PREFIX = "ISA"
@@ -106,8 +105,8 @@ def reporting_dates(run_date: date | None = None) -> dict[str, str]:
     previous_month = month - 1 or 12
     return {
         "RDATE": date_value.strftime("%d/%m/%y"),
-        "INPUT_FILEDATE": date_value.strftime(INPUT_DATE_FILE_FORMAT),
-        "PREVIOUS_INPUT_FILEDATE": previous_month_end.strftime(INPUT_DATE_FILE_FORMAT),
+        "INPUT_FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
+        "PREVIOUS_INPUT_FILEDATE": previous_month_end.strftime(DATE_FILE_FORMAT),
         "FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
         "RYEAR": date_value.strftime("%Y"),
         "RMONTH": date_value.strftime("%m"),
