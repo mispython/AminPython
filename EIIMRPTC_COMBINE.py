@@ -17,26 +17,27 @@ from pbbdpfmt import ddcustcd
 
 DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
 DEFAULT_OUTPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod/output")
-DATE_FILE_FORMAT = "%y%m%d"
+INPUT_DATE_FILE_FORMAT = "%m4%y"
+DATE_FILE_FORMAT = "%m%y"
 
 # Input file names are kept here so operation changes are easy to find.
-SAVING_INPUT_PREFIX = "SA"
-CURRENT_INPUT_PREFIX = "CA"
-DEPOSIT_FD_INPUT_PREFIX = "FD"
-CERTIFICATE_FD_INPUT_PREFIX = "FDCD"
+SAVING_INPUT_PREFIX = "ISA"
+CURRENT_INPUT_PREFIX = "ICA"
+DEPOSIT_FD_INPUT_PREFIX = "IFD"
+CERTIFICATE_FD_INPUT_PREFIX = "IFDCD"
 BRANCH_INPUT = "DBRANCH.TXT"
 
-PREVIOUS_SAVG_PREFIX = "SA"
-PREVIOUS_CURR_PREFIX = "CA"
-PREVIOUS_FD_PREFIX = "FD"
+PREVIOUS_SAVG_PREFIX = "ISA"
+PREVIOUS_CURR_PREFIX = "ICA"
+PREVIOUS_FD_PREFIX = "IFD"
 
-SAVG_CLOSED_OUTPUT_PREFIX = "SAVGC"
-CURR_CLOSED_OUTPUT_PREFIX = "CURRC"
-FD_CLOSED_OUTPUT_PREFIX = "FDCD"
+SAVG_CLOSED_OUTPUT_PREFIX = "ISACLOSE"
+CURR_CLOSED_OUTPUT_PREFIX = "ICACLOSE"
+FD_CLOSED_OUTPUT_PREFIX = "IFDCLOSE"
 
-SAVG_FINAL_OUTPUT_PREFIX = "SA"
-CURR_FINAL_OUTPUT_PREFIX = "CURRF"
-FD_FINAL_OUTPUT_PREFIX = "FDF"
+SAVG_FINAL_OUTPUT_PREFIX = "ISAX"
+CURR_FINAL_OUTPUT_PREFIX = "ICAX"
+FD_FINAL_OUTPUT_PREFIX = "IFDX"
 
 SAVG_REPORT_OUTPUT = "IOPCLSAVG.TXT"
 CURR_REPORT_OUTPUT = "IOPCLCURR.TXT"
@@ -98,13 +99,15 @@ def read_branch_file(path: Path, record_length: int = 81) -> pd.DataFrame:
 
 def reporting_dates(run_date: date | None = None) -> dict[str, str]:
     selected_date = run_date or date.today()
-    date_value = selected_date.replace(day=1)
-    previous_month_end = date_value - timedelta(days=1)
-    previous_date_value = previous_month_end.replace(day=1)
+    run_month_start = selected_date.replace(day=1)
+    date_value = run_month_start - timedelta(days=1)
+    previous_month_start = date_value.replace(day=1)
+    previous_date_value = previous_month_start - timedelta(days=1)
     month = date_value.month
     previous_month = month - 1 or 12
     return {
-        "RDATE": previous_month_end.strftime("%d/%m/%y"),
+        "RDATE": date_value.strftime("%d/%m/%y"),
+        "INPUT_FILEDATE": date_value.strftime(INPUT_DATE_FILE_FORMAT),
         "FILEDATE": date_value.strftime(DATE_FILE_FORMAT),
         "PREVIOUS_FILEDATE": previous_date_value.strftime(DATE_FILE_FORMAT),
         "RYEAR": date_value.strftime("%Y"),
@@ -436,7 +439,7 @@ def delete_previous_outputs(config: RunConfig) -> None:
 def run_savg(config: RunConfig) -> dict[str, Path]:
     dates = reporting_dates(config.run_date)
 
-    savg = read_dataset(config.deposit_dir, f"{SAVING_INPUT_PREFIX}{dates['FILEDATE']}")
+    savg = read_dataset(config.deposit_dir, f"{SAVING_INPUT_PREFIX}{dates['INPUT_FILEDATE']}")
     savg = savg[product_mask(savg["PRODUCT"], SAVG_PRODUCT_RANGES, SAVG_PRODUCTS)].copy()
     savg = normalize_branch(savg, delete_227=True)
     savg = normalize_open_indicator(savg)
@@ -474,7 +477,7 @@ def current_product_mask(product):
 def run_curr(config: RunConfig) -> dict[str, Path]:
     dates = reporting_dates(config.run_date)
 
-    curr = read_dataset(config.deposit_dir, f"{CURRENT_INPUT_PREFIX}{dates['FILEDATE']}")
+    curr = read_dataset(config.deposit_dir, f"{CURRENT_INPUT_PREFIX}{dates['INPUT_FILEDATE']}")
     curr.loc[curr["BRANCH"] == 996, "BRANCH"] = 168
     curr.loc[curr["BRANCH"] == 250, "BRANCH"] = 92
     curr = curr[current_product_mask(curr["PRODUCT"])].copy()
@@ -514,12 +517,12 @@ def run_curr(config: RunConfig) -> dict[str, Path]:
 def run_fd(config: RunConfig) -> dict[str, Path]:
     dates = reporting_dates(config.run_date)
 
-    fdc = read_dataset(config.fd_dir, f"{CERTIFICATE_FD_INPUT_PREFIX}{dates['FILEDATE']}")
+    fdc = read_dataset(config.fd_dir, f"{CERTIFICATE_FD_INPUT_PREFIX}{dates['INPUT_FILEDATE']}")
     fdc = fdc[fdc["OPENIND"].isin(["O", "D"])].copy()
     fdc = fdc.sort_values("ACCTNO")
     fdc = fdc.groupby("ACCTNO", as_index=False).size().rename(columns={"size": "NOCD"})
 
-    fd = read_dataset(config.deposit_dir, f"{DEPOSIT_FD_INPUT_PREFIX}{dates['FILEDATE']}")
+    fd = read_dataset(config.deposit_dir, f"{DEPOSIT_FD_INPUT_PREFIX}{dates['INPUT_FILEDATE']}")
     fd = normalize_branch(fd, delete_227=True)
     fd = fd[product_mask(fd["PRODUCT"], FD_PRODUCT_RANGES, FD_PRODUCTS)].copy()
     fd = normalize_open_indicator(fd)
