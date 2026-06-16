@@ -1,0 +1,442 @@
+from __future__ import annotations
+
+import argparse
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any, Callable, Iterable, Mapping
+
+import pbbdpfmt
+import pbblnfmt
+
+Format = Mapping[str, str] | Callable[[Any], Any]
+
+FD_DESCRIPTIONS = {
+    1: "RM FD ACCEPTED WITH ORIG. MATURITY <= 1 MONTH",
+    2: "RM FD ACCEPTED WITH ORIG. MATURITY > 1-2 MONTH",
+    3: "RM FD ACCEPTED WITH ORIG. MATURITY > 2-3 MONTH",
+    4: "RM FD ACCEPTED WITH ORIG. MATURITY > 3-6 MONTH",
+    5: "RM FD ACCEPTED WITH ORIG. MATURITY > 6-9 MONTH",
+    6: "RM FD ACCEPTED WITH ORIG. MATURITY > 9-12 MONTH",
+    7: "RM FD ACCEPTED WITH ORIG. MATURITY > 12-15 MONTH",
+    8: "RM FD ACCEPTED WITH ORIG. MATURITY > 15-18 MONTH",
+    9: "RM FD ACCEPTED WITH ORIG. MATURITY > 18-24 MONTH",
+    10: "RM FD ACCEPTED WITH ORIG. MATURITY > 24-36 MONTH",
+    11: "RM FD ACCEPTED WITH ORIG. MATURITY > 36-48 MONTH",
+    12: "RM FD ACCEPTED WITH ORIG. MATURITY > 48-60 MONTH",
+    13: "RM FD ACCEPTED WITH ORIG. MATURITY > 60 MONTH",
+}
+
+LOAN_SECTOR_DESCRIPTIONS = {
+    1: "LOANS TO SMI FOR PURCHASE OF SECURITIES",
+    2: "LOANS TO SMI FOR PURCHASE OF LANDED PROPERTY",
+    3: "LOANS TO SMI FOR PURCHASE OF RESIDENTIAL PROPERTY",
+    4: "LOANS TO SMI FOR PURCHASE OF NON RESIDENTIAL PROPERTY",
+    5: "LOANS TO SMI FOR AGRICULTURE,HUNTING,FORESTRY & FISHING",
+    6: "LOANS TO SMI FOR MINING & QUARRYING",
+    7: "LOANS TO SMI FOR MANUFACTURING",
+    8: "LOANS TO SMI FOR ELECTRICITY, GAS & WATER",
+    9: "LOANS TO SMI FOR CONSTRUCTION",
+    10: "LOANS TO SMI FOR WHOLESALE,RETAIL TRADE,REST. & HOTELS",
+    11: "LOANS TO SMI FOR WHOLESALE TRADE",
+    12: "LOANS TO SMI FOR RETAIL TRADE",
+    13: "LOANS TO SMI FOR RESTAURANTS & HOTELS",
+    14: "LOANS TO SMI FOR TRANSPORT,STORAGE & COMMUNICATION",
+    15: "LOANS TO SMI FOR REAL ESTATE & BUSINESS SERVICES",
+    16: "LOANS TO SMI FOR REAL ESTATE",
+    17: "LOANS TO SMI FOR BUS. SERVICES EXCP. MACH. & EQUIP. RENTAL",
+    18: "LOANS TO SMI FOR MACH. & EQUIP RENTAL",
+    19: "LOANS TO SMI COMMUNITY,SOCIAL & PERSONAL SERVICES",
+    20: "LOANS TO SMI FOR SECTOR NEC",
+}
+
+REPRICING_DESCRIPTIONS = {
+    1: "HOUSING LOANS", 2: "HP RECEIVABLES", 3: "OTHER FIXED RATE LOANS",
+    4: "FLOATING RATE LOANS", 5: "BLR - PLUS", 6: "COST - PLUS",
+    7: "OTHER FLOATING RATE LOANS",
+}
+
+FD_TYPE_BY_OM = {
+    "12": 1, "13": 2, "14": 3, "15": 4, "16": 5, "17": 6,
+    "21": 7, "22": 8, "23": 9, "24": 10, "25": 11, "26": 12, "30": 13,
+}
+
+SECTOR_TYPE_BY_CODE = {
+    "0100": 1, "0300": 2, "0310": 3, "0320": 4, "1000": 5,
+    "2000": 6, "3000": 7, "4000": 8, "5000": 9, "6000": 10,
+    "6100": 11, "6200": 12, "6300": 13, "7000": 14, "8300": 15,
+    "8310": 16, "8320": 17, "8330": 18, "9000": 19, "9999": 20,
+}
+
+
+@dataclass(frozen=True)
+class ReportContext:
+    report_date: date
+    week: str
+    previous_week: str
+    report_month: str
+    previous_month: str
+    start_date: date
+    bank_name: str
+
+    @classmethod
+    def build(cls, report_date: date, bank_name: str) -> "ReportContext":
+        if report_date.day not in {2, 12, 19, 26}:
+            raise ValueError(
+                "EIBWFISS only runs on day 2, 12, 19, or 26 of the month"
+            )
+
+        if report_date.day == 2:
+            data_year = report_date.year - 1 if report_date.month == 1 else report_date.year
+            data_month = 12 if report_date.month == 1 else report_date.month - 1
+            return cls(
+                report_date, "4", "3", f"{data_month:02d}", f"{data_month:02d}",
+                date(data_year, data_month, 25), bank_name,
+            )
+
+        start_day, week, previous_week = {
+            12: (1, "1", "4"), 19: (11, "2", "1"), 26: (18, "3", "2")
+        }[report_date.day]
+        previous_month = report_date.month - 1 if week == "1" else report_date.month
+        if previous_month == 0:
+            previous_month = 12
+        return cls(
+            report_date, week, previous_week, f"{report_date.month:02d}",
+            f"{previous_month:02d}", date(report_date.year, report_date.month, start_day),
+            bank_name,
+        )
+
+
+def build_report_context(report_date: date, bank_name: str, week_override: str | None = None) -> ReportContext:
+    if week_override is None:
+        return ReportContext.build(report_date, bank_name)
+
+    schedule = {
+        "1": (1, "4"),
+        "2": (9, "1"),
+        "3": (16, "2"),
+        "4": (23, "3"),
+    }
+    if week_override not in schedule:
+        raise ValueError("Week override must be 1, 2, 3, or 4")
+
+    start_day, previous_week = schedule[week_override]
+    previous_month = report_date.month - 1 if week_override == "1" else report_date.month
+    if previous_month == 0:
+        previous_month = 12
+    return ReportContext(
+        report_date,
+        week_override,
+        previous_week,
+        f"{report_date.month:02d}",
+        f"{previous_month:02d}",
+        date(report_date.year, report_date.month, start_day),
+        bank_name,
+    )
+
+
+def sas_value_to_text(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if value != value:
+            return ""
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, bytes):
+        for encoding in ("utf-8", "cp1252", "latin-1"):
+            try:
+                return value.decode(encoding).strip()
+            except UnicodeDecodeError:
+                continue
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def read_sas7bdat(path: Path) -> list[dict[str, str]]:
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise RuntimeError("pandas is required to read SAS7BDAT input files") from exc
+
+    frame = pd.read_sas(path, format="sas7bdat")
+    frame.columns = [str(column).upper() for column in frame.columns]
+    return [
+        {column: sas_value_to_text(value) for column, value in row.items()}
+        for row in frame.to_dict(orient="records")
+    ]
+
+
+def read_report_date(path: Path) -> date:
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise RuntimeError("pandas is required to read SAS7BDAT input files") from exc
+
+    frame = pd.read_sas(path, format="sas7bdat")
+    columns = {str(column).upper(): column for column in frame.columns}
+    if "REPTDATE" not in columns or frame.empty:
+        raise ValueError(f"{path} must contain at least one REPTDATE value")
+    value = frame.iloc[0][columns["REPTDATE"]]
+    if hasattr(value, "date"):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return datetime.fromisoformat(str(value)).date()
+
+
+def decimal_value(value: str) -> Decimal:
+    try:
+        return Decimal(value.replace(",", "").strip() or "0")
+    except InvalidOperation as exc:
+        raise ValueError(f"Invalid numeric value: {value!r}") from exc
+
+
+def lookup(formatter: Format, value: str) -> str:
+    result = formatter(value) if callable(formatter) else formatter.get(str(value).strip(), "")
+    return "" if result is None else str(result).strip()
+
+
+def fd_table(rows: Iterable[Mapping[str, str]], formats: Mapping[str, Format]):
+    totals: defaultdict[tuple[str, int], Decimal] = defaultdict(Decimal)
+    for row in rows:
+        if row.get("OPENIND", "") not in {"O", "D"}:
+            continue
+        intplan = row.get("INTPLAN", "")
+        bic = lookup(formats["fdprod"], intplan)
+        amtind = lookup(formats["fddenom"], intplan)
+        cust_format = "fdcustcd" if bic == "42130" else "ifdcuscd"
+        custcode = lookup(formats[cust_format], row.get("CUSTCD", ""))
+        om = lookup(formats["fdorgmt"], row.get("TERM", ""))
+        if not all((bic, amtind, custcode, row.get("TERM", ""))):
+            continue
+        fd_type = FD_TYPE_BY_OM.get(om)
+        if bic == "42130" and fd_type is not None:
+            totals[(f"{bic}00{om}0000Y", fd_type)] += decimal_value(row.get("CURBAL", "0"))
+    return sorted((code, kind, amount) for (code, kind), amount in totals.items())
+
+
+def normalized_smi_sectors(sector: str, customer: str) -> list[str]:
+    results: list[str] = []
+    if sector[:2] == "01" and customer in {"66", "67", "68", "69"}:
+        results.append("0100")
+    if sector[:3] in {"031", "032"} and customer in {"66", "67", "68", "69"}:
+        results.append("0310" if sector[:3] == "031" else "0320")
+
+    eligible = (
+        sector[:1] in {"1", "2", "3", "4", "5", "6", "7"}
+        or sector[:2] in {"61", "62", "63"}
+        or sector[:3] in {"831", "832", "833"}
+    )
+    if eligible and customer in {"65", "66", "67", "68", "69"}:
+        replacements = {
+            "1": "1000", "2": "2000", "3": "3000", "4": "4000",
+            "5": "5000", "7": "7000", "61": "6100", "62": "6200",
+            "63": "6300", "831": "8310", "832": "8320", "833": "8330",
+        }
+        results.append(replacements.get(
+            sector[:3], replacements.get(sector[:2], replacements.get(sector[:1], sector))
+        ))
+    if sector[:1] == "9" and customer in {"66", "67", "68", "69"}:
+        results.append("9999" if sector == "9999" else "9000")
+    return results
+
+
+def loan_sector_table(rows: Iterable[Mapping[str, str]]):
+    totals: defaultdict[tuple[str, int], Decimal] = defaultdict(Decimal)
+    for row in rows:
+        if row.get("PRODCD", "")[:2] != "34":
+            continue
+        if not all((row.get("AMTIND", ""), row.get("SECTORCD", ""), row.get("CUSTCD", ""))):
+            continue
+        amount = decimal_value(row.get("BALANCE", "0"))
+        for sector in normalized_smi_sectors(row.get("SECTORCD", ""), row.get("CUSTCD", "")):
+            loan_type = SECTOR_TYPE_BY_CODE.get(sector)
+            if loan_type is not None:
+                totals[(f"340006500{sector}Y", loan_type)] += amount
+    return sorted((code, kind, amount) for (code, kind), amount in totals.items())
+
+
+def repricing_table(rows: Iterable[Mapping[str, str]], formats: Mapping[str, Format]):
+    totals: defaultdict[tuple[str, int], Decimal] = defaultdict(Decimal)
+    for row in rows:
+        prodcd = row.get("PRODCD", "")
+        if prodcd[:2] not in {"34", "54"}:
+            continue
+        format_name = "odrate" if prodcd in {"34180", "34240", "34380"} else "lnrate"
+        bic = lookup(formats[format_name], row.get("PRODUCT", ""))
+        if not bic:
+            continue
+        code = f"{bic}00000000Y"
+        fifth_character = code[4:5]
+        if fifth_character in "1234567":
+            totals[(code, int(fifth_character))] += decimal_value(row.get("BALANCE", "0"))
+    return sorted((code, kind, amount) for (code, kind), amount in totals.items())
+
+
+def render_table(title: str, rows, descriptions: Mapping[int, str]) -> str:
+    lines = [title, "", f"{'ITEM CODE':<14}  {'DESCRIPTION':<64} {'AMOUNT':>20}"]
+    grand_total = Decimal("0")
+    for code, kind, amount in rows:
+        grand_total += amount
+        lines.append(f"{code:<14}  {descriptions[kind]:<64} {amount:>20,.2f}")
+    lines.extend([" " * 81 + "=" * 20, f"{'TOTAL':>80} {grand_total:>20,.2f}", ""])
+    return "\n".join(lines)
+
+
+def generate_report(
+    context: ReportContext,
+    fd_rows: Iterable[Mapping[str, str]],
+    loan_rows: Iterable[Mapping[str, str]],
+    formats: Mapping[str, Format],
+) -> str:
+    report_date = context.report_date.strftime("%d/%m/%y")
+    sections = ["REPORT ID: EIBWFI01", context.bank_name, ""]
+    sections.append(render_table(
+        f"RM FIXED DEPOSIT ACCEPTED BY ORIGINAL MATURITY AS AT {report_date}",
+        fd_table(fd_rows, formats), FD_DESCRIPTIONS,
+    ))
+    sections.append(render_table(
+        f"LOANS TO SMIS BY SECTOR AS AT {report_date}",
+        loan_sector_table(loan_rows), LOAN_SECTOR_DESCRIPTIONS,
+    ))
+    if context.week == "4":
+        sections.append(render_table(
+            f"GROSS LOANS BY TYPE OF REPRICING AS AT {report_date}",
+            repricing_table(loan_rows, formats), REPRICING_DESCRIPTIONS,
+        ))
+    return "\n".join(sections)
+
+
+
+
+@dataclass(frozen=True)
+class BankJob:
+    name: str
+    fd_path: Path
+    loan_path: Path
+    output: Path
+    week_override: str | None = None
+
+
+def external_formats():
+    """Combine externally maintained format includes for EIBWFI01."""
+    formats = {
+        "fdprod": pbbdpfmt.fdprod,
+        "fddenom": pbbdpfmt.fddenom,
+        "fdcustcd": pbbdpfmt.fdcustcd,
+        "ifdcuscd": pbbdpfmt.ifdcuscd,
+        "fdorgmt": pbbdpfmt.fdorgmt,
+        "odrate": pbblnfmt.odrate,
+        "lnrate": pbblnfmt.lnrate,
+    }
+    missing = [
+        name for name, formatter in formats.items()
+        if not callable(formatter) and not isinstance(formatter, dict)
+    ]
+    if missing:
+        raise TypeError(f"External formats must be callables or dictionaries: {', '.join(missing)}")
+    return formats
+
+
+def run_bank(job: BankJob, report_date, formats) -> None:
+    context = build_report_context(report_date, job.name, job.week_override)
+    report = generate_report(
+        context=context,
+        fd_rows=read_sas7bdat(job.fd_path),
+        loan_rows=read_sas7bdat(job.loan_path),
+        formats=formats,
+    )
+
+    # Replaces DISP=(MOD,DELETE,DELETE) followed by DISP=(NEW,CATLG,DELETE).
+    job.output.unlink(missing_ok=True)
+    job.output.parent.mkdir(parents=True, exist_ok=True)
+    job.output.write_text(report, encoding="utf-8")
+
+
+def resolve_report_date(input_dir: Path, report_date_arg: str | None, bank_code: str = "PBB") -> date:
+    if report_date_arg:
+        return datetime.strptime(report_date_arg, "%Y-%m-%d").date()
+    return read_report_date(input_dir / f"{bank_code.upper()}_REPTDATE.sas7bdat")
+
+
+def build_bank_job(
+    bank_code: str,
+    report_date: date,
+    input_dir: Path,
+    output_dir: Path,
+    week_override: str | None = None,
+) -> BankJob:
+    bank_code = bank_code.upper()
+    names = {
+        "PBB": "PUBLIC BANK BERHAD",
+        "PIBB": "PUBLIC ISLAMIC BANK BERHAD",
+    }
+    if bank_code not in names:
+        raise ValueError(f"Unsupported bank code: {bank_code}")
+
+    context = build_report_context(report_date, names[bank_code], week_override)
+    loan_member = f"LOAN{context.report_month}{context.week}.sas7bdat"
+    return BankJob(
+        names[bank_code],
+        input_dir / f"{bank_code}_FD.sas7bdat",
+        input_dir / f"{bank_code}_{loan_member}",
+        output_dir / f"SAP.{bank_code}.FISS.RPT",
+        week_override,
+    )
+
+
+def run_single_bank(
+    bank_code: str,
+    input_dir: Path,
+    output_dir: Path,
+    report_date_arg: str | None,
+    week_override: str | None = None,
+) -> None:
+    report_date = resolve_report_date(input_dir, report_date_arg, bank_code)
+    job = build_bank_job(bank_code, report_date, input_dir, output_dir, week_override)
+    for path in (job.fd_path, job.loan_path):
+        if not path.is_file():
+            raise FileNotFoundError(f"Required input file not found: {path}")
+    run_bank(job, report_date, external_formats())
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Combined Python conversion of EIBWFISS and included EIBWFI01"
+    )
+    parser.add_argument(
+        "--input-dir",
+        type=Path,
+        default=Path("Data_Warehouse/MIS/XMIS/input/prod"),
+    )
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument(
+        "--report-date",
+        help="YYYY-MM-DD; if omitted, read PBB_REPTDATE.sas7bdat for combined run",
+    )
+    parser.add_argument("--week", choices=("1", "2", "3", "4"), help="Override reporting week")
+    args = parser.parse_args()
+
+    input_dir = args.input_dir
+    output_dir = args.output_dir or input_dir / "output"
+    report_date = resolve_report_date(input_dir, args.report_date)
+    formats = external_formats()
+    jobs = (
+        build_bank_job("PBB", report_date, input_dir, output_dir, args.week),
+        build_bank_job("PIBB", report_date, input_dir, output_dir, args.week),
+    )
+    for job in jobs:
+        for path in (job.fd_path, job.loan_path):
+            if not path.is_file():
+                raise FileNotFoundError(f"Required input file not found: {path}")
+        run_bank(job, report_date, formats)
+
+
+if __name__ == "__main__":
+    main()
+
+
