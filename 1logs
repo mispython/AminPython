@@ -1,3 +1,40 @@
+
+
+**********************************************************
+* Job:      EIBWFISS_PBB                                 *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Tuesday, June 16, 2026, 04:49:15 PM          *
+**********************************************************
+Program start : 2026/06/16 16:49:57
+
+1       from __future__ import annotations
+2       import argparse
+3       from pathlib import Path
+4       from EIBWFISS import run_single_bank
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWFISS_PBB.py", line 6, in <module>
+    from EIBWFISS import run_single_bank
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWFISS.py", line 14, in <module>
+    Format = Mapping[str, str] | Callable[[Any], Any]
+TypeError: unsupported operand type(s) for |: '_GenericAlias' and '_CallableGenericAlias'
+
+Total time elapsed : 00:00:00
+Memory used: 1.04 MB
+Program end : 2026/06/16 16:49:57
+
+
+
+
+
+
+
+
+
+
+
+
+
 source /sas/python/virt_edw/bin/activate
 /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMRPTC_COMBINE.py
 [sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
