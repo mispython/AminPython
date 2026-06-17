@@ -71,6 +71,10 @@ SECTOR_TYPE_BY_CODE = {
     "8310": 16, "8320": 17, "8330": 18, "9000": 19, "9999": 20,
 }
 
+FD_COLUMNS = {"OPENIND", "INTPLAN", "CUSTCD", "TERM", "CURBAL"}
+LOAN_SECTOR_COLUMNS = {"PRODCD", "AMTIND", "SECTORCD", "CUSTCD", "BALANCE"}
+REPRICING_COLUMNS = {"PRODCD", "PRODUCT", "BALANCE"}
+
 
 @dataclass(frozen=True)
 class ReportContext:
@@ -157,17 +161,34 @@ def sas_value_to_text(value: Any) -> str:
     return str(value).strip()
 
 
-def read_sas7bdat(path: Path) -> list[dict[str, str]]:
-    try:
-        import pandas as pd
-    except ImportError as exc:
-        raise RuntimeError("pandas is required to read SAS7BDAT input files") from exc
+def read_sas7bdat(path: Path, columns: Iterable[str] | None = None) -> list[dict[str, str]]:
+    requested_columns = {column.upper() for column in columns} if columns else None
 
-    frame = pd.read_sas(path, format="sas7bdat")
+    try:
+        import pyreadstat
+    except ImportError:
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise RuntimeError("pandas or pyreadstat is required to read SAS7BDAT input files") from exc
+        frame = pd.read_sas(path, format="sas7bdat")
+    else:
+        frame, _metadata = pyreadstat.read_sas7bdat(
+            str(path),
+            usecols=sorted(requested_columns) if requested_columns else None,
+        )
+
     frame.columns = [str(column).upper() for column in frame.columns]
+    selected_columns = [
+        column for column in frame.columns
+        if requested_columns is None or column in requested_columns
+    ]
     return [
-        {column: sas_value_to_text(value) for column, value in row.items()}
-        for row in frame.to_dict(orient="records")
+        {
+            column: sas_value_to_text(value)
+            for column, value in zip(selected_columns, row_values)
+        }
+        for row_values in frame[selected_columns].itertuples(index=False, name=None)
     ]
 
 
@@ -327,10 +348,14 @@ def external_formats():
 
 def run_bank(job: BankJob, report_date, formats) -> None:
     context = build_report_context(report_date, job.name, job.week_override)
+    loan_columns = set(LOAN_SECTOR_COLUMNS)
+    if context.week == "4":
+        loan_columns.update(REPRICING_COLUMNS)
+
     report = generate_report(
         context=context,
-        fd_rows=read_sas7bdat(job.fd_path),
-        loan_rows=read_sas7bdat(job.loan_path),
+        fd_rows=read_sas7bdat(job.fd_path, FD_COLUMNS),
+        loan_rows=read_sas7bdat(job.loan_path, loan_columns),
         formats=formats,
     )
 
