@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
-DEFAULT_INPUT_DIR = Path("/Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
 DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
 
 
@@ -215,38 +215,13 @@ def main() -> None:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output_path = args.output_dir / "EIBMSISD.txt"
-    output_path.write_text(
-        render_report(grouped, report_start, report_end), encoding="latin-1", newline="\n"
-    )
+    with open(output_path, "w", encoding="latin-1", newline="\n") as output_file:
+        output_file.write(render_report(grouped, report_start, report_end))
     print(f"Created {output_path}")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
