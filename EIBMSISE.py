@@ -1,0 +1,288 @@
+//EIBMSISE JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X
+//*
+//* READ FROM ROSHIDAH'S FILE
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.SISCAMP.COLD,
+
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//CREATE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.SISCAMP.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FBA,LRECL=136,BLKSIZE=0,DSORG=PS),
+//            SPACE=(CYL,(10,2),RLSE),UNIT=SYSDA
+//*
+//EIBMSISD EXEC SAS609
+//MNITB     DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SGMF      DD DSN=SAP.PBB.EIBMSISD.TEXT(0),DISP=SHR
+//HRBR      DD DSN=HRP2.FLAT.STAFF.INCTIVE.BR,DISP=SHR
+//HRHO      DD DSN=HRP2.FLAT.STAFF.INCTIVE.HO,DISP=SHR
+//HRRG      DD DSN=HRP2.FLAT.STAFF.INCTIVE.REGOFF,DISP=SHR
+//SASLIST   DD DSN=SAP.PBB.SISCAMP.COLD,DISP=MOD
+//SYSIN     DD *
+
+OPTION NOCENTER NODATE NONUMBER;
+*;
+DATA REPTDATE;
+   REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||
+            PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;
+   CYY=YEAR(REPTDATE);
+   STRTDATE=MDY(01,01,CYY);
+   CALL SYMPUT('SDATE',PUT(STRTDATE,WORDDATX.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX.));
+   CALL SYMPUT('RMM',PUT(REPTDATE,MONTH2.));
+   CALL SYMPUT('RMON',PUT(REPTDATE,MONYY7.));
+   CALL SYMPUT('RYY',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('XDATE',PUT(REPTDATE,DDMMYY10.));
+*;
+DATA SGM;
+   INFILE SGMF;
+   INPUT  @001 REFNO    8.
+          @010 STATS    $1.
+          @016 RCMM     2. /* RECEIVE MONTH */
+          @019 RCYY     2.
+          @025 APMM     2. /* APPR MONTH */
+          @028 APYY     2.
+          @034 NOCARD   3. /* CARDS RECEIVE */
+          @038 STAFF    5.
+          @044 TYPE    $2.
+          ;
+
+     IF APYY=&RYY;
+
+     DMTHRC=0; DYRRC=0; CMTHRC=0; CYRRC=0;
+     DMTHAP=0; DYRAP=0; CMTHAP=0; CYRAP=0;
+
+        IF TYPE='CR' THEN DO;
+           CYRRC=NOCARD;
+           IF RCMM=&RMM THEN CMTHRC=NOCARD;
+           IF STATS='A' THEN DO;
+              CYRAP=NOCARD;
+              IF APMM=&RMM THEN CMTHAP=NOCARD;
+           END;
+        END;
+
+        IF TYPE='DB' THEN DO;
+           DYRRC=NOCARD;
+           IF RCMM=&RMM THEN DMTHRC=NOCARD;
+           IF STATS='A' THEN DO;
+              DYRAP=NOCARD;
+              IF APMM=&RMM THEN DMTHAP=NOCARD;
+           END;
+        END;
+*;
+PROC SORT; BY STAFF;
+*;
+DATA HRBR;
+   INFILE HRBR;
+   INPUT @005 STAFF   5.
+         @069 BRANCH  3.;
+   IF (002<=BRANCH<=300);
+*;
+DATA HRHO;
+   INFILE HRHO;
+   INPUT @005 STAFF   5.;
+   BRANCH=999;
+*;
+DATA HRRG;
+   INFILE HRRG;
+   INPUT @005 STAFF   5.;
+   BRANCH=888;
+*;
+DATA BRID;
+   SET HRBR HRHO HRRG;
+*;
+PROC SORT; BY STAFF;
+*;
+DATA SGM;
+   MERGE SGM(IN=A) BRID; BY STAFF;
+   IF A;
+*;
+PROC SUMMARY DATA=SGM NWAY;
+CLASS BRANCH STAFF;
+VAR   DMTHRC DYRRC DMTHAP DYRAP CMTHRC CYRRC CMTHAP CYRAP;
+OUTPUT OUT=SGM (DROP=_TYPE_ _FREQ_) SUM=;
+*;
+DATA SGMB;
+   SET SGM;
+   IF  BRANCH NOT IN (888,999);
+*;
+DATA SGM8;
+   SET SGM;
+   IF  BRANCH=888;
+*;
+DATA SGM9;
+   SET SGM;
+   IF  BRANCH=999;
+*;
+PROC SORT DATA=SGMB; BY BRANCH STAFF;
+TITLE;
+DATA _NULL_;
+  SET SGMB END=LAST; BY BRANCH;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF   FIRST.BRANCH THEN DO;
+       PUT _PAGE_;
+       BCMTHRC=0;  BDMTHRC=0;
+       BCYRRC =0;  BDYRRC =0;
+       BCMTHAP=0;  BDMTHAP=0;
+       BCYRAP =0;  BDYRAP =0;
+  END;
+       BCMTHRC+ CMTHRC;    BDMTHRC+ DMTHRC;
+       BCYRRC+  CYRRC;     BDYRRC + DYRRC;
+       BCMTHAP+ CMTHAP;    BDMTHAP+ DMTHAP;
+       BCYRAP+  CYRAP;     BDYRAP + DYRAP;
+
+  PUT @03  STAFF    5.
+      @15  CMTHRC   5. @25  DMTHRC  5.
+      @35  CYRRC    5. @45  DYRRC   5.
+      @55  CMTHAP   5. @65  DMTHAP  5.
+      @75  CYRAP    5. @85  DYRAP   5.;
+
+  IF  LAST.BRANCH THEN DO;
+      PUT  @03 87*'-';
+      PUT  @03 'TOTAL ='
+           @14 BCMTHRC  6.  @24 BDMTHRC 6.
+           @34 BCYRRC   6.  @44 BDYRRC  6.
+           @54 BCMTHAP  6.  @64 BDMTHAP 6.
+           @74 BCYRAP   6.  @84 BDYRAP  6.;
+      PUT  @03 87*'-';
+  END;
+
+  RETURN;
+
+  NEWPAGE:
+    PUT @01 'PUBLIC BANK BERHAD - CARD ACQUISITION'
+        @43 '(' "&SDATE"  ' TO ' "&RDATE" ')';
+    PUT @01 'REPORT NAME: DCPD/SGC2002/004 (FOR BRANCHES)';
+    PUT @01 'REPORT ID  : EIBMSISD' @029 "&XDATE";
+    PUT @01 '.';
+    PUT @01 'BRANCH CODE= ' BRANCH Z3.;
+    PUT @12 '------- APPLICATION RECEIVED ---------'
+        @52 '------- APPLICATION APPROVED ---------';
+    PUT @13 'MONTH OF ' "&RMON"     @35 'YEAR-TO-DATE'
+        @53 'MONTH OF ' "&RMON"     @75 'YEAR-TO-DATE';
+    PUT @04 'STAFF'
+        @12 'CRE CARD  DEB CARD  CRE CARD  DEB CARD'
+        @52 'CRE CARD  DEB CARD  CRE CARD  DEB CARD';
+    PUT @04 '-----'
+        @12 '------------------  ------------------'
+        @52 '------------------  ------------------';
+  RETURN;
+RUN;
+*;
+PROC SORT DATA=SGM8; BY BRANCH STAFF;
+TITLE;
+DATA _NULL_;
+  SET SGM8 END=LAST; BY BRANCH;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF   FIRST.BRANCH THEN DO;
+       PUT _PAGE_;
+       BCMTHRC=0;  BDMTHRC=0;
+       BCYRRC =0;  BDYRRC =0;
+       BCMTHAP=0;  BDMTHAP=0;
+       BCYRAP =0;  BDYRAP =0;
+  END;
+       BCMTHRC+ CMTHRC;    BDMTHRC+ DMTHRC;
+       BCYRRC+  CYRRC;     BDYRRC + DYRRC;
+       BCMTHAP+ CMTHAP;    BDMTHAP+ DMTHAP;
+       BCYRAP+  CYRAP;     BDYRAP + DYRAP;
+
+  PUT @03  STAFF    5.
+      @15  CMTHRC   5. @25  DMTHRC  5.
+      @35  CYRRC    5. @45  DYRRC   5.
+      @55  CMTHAP   5. @65  DMTHAP  5.
+      @75  CYRAP    5. @85  DYRAP   5.;
+
+  IF  LAST.BRANCH THEN DO;
+      PUT  @03 87*'-';
+      PUT  @03 'TOTAL ='
+           @14 BCMTHRC  6.  @24 BDMTHRC 6.
+           @34 BCYRRC   6.  @44 BDYRRC  6.
+           @54 BCMTHAP  6.  @64 BDMTHAP 6.
+           @74 BCYRAP   6.  @84 BDYRAP  6.;
+      PUT  @03 87*'-';
+  END;
+
+  RETURN;
+
+  NEWPAGE:
+    PUT @01 'PUBLIC BANK BERHAD - CARD ACQUISITION'
+        @43 '(' "&SDATE"  ' TO ' "&RDATE" ')';
+    PUT @01 'REPORT NAME: DCPD/SGC2002/004 (FOR SME/PFE)';
+    PUT @01 'REPORT ID  : EIBMSISD' @029 "&XDATE";
+    PUT @01 '.';
+    PUT @01 'BRANCH CODE= ' BRANCH Z3.;
+    PUT @12 '------- APPLICATION RECEIVED ---------'
+        @52 '------- APPLICATION APPROVED ---------';
+    PUT @13 'MONTH OF ' "&RMON"     @35 'YEAR-TO-DATE'
+        @53 'MONTH OF ' "&RMON"     @75 'YEAR-TO-DATE';
+    PUT @04 'STAFF'
+        @12 'CRE CARD  DEB CARD  CRE CARD  DEB CARD'
+        @52 'CRE CARD  DEB CARD  CRE CARD  DEB CARD';
+    PUT @04 '-----'
+        @12 '------------------  ------------------'
+        @52 '------------------  ------------------';
+  RETURN;
+RUN;
+*;
+PROC SORT DATA=SGM9; BY BRANCH STAFF;
+TITLE;
+DATA _NULL_;
+  SET SGM9 END=LAST; BY BRANCH;
+  FILE PRINT HEADER=NEWPAGE;
+
+  IF   FIRST.BRANCH THEN DO;
+       PUT _PAGE_;
+       BCMTHRC=0;  BDMTHRC=0;
+       BCYRRC =0;  BDYRRC =0;
+       BCMTHAP=0;  BDMTHAP=0;
+       BCYRAP =0;  BDYRAP =0;
+  END;
+       BCMTHRC+ CMTHRC;    BDMTHRC+ DMTHRC;
+       BCYRRC+  CYRRC;     BDYRRC + DYRRC;
+       BCMTHAP+ CMTHAP;    BDMTHAP+ DMTHAP;
+       BCYRAP+  CYRAP;     BDYRAP + DYRAP;
+
+  PUT @03  STAFF    5.
+      @15  CMTHRC   5. @25  DMTHRC  5.
+      @35  CYRRC    5. @45  DYRRC   5.
+      @55  CMTHAP   5. @65  DMTHAP  5.
+      @75  CYRAP    5. @85  DYRAP   5.;
+
+  IF  LAST.BRANCH THEN DO;
+      PUT  @03 87*'-';
+      PUT  @03 'TOTAL ='
+           @14 BCMTHRC  6.  @24 BDMTHRC 6.
+           @34 BCYRRC   6.  @44 BDYRRC  6.
+           @54 BCMTHAP  6.  @64 BDMTHAP 6.
+           @74 BCYRAP   6.  @84 BDYRAP  6.;
+      PUT  @03 87*'-';
+  END;
+
+  RETURN;
+
+  NEWPAGE:
+    PUT @01 'PUBLIC BANK BERHAD - CARD ACQUISITION'
+        @43 '(' "&SDATE"  ' TO ' "&RDATE" ')';
+    PUT @01 'REPORT NAME: DCPD/SGC2002/004 (FOR HEAD OFF)';
+    PUT @01 'REPORT ID  : EIBMSISD' @029 "&XDATE";
+    PUT @01 '.';
+    PUT @01 'BRANCH CODE= ' BRANCH Z3.;
+    PUT @12 '------- APPLICATION RECEIVED ---------'
+        @52 '------- APPLICATION APPROVED ---------';
+    PUT @13 'MONTH OF ' "&RMON"     @35 'YEAR-TO-DATE'
+        @53 'MONTH OF ' "&RMON"     @75 'YEAR-TO-DATE';
+    PUT @04 'STAFF'
+        @12 'CRE CARD  DEB CARD  CRE CARD  DEB CARD'
+        @52 'CRE CARD  DEB CARD  CRE CARD  DEB CARD';
+    PUT @04 '-----'
+        @12 '------------------  ------------------'
+        @52 '------------------  ------------------';
+  RETURN;
+RUN;
