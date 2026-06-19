@@ -1,3 +1,189 @@
+#!/usr/bin/env python3
+"""Convert the EIBDFDHQ SAS job to Python/pandas.
+
+Requires:
+    pip install pandas
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+
+OUTPUT_COLUMNS = [
+    "BRANCH",
+    "SECOND2",
+    "NAME",
+    "ACCTNO",
+    "CURBAL",
+    "CDNO",
+    "MATDATE",
+    "RATE",
+    "TERM",
+]
+
+OUTPUT_HEADERS = [
+    "BRANCH",
+    "PBB/PIBB",
+    "NAME",
+    "ACCTNO",
+    "PRINCIPAL AM(RM)",
+    "CDNO",
+    "MATDATE",
+    "PREVIOUS RATE(% P.A)",
+    "PREVIOUS TERM (MONTH)",
+]
+
+
+def read_sas(path: Path) -> pd.DataFrame:
+    """Read a SAS7BDAT file and normalize column names to uppercase."""
+    frame = pd.read_sas(path, format="sas7bdat", encoding="latin-1")
+    frame.columns = [str(column).upper() for column in frame.columns]
+    return frame
+
+
+def require_columns(frame: pd.DataFrame, columns: list[str], source: str) -> None:
+    missing = sorted(set(columns) - set(frame.columns))
+    if missing:
+        raise ValueError(f"{source} is missing columns: {', '.join(missing)}")
+
+
+def format_sas_value(value: object, column: str) -> str:
+    """Produce readable text close to SAS list PUT output."""
+    if pd.isna(value):
+        return ""
+    if column == "MATDATE":
+        if isinstance(value, (pd.Timestamp, datetime, date)):
+            return pd.Timestamp(value).strftime("%d/%m/%Y")
+        if isinstance(value, (int, float)):
+            # SAS dates are days since 1960-01-01 when no date conversion occurred.
+            converted = date(1960, 1, 1) + timedelta(days=int(value))
+            return converted.strftime("%d/%m/%Y")
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def write_report(frame: pd.DataFrame, path: Path, title: str) -> None:
+    """Write the title, header, and data rows used by the original SAS job."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(title + "\n")
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(OUTPUT_HEADERS)
+        for row in frame[OUTPUT_COLUMNS].itertuples(index=False, name=None):
+            writer.writerow(
+                format_sas_value(value, column)
+                for column, value in zip(OUTPUT_COLUMNS, row)
+            )
+
+
+def convert(args: argparse.Namespace) -> None:
+    run_date = date.fromisoformat(args.run_date) if args.run_date else date.today()
+    input_date = run_date - timedelta(days=1)
+    suffix = input_date.strftime("%y%m%d")
+
+    input_files = {
+        "depo1_fd": args.input_dir / f"FD{suffix}.sas7bdat",
+        "depo1x_fd": args.input_dir / f"IFD{suffix}.sas7bdat",
+        "depo2_fd": args.input_dir / f"FDCD{suffix}.sas7bdat",
+        "depo2x_fd": args.input_dir / f"IFDCD{suffix}.sas7bdat",
+    }
+    missing_files = [str(path) for path in input_files.values() if not path.is_file()]
+    if missing_files:
+        raise FileNotFoundError("Missing daily input file(s):\n  " + "\n  ".join(missing_files))
+
+    depo1 = pd.concat(
+        [read_sas(input_files["depo1_fd"]), read_sas(input_files["depo1x_fd"])],
+        ignore_index=True,
+    )
+    require_columns(depo1, ["ACCTNO", "BRANCH", "SECOND", "NAME"], "DEPO1 FD files")
+    depo1 = depo1.loc[depo1["SECOND"].isin([99991, 99992])].copy()
+    depo1["SECOND2"] = depo1["SECOND"].map({99991: "PBB", 99992: "PIBB"})
+    depo1 = depo1[["ACCTNO", "BRANCH", "SECOND2", "NAME"]]
+
+    depo2 = pd.concat(
+        [read_sas(input_files["depo2_fd"]), read_sas(input_files["depo2x_fd"])],
+        ignore_index=True,
+    )
+    require_columns(
+        depo2,
+        ["ACCTNO", "BRANCH", "CDNO", "MATDATE", "TERM", "RATE", "CURBAL"],
+        "DEPO2 FD files",
+    )
+    depo2 = depo2.loc[depo2["CURBAL"] > 0, [
+        "ACCTNO", "BRANCH", "CDNO", "MATDATE", "TERM", "RATE", "CURBAL"
+    ]]
+
+    # SAS `MERGE ...; BY ...; IF A AND B;` is an inner match on these keys.
+    combined = depo1.merge(depo2, on=["ACCTNO", "BRANCH"], how="inner")
+    combined = combined.sort_values("MATDATE", kind="stable")
+
+    account_number = pd.to_numeric(combined["ACCTNO"], errors="coerce")
+    is_foreign_currency = (
+        account_number.between(1_590_000_000, 1_599_999_999)
+        | account_number.between(1_689_999_999, 1_699_999_999)
+        | account_number.between(1_789_999_999, 1_799_999_999)
+    )
+    fcyfd = combined.loc[is_foreign_currency]
+    fd = combined.loc[~is_foreign_currency]
+
+    report_text = run_date.strftime("%d/%m/%y")
+    write_report(fd, args.fd_output, f"DAILY RM FD MATURITY HQ AS AT {report_text}")
+    write_report(fcyfd, args.fcyfd_output, f"DAILY FCYFD MATURITY HQ AS AT {report_text}")
+
+    print(f"Wrote {len(fd):,} RM FD rows to {args.fd_output}")
+    print(f"Wrote {len(fcyfd):,} FCYFD rows to {args.fcyfd_output}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--input-dir",
+        type=Path,
+        required=True,
+        help="Directory containing the four dated SAS7BDAT input files",
+    )
+    parser.add_argument(
+        "--run-date",
+        help="Job date in YYYY-MM-DD format; defaults to today's system date",
+    )
+    parser.add_argument("--fd-output", type=Path, default=Path("FDTXT.csv"))
+    parser.add_argument("--fcyfd-output", type=Path, default=Path("FDTXT1.csv"))
+    return parser
+
+
+if __name__ == "__main__":
+    convert(build_parser().parse_args())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //EIBDFDHQ JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB50722
 //*****************************************************
 //* SMR 2012-2684
