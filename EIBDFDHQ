@@ -15,6 +15,10 @@ from pathlib import Path
 import pandas as pd
 
 
+DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
+
+
 OUTPUT_COLUMNS = [
     "BRANCH",
     "SECOND2",
@@ -146,28 +150,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--input-dir",
         type=Path,
-        required=True,
+        default=DEFAULT_INPUT_DIR,
         help="Directory containing the four dated SAS7BDAT input files",
     )
     parser.add_argument(
         "--run-date",
         help="Job date in YYYY-MM-DD format; defaults to today's system date",
     )
-    parser.add_argument("--fd-output", type=Path, default=Path("FDTXT.csv"))
-    parser.add_argument("--fcyfd-output", type=Path, default=Path("FDTXT1.csv"))
+    parser.add_argument(
+        "--fd-output", type=Path, default=DEFAULT_OUTPUT_DIR / "FDTXT.csv"
+    )
+    parser.add_argument(
+        "--fcyfd-output", type=Path, default=DEFAULT_OUTPUT_DIR / "FDTXT1.csv"
+    )
     return parser
 
 
 if __name__ == "__main__":
     convert(build_parser().parse_args())
-
-
-
-
-
-
-
-
 
 
 
