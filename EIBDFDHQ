@@ -93,10 +93,10 @@ def convert(args: argparse.Namespace) -> None:
     suffix = input_date.strftime("%y%m%d")
 
     input_files = {
-        "depo1_fd": args.input_dir / f"FD{suffix}.sas7bdat",
-        "depo1x_fd": args.input_dir / f"IFD{suffix}.sas7bdat",
-        "depo2_fd": args.input_dir / f"FDCD{suffix}.sas7bdat",
-        "depo2x_fd": args.input_dir / f"IFDCD{suffix}.sas7bdat",
+        "depo1_fd": args.input_dir / f"fd{suffix}.sas7bdat",
+        "depo1x_fd": args.input_dir / f"ifd{suffix}.sas7bdat",
+        "depo2_fd": args.input_dir / f"fdcd{suffix}.sas7bdat",
+        "depo2x_fd": args.input_dir / f"ifdcd{suffix}.sas7bdat",
     }
     missing_files = [str(path) for path in input_files.values() if not path.is_file()]
     if missing_files:
@@ -168,9 +168,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 if __name__ == "__main__":
     convert(build_parser().parse_args())
-
-
-
 
 
 
