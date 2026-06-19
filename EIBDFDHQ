@@ -1,0 +1,119 @@
+//EIBDFDHQ JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB50722
+//*****************************************************
+//* SMR 2012-2684
+//* DAILY DATASETS - RMFDMAT AND FCYFDMAT
+//* PROGHHH - 24 OCTOBER 2012
+//*****************************************************
+//DELETE  EXEC PGM=IEFBR14
+//DEL01    DD DSN=SAP.PBB.FD.FDTXT,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//DEL02    DD DSN=SAP.PBB.FD.FDTXT1,
+//            DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(0))
+//EIBDFDHQ  EXEC SAS609
+//DEPO1     DD DSN=SAP.PBB.MNITB.DAILY(0),DISP=SHR
+//DEPO1X    DD DSN=SAP.PIBB.MNITB.DAILY(0),DISP=SHR
+//DEPO2     DD DSN=SAP.PBB.MNIFD.DAILY(0),DISP=SHR
+//DEPO2X    DD DSN=SAP.PIBB.MNIFD.DAILY(0),DISP=SHR
+//FDTXT     DD DSN=SAP.PBB.FD.FDTXT,DISP=(NEW,CATLG,DELETE),
+//             UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//             DCB=(RECFM=VB,LRECL=350,BLKSIZE=0)
+//FDTXT1    DD DSN=SAP.PBB.FD.FDTXT1,DISP=(NEW,CATLG,DELETE),
+//             UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//             DCB=(RECFM=VB,LRECL=350,BLKSIZE=0)
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SYSIN     DD *
+OPTIONS YEARCUTOFF=1990;
+OPTIONS NOCENTER NODATE COMPRESS=Y;
+*;
+DATA REPTDATE;
+  SET DEPO1.REPTDATE;
+  REPTDATE=INPUT(SUBSTR(PUT(TBDATE, Z11.), 1, 8), MMDDYY8.);
+  CALL SYMPUT('NODAY', PUT(DAY(REPTDATE), 2.));
+  CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+  CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
+  CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
+  CALL SYMPUT('REPDT', PUT(REPTDATE, DDMMYY8.));
+RUN;
+DATA DEPO1(KEEP=ACCTNO BRANCH SECOND2 NAME);
+   FORMAT SECOND2 $4.;
+   SET DEPO1.FD DEPO1X.FD;
+   IF SECOND IN (99991,99992);
+   IF SECOND = 99991 THEN SECOND2 = 'PBB';
+   IF SECOND = 99992 THEN SECOND2 = 'PIBB';
+RUN;
+PROC SORT DATA=DEPO1; BY ACCTNO BRANCH; RUN;
+*;
+DATA DEPO2(KEEP=ACCTNO BRANCH CDNO MATDATE TERM RATE CURBAL);
+   SET DEPO2.FD DEPO2X.FD;
+   IF CURBAL > 0;
+RUN;
+PROC SORT DATA=DEPO2; BY ACCTNO BRANCH; RUN;
+*;
+DATA ALL;
+   MERGE DEPO1(IN=A) DEPO2(IN=B); BY ACCTNO BRANCH;
+   IF A AND B;
+RUN;
+PROC SORT DATA=ALL; BY MATDATE; RUN;
+*;
+DATA FD
+     FCYFD;
+   SET ALL;
+   IF (1590000000<=ACCTNO<=1599999999) OR
+      (1689999999<=ACCTNO<=1699999999) OR
+      (1789999999<=ACCTNO<=1799999999) THEN OUTPUT FCYFD;
+   ELSE                OUTPUT FD;
+RUN;
+*;
+DATA WOFF;
+   SET FD;
+   FILE FDTXT;
+   IF _N_ = 1 THEN DO;
+     PUT @1 'DAILY RM FD MATURITY HQ AS AT ' "&REPDT";
+     PUT @1 'BRANCH'                ','
+            'PBB/PIBB'              ','
+            'NAME'                  ','
+            'ACCTNO'                ','
+            'PRINCIPAL AM(RM)'      ','
+            'CDNO'                  ','
+            'MATDATE'               ','
+            'PREVIOUS RATE(% P.A)'  ','
+            'PREVIOUS TERM (MONTH)' ',';
+   END;
+     PUT @1 BRANCH   ','
+            SECOND2  ','
+            NAME     ','
+            ACCTNO   ','
+            CURBAL   ','
+            CDNO     ','
+            MATDATE  ','
+            RATE     ','
+            TERM     ',';
+RUN;
+*;
+DATA WOFF1;
+   SET FCYFD;
+   FILE FDTXT1;
+   IF _N_ = 1 THEN DO;
+     PUT @1 'DAILY FCYFD MATURITY HQ AS AT ' "&REPDT";
+     PUT @1 'BRANCH'                ','
+            'PBB/PIBB'              ','
+            'NAME'                  ','
+            'ACCTNO'                ','
+            'PRINCIPAL AM(RM)'      ','
+            'CDNO'                  ','
+            'MATDATE'               ','
+            'PREVIOUS RATE(% P.A)'  ','
+            'PREVIOUS TERM (MONTH)' ',';
+   END;
+     PUT @1 BRANCH   ','
+            SECOND2  ','
+            NAME     ','
+            ACCTNO   ','
+            CURBAL   ','
+            CDNO     ','
+            MATDATE  ','
+            RATE     ','
+            TERM     ',';
+RUN;
