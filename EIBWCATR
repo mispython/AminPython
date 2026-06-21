@@ -1,3 +1,117 @@
+source /sas/python/virt_edw/bin/activate
+[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCATR_PAS.py
+**********************************************************
+* Job:      EIBWCATR_PAS                                 *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Sunday, June 21, 2026, 12:08:38 PM           *
+**********************************************************
+Program start : 2026/06/21 12:09:47
+
+1       """Python replacement for the EIBWCATR JCL/SAS job.
+2       from __future__ import annotations
+3       import argparse
+4       from collections import defaultdict
+5       from dataclasses import dataclass
+6       from datetime import date, datetime
+7       from pathlib import Path
+8       from typing import Iterable
+9       DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+10      DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
+11      RUN_DAYS = (1, 9, 16, 23)
+12      INPUT_FILES = [
+13          *(f"ACCT{i:02d}.TXT" for i in range(1, 11)),
+14          "ORG_OTH.TXT",
+15          "ORG_SA9.TXT",
+16      OUTPUT_FILE = "cisdepwk.sas7bdat"
+17      @dataclass(frozen=True)
+18      class Record:
+19          bankno: str
+20          applcode: str
+21          acctno: str
+22          prisec: str
+23          relcode: str
+24          custno: str
+25          indorg: str
+26          acctbrch: str
+27          icnox: str
+28          ecpcode: str
+29          name: str
+30          icno: str
+31      def effective_date(today: date) -> date:
+32      def text(value: str) -> str:
+33      def parse_record(line: str) -> Record:
+34      def resolve_input(directory: Path, filename: str) -> Path:
+35      def load(path: Path, encoding: str) -> list[Record]:
+36      def base_row(record: Record, key: str, keyname: str, join: int) -> dict[str, str | int]:
+37      def single_rows(records: Iterable[Record], join: int) -> Iterable[dict[str, str | int]]:
+38      def joint_rows(records: Iterable[Record], join: int) -> Iterable[dict[str, str | int]]:
+39      def write_sas7bdat(
+40      def convert(input_dir: Path, output_dir: Path, encoding: str) -> Path:
+41      def parse_date(value: str) -> date:
+42      def main() -> int:
+43      if __name__ == "__main__":
+44          raise SystemExit(main())
+45          parser = argparse.ArgumentParser(description=__doc__)
+46          parser.add_argument("--today", type=parse_date, default=date.today(), help="run date (YYYY-MM-DD)")
+47          parser.add_argument("--input-root", type=Path, default=DEFAULT_INPUT_DIR)
+48          parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_DIR)
+49          parser.add_argument("--encoding", default="utf-8", help="input encoding; use cp037 for EBCDIC")
+50          parser.add_argument(
+51              "--no-date-folder",
+52              action="store_true",
+53              help="read/write directly in the root paths instead of a YYYYMMDD subfolder",
+54          args = parser.parse_args()
+55          snapshot = effective_date(args.today)
+56          eligible = [day for day in RUN_DAYS if day <= today.day]
+57          return today.replace(day=max(eligible))
+58          folder = snapshot.strftime("%Y%m%d")
+59          input_dir = args.input_root if args.no_date_folder else args.input_root / folder
+60          output_dir = args.output_root if args.no_date_folder else args.output_root / folder
+61          print(f"Run date: {args.today:%Y-%m-%d}")
+Run date: 2026-06-21
+62          print(f"Selected snapshot: {snapshot:%Y-%m-%d}")
+Selected snapshot: 2026-06-16
+63          print(f"Input: {input_dir}")
+Input: Data_Warehouse/MIS/XMIS/input/prod/20260616
+64          destination = convert(input_dir, output_dir, args.encoding)
+65          loaded = {
+66              for filename in INPUT_FILES
+67              Path(filename).stem: load(resolve_input(input_dir, filename), encoding)
+68          path = directory / filename
+69          if not path.is_file():
+70              raise FileNotFoundError(f"Missing input file: {path}")
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCATR_PAS.py", line 235, in <module>
+    raise SystemExit(main())
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCATR_PAS.py", line 229, in main
+    destination = convert(input_dir, output_dir, args.encoding)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCATR_PAS.py", line 173, in convert
+    loaded = {
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCATR_PAS.py", line 174, in <dictcomp>
+    Path(filename).stem: load(resolve_input(input_dir, filename), encoding)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWCATR_PAS.py", line 88, in resolve_input
+    raise FileNotFoundError(f"Missing input file: {path}")
+FileNotFoundError: Missing input file: Data_Warehouse/MIS/XMIS/input/prod/20260616/ACCT01.TXT
+
+Total time elapsed : 00:00:00
+Memory used: 1.04 MB
+Program end : 2026/06/21 12:09:47
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #!/usr/bin/env python3
 """Python replacement for the EIBWCATR JCL/SAS job.
 
