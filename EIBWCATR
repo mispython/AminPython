@@ -1,6 +1,3 @@
-BANKNO	APPLCODE	ACCTNO	PRISEC	RELCODE	CUSTNO	INDORG	ACCTBRCH	ICNOX	ECPCODE	NAME	ICNO	KEY	KEYNAME	JOIN
-
-
 #!/usr/bin/env python3
 """Python replacement for the EIBWCATR JCL/SAS job.
 
@@ -170,7 +167,8 @@ def write_sas7bdat(
     output_dir = output_dir.resolve()
     table = Path(OUTPUT_FILE).stem
     destination = output_dir / OUTPUT_FILE
-    frame = pd.DataFrame(rows)
+    # Set both the physical column order and the row order to SORT_FIELDS.
+    frame = pd.DataFrame(rows, columns=SORT_FIELDS)
 
     # Match the numeric variables in the original SAS INPUT statements.
     for column in NUMERIC_FIELDS:
