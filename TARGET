@@ -1,3 +1,48 @@
+                    The COMPARE Procedure                                                        
+                                                 Comparison of WORK.M2 with WORK.M1                                                 
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                               Value Comparison Results for Variables                                               
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||  Base Value           Compare Value                                              
+                                            Obs ||  NAME                  NAME                                                      
+                                      ________  ||  ___________________+  ___________________+                                      
+                                                ||                                                                                  
+                                         30058  ||  NIKOLA ~`!#$%Ø*()_+-  NIKOLA ~`!#$%*()_+-                                      
+                                         43081  ||  MARI A/â KAPAL        MARI A/ KAPAL                                            
+                                         56381  ||  AH LING ×             AH LING                                                  
+                                         56382  ||  BIN TAUHID GHAZALI    BIN TAUHID GHAZALI                                        
+                                     __________________________________________________________                                     
+                                                                                                                                    
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||  Base Value           Compare Value                                              
+                                            Obs ||  KEYNAME               KEYNAME                                                   
+                                      ________  ||  ___________________+  ___________________+                                      
+                                                ||                                                                                  
+                                         30058  ||  NIKOLA ~`!#$%Ø*()_+-  NIKOLA ~`!#$%*()_+-                                      
+                                         43081  ||  MARI A/â KAPAL        MARI A/ KAPAL                                            
+                                         44816  ||   ,AMY SANTIAGO        ,AMY SANTIAGO                                             
+                                         44819  ||   ,AMY SANTIAGO        ,AMY SANTIAGO                                             
+                                         44826  ||   ,AMY SANTIAGO        ,AMY SANTIAGO                                             
+                                         56381  ||  AH LING ×             AH LING                                                  
+                                         56382  ||  BIN TAUHID GHAZALI    BIN TAUHID GHAZALI                                        
+                                         60271  ||   ,AMY SANTIAGO        ,AMY SANTIAGO                                             
+                                     __________________________________________________________          
+
+
+
+
+
+
+
+
+
+
+
+
+
 #!/usr/bin/env python3
 """Python replacement for the EIBWCATR JCL/SAS job.
 
