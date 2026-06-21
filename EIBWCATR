@@ -1,6 +1,3 @@
-BY ACCTNO ICNO BANKNO APPLCODE PRISEC RELCODE CUSTNO INDORG ACCTBRCH ICNOX ECPCODE NAME KEY KEYNAME JOIN;
-
-
 #!/usr/bin/env python3
 """Python replacement for the EIBWCATR JCL/SAS job.
 
@@ -33,6 +30,13 @@ INPUT_FILES = [
 ]
 
 OUTPUT_FILE = "cisdepwk.sas7bdat"
+
+SORT_FIELDS = (
+    "ACCTNO", "ICNO", "BANKNO", "APPLCODE", "PRISEC", "RELCODE",
+    "CUSTNO", "INDORG", "ACCTBRCH", "ICNOX", "ECPCODE", "NAME",
+    "KEY", "KEYNAME", "JOIN",
+)
+NUMERIC_FIELDS = {"ACCTNO", "BANKNO", "RELCODE", "ACCTBRCH", "ECPCODE", "JOIN"}
 
 
 @dataclass(frozen=True)
@@ -134,6 +138,19 @@ def joint_rows(records: Iterable[Record], join: int) -> Iterable[dict[str, str |
         yield base_row(first, ",".join(keys), ",".join(names), join)
 
 
+def sas_sort_key(row: dict[str, str | int]) -> tuple[object, ...]:
+    """Build the requested SAS-style BY key; missing numeric values sort first."""
+    key: list[object] = []
+    for field in SORT_FIELDS:
+        value = row[field]
+        if field in NUMERIC_FIELDS:
+            stripped = str(value).strip()
+            key.append((0, 0) if not stripped else (1, float(stripped)))
+        else:
+            key.append(str(value))
+    return tuple(key)
+
+
 def write_sas7bdat(
     rows: list[dict[str, str | int]], output_dir: Path
 ) -> Path:
@@ -153,7 +170,7 @@ def write_sas7bdat(
     frame = pd.DataFrame(rows)
 
     # Match the numeric variables in the original SAS INPUT statements.
-    for column in ("BANKNO", "ACCTNO", "RELCODE", "ACCTBRCH", "ECPCODE", "JOIN"):
+    for column in NUMERIC_FIELDS:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
     sas = saspy.SASsession()
@@ -196,7 +213,7 @@ def convert(input_dir: Path, output_dir: Path, encoding: str) -> Path:
     for row in rows:
         unique.setdefault(str(row["ACCTNO"]), row)
 
-    final_rows = sorted(unique.values(), key=lambda row: str(row["ACCTNO"]))
+    final_rows = sorted(unique.values(), key=sas_sort_key)
     return write_sas7bdat(final_rows, output_dir)
 
 
