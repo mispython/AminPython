@@ -1,3 +1,85 @@
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+Alphabetic List of Variables and Attributes
+
+
+#
+
+Variable
+
+Type
+
+Len
+
+Format
+
+
+
+9
+ACCTBRCH Num 8   
+
+1
+ACCTNO Num 8   
+
+4
+APPLCODE Char 5   
+
+3
+BANKNO Num 8   
+
+7
+CUSTNO Char 11   
+
+11
+ECPCODE Num 8   
+
+2
+ICNO Char 39 $39. 
+
+10
+ICNOX Char 39   
+
+8
+INDORG Char 1   
+
+15
+JOIN Num 8   
+
+13
+KEY Char 79   
+
+14
+KEYNAME Char 81   
+
+12
+NAME Char 40   
+
+5
+PRISEC Char 1   
+
+6
+RELCODE Num 8   
+
+
+
+
+
+
+
+
+
 #!/usr/bin/env python3
 """Python replacement for the EIBWCATR JCL/SAS job.
 
