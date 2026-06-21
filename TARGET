@@ -1,3 +1,304 @@
+#!/usr/bin/env python3
+"""Python replacement for the EIBWCATR JCL/SAS job.
+
+The source files are fixed-width text files. The program reads directly from
+the input directory and writes directly to its output directory. Supply
+--input-root/--output-root to override the project defaults when needed.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date, datetime
+from pathlib import Path
+from typing import Iterable
+
+
+# Same default locations as the previous program. Command-line arguments can
+# still override either location when needed.
+DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
+
+RUN_DAYS = (1, 9, 16, 23)
+
+INPUT_FILES = [
+    *(f"ACCT{i:02d}.TXT" for i in range(1, 11)),
+    "ORG_OTH.TXT",
+    "ORG_SA9.TXT",
+]
+
+OUTPUT_FILE = "cisdepwk.sas7bdat"
+
+SORT_FIELDS = (
+    "ACCTNO", "ICNO", "BANKNO", "APPLCODE", "PRISEC", "RELCODE",
+    "CUSTNO", "INDORG", "ACCTBRCH", "ICNOX", "ECPCODE", "NAME",
+    "KEY", "KEYNAME", "JOIN",
+)
+NUMERIC_FIELDS = {"ACCTBRCH", "ACCTNO", "BANKNO", "ECPCODE", "JOIN", "RELCODE"}
+CHAR_LENGTHS = {
+    "APPLCODE": 5,
+    "CUSTNO": 11,
+    "ICNO": 39,
+    "ICNOX": 39,
+    "INDORG": 1,
+    "KEY": 79,
+    "KEYNAME": 81,
+    "NAME": 40,
+    "PRISEC": 1,
+}
+
+
+@dataclass(frozen=True)
+class Record:
+    bankno: str
+    applcode: str
+    acctno: str
+    prisec: str
+    relcode: str
+    custno: str
+    indorg: str
+    acctbrch: str
+    icnox: str
+    ecpcode: str
+    name: str
+    icno: str
+
+
+def effective_date(today: date) -> date:
+    """Return the closest scheduled date on or before today."""
+    eligible = [day for day in RUN_DAYS if day <= today.day]
+    return today.replace(day=max(eligible))
+
+
+def text(value: str) -> str:
+    return value.strip()
+
+
+def parse_record(line: str) -> Record:
+    """Parse the 1-based fixed-width columns from the SAS INPUT statement."""
+    line = line.rstrip("\r\n")
+    icnox = text(line[60:99])
+    custno = text(line[32:43])
+    # SAS: blank ICNOX, or characters 4-8 equal to 99999/DUPLI, uses CUSTNO.
+    icno = custno if not icnox or icnox[3:8] in {"99999", "DUPLI"} else icnox
+    return Record(
+        bankno=text(line[0:3]),
+        applcode=text(line[3:8]),
+        acctno=text(line[9:19]),
+        prisec=text(line[28:29]),
+        relcode=text(line[29:32]),
+        custno=custno,
+        indorg=text(line[52:53]),
+        acctbrch=text(line[53:60]),
+        icnox=icnox,
+        ecpcode=text(line[100:103]),
+        name=text(line[103:143]),
+        icno=icno,
+    )
+
+
+def resolve_input(directory: Path, filename: str) -> Path:
+    path = directory / filename
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing input file: {path}")
+    return path
+
+
+def load(path: Path, encoding: str) -> list[Record]:
+    with path.open("r", encoding=encoding, errors="replace", newline="") as source:
+        return [parse_record(line) for line in source if line.strip()]
+
+
+def base_row(record: Record, key: str, keyname: str, join: int) -> dict[str, str | int]:
+    return {
+        "BANKNO": record.bankno,
+        "APPLCODE": record.applcode,
+        "ACCTNO": record.acctno,
+        "PRISEC": record.prisec,
+        "RELCODE": record.relcode,
+        "CUSTNO": record.custno,
+        "INDORG": record.indorg,
+        "ACCTBRCH": record.acctbrch,
+        "ICNOX": record.icnox,
+        "ECPCODE": record.ecpcode,
+        "NAME": record.name,
+        "ICNO": record.icno,
+        # These lengths come from the final SAS PDV metadata.
+        "KEY": key[:79],
+        "KEYNAME": keyname[:81],
+        "JOIN": join,
+    }
+
+
+def single_rows(records: Iterable[Record], join: int) -> Iterable[dict[str, str | int]]:
+    for record in records:
+        yield base_row(record, "".join(record.icno.split()), record.name, join)
+
+
+def joint_rows(records: Iterable[Record], join: int) -> Iterable[dict[str, str | int]]:
+    """Reproduce PROC TRANSPOSE for ACCT02 through ACCT08."""
+    groups: dict[str, list[Record]] = defaultdict(list)
+    # The source SAS job runs on z/OS. Its EBCDIC collation places alphabetic
+    # IDs (IC/PP/etc.) before digit-only IDs, unlike Python/ASCII ordering.
+    for record in sorted(
+        records,
+        key=lambda item: (
+            float(item.acctno) if item.acctno else float("-inf"),
+            item.icno.encode("cp037", errors="replace"),
+        ),
+    ):
+        groups[record.acctno].append(record)
+
+    for members in groups.values():
+        first = members[0]  # PROC SORT NODUPKEYS value merged into transposed row
+        keys = ["".join(item.icno.split()) for item in members[:join]]
+        names = [item.name for item in members[:join]]
+        # PROC TRANSPOSE creates COLN variables of length 40. Concatenation
+        # therefore includes their padding; COMPBL reduces that padding to one
+        # blank, normally producing "NAME 1 ,NAME 2".
+        padded_names = ",".join(name.ljust(40) for name in names)
+        keyname = re.sub(r" {2,}", " ", padded_names).rstrip()
+        yield base_row(first, ",".join(keys), keyname, join)
+
+
+def sas_sort_key(row: dict[str, str | int]) -> tuple[object, ...]:
+    """Build the requested SAS-style BY key; missing numeric values sort first."""
+    key: list[object] = []
+    for field in SORT_FIELDS:
+        value = row[field]
+        if field in NUMERIC_FIELDS:
+            stripped = str(value).strip()
+            key.append((0, 0) if not stripped else (1, float(stripped)))
+        else:
+            key.append(str(value))
+    return tuple(key)
+
+
+def write_sas7bdat(
+    rows: list[dict[str, str | int]], output_dir: Path
+) -> Path:
+    """Write a genuine SAS7BDAT file using the configured SAS runtime."""
+    try:
+        import pandas as pd
+        import saspy
+    except ImportError as error:
+        raise RuntimeError(
+            "Writing SAS7BDAT requires pandas, saspy, and a configured SAS runtime"
+        ) from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = output_dir.resolve()
+    table = Path(OUTPUT_FILE).stem
+    destination = output_dir / OUTPUT_FILE
+    # Set both the physical column order and the row order to SORT_FIELDS.
+    frame = pd.DataFrame(rows, columns=SORT_FIELDS)
+
+    # Apply the exact SAS metadata supplied for the final dataset. Character
+    # identifiers such as CUSTNO retain leading zeroes; numeric blanks become
+    # SAS missing values (displayed as a dot).
+    for column in SORT_FIELDS:
+        if column in NUMERIC_FIELDS:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        else:
+            length = CHAR_LENGTHS[column]
+            frame[column] = frame[column].fillna("").astype(str).str.slice(0, length)
+
+    sas = saspy.SASsession()
+    try:
+        sas_path = str(output_dir).replace("'", "''")
+        result = sas.submit(f"libname PYOUT '{sas_path}';")
+        if "ERROR:" in result.get("LOG", ""):
+            raise RuntimeError(result["LOG"])
+        sas.df2sd(
+            frame,
+            table=table,
+            libref="PYOUT",
+            char_lengths=CHAR_LENGTHS,
+            outfmts={"ICNO": "$39."},
+        )
+    finally:
+        sas.endsas()
+
+    if not destination.is_file():
+        raise RuntimeError(f"SAS did not create the expected file: {destination}")
+    return destination
+
+
+def convert(input_dir: Path, output_dir: Path, encoding: str) -> Path:
+    loaded = {
+        Path(filename).stem: load(resolve_input(input_dir, filename), encoding)
+        for filename in INPUT_FILES
+    }
+
+    rows: list[dict[str, str | int]] = []
+    for number in range(2, 9):
+        rows.extend(joint_rows(loaded[f"ACCT{number:02d}"], number))
+    rows.extend(single_rows(loaded["ACCT01"], 1))
+
+    # TRANORG and TRAN999 are NODUPKEYS by ACCTNO in the SAS job.
+    for name, join in (("ORG_OTH", 0), ("ORG_SA9", 1)):
+        seen: set[str] = set()
+        for row in single_rows(sorted(loaded[name], key=lambda item: item.acctno), join):
+            acctno = str(row["ACCTNO"])
+            if acctno not in seen:
+                rows.append(row)
+                seen.add(acctno)
+
+    # Final PROC SORT NODUPKEYS BY ACCTNO: keep the first row in SET order.
+    unique: dict[str, dict[str, str | int]] = {}
+    for row in rows:
+        unique.setdefault(str(row["ACCTNO"]), row)
+
+    final_rows = sorted(unique.values(), key=sas_sort_key)
+    return write_sas7bdat(final_rows, output_dir)
+
+
+def parse_date(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--today", type=parse_date, default=date.today(), help="run date (YYYY-MM-DD)")
+    parser.add_argument("--input-root", type=Path, default=DEFAULT_INPUT_DIR)
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--encoding", default="utf-8", help="input encoding; use cp037 for EBCDIC")
+    args = parser.parse_args()
+
+    snapshot = effective_date(args.today)
+    input_dir = args.input_root
+    output_dir = args.output_root
+
+    print(f"Run date: {args.today:%Y-%m-%d}")
+    print(f"Selected snapshot: {snapshot:%Y-%m-%d}")
+    print(f"Input: {input_dir}")
+    destination = convert(input_dir, output_dir, args.encoding)
+    print(f"Output: {destination}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 oUR OUTTUT
 
 ACCTNO	ICNO	BANKNO	APPLCODE	PRISEC	RELCODE	CUSTNO	INDORG	ACCTBRCH	ICNOX	ECPCODE	NAME	KEY	KEYNAME	JOIN
