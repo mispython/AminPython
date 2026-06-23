@@ -1,3 +1,16 @@
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text         
+lzopts linerule=$lr                                               
+cd /dwh/input/CIS                                                  
+put //RBP2.B033.UNLOAD.CUSTMSCD.DESC(0) CIS_MSCD_MAP_20260622     
+put //RBP2.B033.BANKCTRL.OCCUP          CIS_OCCUP_MAP_20260622    
+
+
+
+
+
+
+
+
 //EIBKCTRL JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=64M,NOTIFY=&SYSUID      JOB29240
 //*---------------------------------------------------------------------
 //* BANK CONTROL
