@@ -1,3 +1,17 @@
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWBILE_PAS.py", line 470, in <module>
+    raise SystemExit(main())
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWBILE_PAS.py", line 454, in main
+    destinations = convert(args.input_root, args.output_root, args.encoding, filenames, suffix)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWBILE_PAS.py", line 414, in convert
+    return write_sas7bdat(rows, output_dir, suffix)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIBWBILE_PAS.py", line 399, in write_sas7bdat
+    raise RuntimeError(
+RuntimeError: SAS did not create the expected file(s): /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output/CUSTOMER_260624.sas7bdat, /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output/FACILITY_260624.sas7bdat, /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output/COMBINE_260624.sas7bdat, /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output/TRANS_260624.sas7bdat, /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output/REPTDATE_260624.sas7bdat
+
+
+
+
 #!/usr/bin/env python3
 """Python replacement for the EIBWBILE JCL/SAS job.
 
