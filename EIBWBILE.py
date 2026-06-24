@@ -1,3 +1,429 @@
+
+
+
+Section G 
+
+COMPLIANCE/FINANCIAL CRIME COMPLIANCE FUNCTION 2026 
+
+                                                       The COMPARE Procedure                                                        
+                                             Comparison of A.TRANS with A.TRANS_260623                                              
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                                         Data Set Summary                                                           
+                                                                                                                                    
+                                  Dataset                  Created          Modified  NVar    NObs                                  
+                                                                                                                                    
+                                  A.TRANS         24JUN26:10:18:51  24JUN26:10:18:51     9     127                                  
+                                  A.TRANS_260623  24JUN26:14:42:39  24JUN26:14:42:39     9     127                                  
+                                                                                                                                    
+                                                                                                                                    
+                                                         Variables Summary                                                          
+                                                                                                                                    
+                                               Number of Variables in Common: 9.                                                    
+
+
+                                                                                                                                    
+                                                                                                                                    
+                                                        Observation Summary                                                         
+                                                                                                                                    
+                                                   Observation      Base  Compare                                                   
+                                                                                                                                    
+                                                   First Obs           1        1                                                   
+                                                   First Unequal       2        2                                                   
+                                                   Last  Unequal     124      124                                                   
+                                                   Last  Obs         127      127                                                   
+                                                                                                                                    
+                                  Number of Observations in Common: 127.                                                            
+                                  Total Number of Observations Read from A.TRANS: 127.                                              
+                                  Total Number of Observations Read from A.TRANS_260623: 127.                                       
+                                                                                                                                    
+                                  Number of Observations with Some Compared Variables Unequal: 50.                                  
+                                  Number of Observations with All Compared Variables Equal: 77.                                     
+                                                                                                                                    
+                                                                                                                                    
+                                                     Values Comparison Summary                                                      
+                                                                                                                                    
+                                  Number of Variables Compared with All Observations Equal: 5.                                      
+                                  Number of Variables Compared with Some Observations Unequal: 4.                                   
+                                  Total Number of Values which Compare Unequal: 65.                                                 
+                                  Maximum Difference: 9.3132E-10.                                                                   
+                                                                                                                                    
+                                                                                                                                    
+                                                   Variables with Unequal Values                                                    
+                                                                                                                                    
+                                                Variable  Type  Len  Ndif   MaxDif                                                  
+                                                                                                                                    
+                                                INTRATE   NUM     8    13  444E-18                                                  
+                                                BILLAMT   NUM     8    23  931E-12                                                  
+                                                INTACCR   NUM     8    16  146E-13                                                  
+                                                IISACCR   NUM     8    13  582E-13                                                  
+                                                                                                                                    
+
+
+
+
+Section G 
+
+COMPLIANCE/FINANCIAL CRIME COMPLIANCE FUNCTION 2026 
+
+                                                       The COMPARE Procedure                                                        
+                                             Comparison of A.TRANS with A.TRANS_260623                                              
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                               Value Comparison Results for Variables                                               
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||    INTRATE    intrate      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                            28  ||     3.7000     3.7000  4.441E-16    1.2E-14                                      
+                                            29  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            30  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            31  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            32  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            33  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            34  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            35  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            36  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            37  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            38  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            39  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                            40  ||     3.6000     3.6000  4.441E-16  1.234E-14                                      
+                                     __________________________________________________________                                     
+                                                                                                                                    
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||    BILLAMT    billamt      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                             2  ||    1253045    1253045  2.328E-10  1.858E-14                                      
+                                             4  ||      35534      35534  7.276E-12  2.048E-14                                      
+                                             8  ||    2293121    2293121  4.657E-10  2.031E-14                                      
+                                            22  ||    2094712    2094712  2.328E-10  1.112E-14                                      
+                                            23  ||      42502      42502  7.276E-12  1.712E-14                                      
+                                            25  ||      42502      42502  7.276E-12  1.712E-14                                      
+                                            27  ||      21248      21248  3.638E-12  1.712E-14                                      
+                                            49  ||     250333     250333   2.91E-11  1.163E-14                                      
+                                            70  ||      55556      55556  7.276E-12   1.31E-14                                      
+                                            71  ||       7222       7222  9.095E-13  1.259E-14                                      
+                                            73  ||       3556       3556  4.547E-13  1.279E-14                                      
+                                            75  ||    1169313    1169313  2.328E-10  1.991E-14                                      
+                                            76  ||     122550     122550  1.455E-11  1.187E-14                                      
+                                            79  ||    1484524    1484524  2.328E-10  1.568E-14                                      
+                                            84  ||    7940883    7940883  9.313E-10  1.173E-14                                      
+                                            86  ||    3350689    3350689  4.657E-10   1.39E-14                                      
+                                            95  ||     333956     333956  5.821E-11  1.743E-14                                      
+                                            98  ||    1105561    1105561  2.328E-10  2.106E-14                                      
+                                           108  ||      21136      21136  3.638E-12  1.721E-14                                      
+                                           113  ||      21248      21248  3.638E-12  1.712E-14                                      
+                                           116  ||     0.5500     0.5500   1.11E-16  2.019E-14                                      
+                                           119  ||      19975      19975  3.638E-12  1.821E-14                                      
+                                           124  ||      57235      57235  7.276E-12  1.271E-14                                      
+                                     __________________________________________________________                                     
+
+
+
+
+Section G 
+
+COMPLIANCE/FINANCIAL CRIME COMPLIANCE FUNCTION 2026 
+                                                       The COMPARE Procedure                                                        
+                                             Comparison of A.TRANS with A.TRANS_260623                                              
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                               Value Comparison Results for Variables                                               
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||    INTACCR    intaccr      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                            61  ||       2887       2887  4.547E-13  1.575E-14                                      
+                                            63  ||    88.3700    88.3700  1.421E-14  1.608E-14                                      
+                                            66  ||    88.4200    88.4200  1.421E-14  1.607E-14                                      
+                                            68  ||       2972       2972  4.547E-13   1.53E-14                                      
+                                            69  ||   402.6800   402.6800  5.684E-14  1.412E-14                                      
+                                            70  ||   892.5800   892.5800  1.137E-13  1.274E-14                                      
+                                            71  ||   199.9300   199.9300  2.842E-14  1.422E-14                                      
+                                            76  ||       3242       3242  4.547E-13  1.403E-14                                      
+                                            77  ||      18768      18768  3.638E-12  1.938E-14                                      
+                                            79  ||      35181      35181  7.276E-12  2.068E-14                                      
+                                            80  ||      57500      57500  7.276E-12  1.265E-14                                      
+                                            86  ||      80784      80784  1.455E-11  1.801E-14                                      
+                                            99  ||       1130       1130  2.274E-13  2.012E-14                                      
+                                           101  ||       6616       6616  9.095E-13  1.375E-14                                      
+                                           104  ||       3312       3312  4.547E-13  1.373E-14                                      
+                                           105  ||   767.6000   767.6000  1.137E-13  1.481E-14                                      
+                                     __________________________________________________________                                     
+                                                                                                                                    
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||    IISACCR    iisaccr      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                            61  ||       5084       5084  9.095E-13  1.789E-14                                      
+                                            66  ||   147.0300   147.0300  2.842E-14  1.933E-14                                      
+                                            67  ||   130.8300   130.8300  2.842E-14  2.172E-14                                      
+                                            68  ||       4697       4697  9.095E-13  1.936E-14                                      
+                                            70  ||       1399       1399  2.274E-13  1.626E-14                                      
+                                            71  ||   384.8700   384.8700  5.684E-14  1.477E-14                                      
+                                            75  ||      34455      34455  7.276E-12  2.112E-14                                      
+                                            76  ||       3628       3628  4.547E-13  1.254E-14                                      
+                                            78  ||     109976     109976  1.455E-11  1.323E-14                                      
+                                            79  ||      78720      78720  1.455E-11  1.849E-14                                      
+                                            80  ||     129326     129326  1.455E-11  1.125E-14                                      
+                                            81  ||     303430     303430  5.821E-11  1.918E-14                                      
+                                            86  ||     171711     171711   2.91E-11  1.695E-14                                      
+                                     __________________________________________________________                                     
+
+
+
+
+
+Section G 
+
+COMPLIANCE/FINANCIAL CRIME COMPLIANCE FUNCTION 2026 
+
+                                                       The COMPARE Procedure                                                        
+                                          Comparison of A.FACILITY with A.FACILITY_260623                                           
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                                         Data Set Summary                                                           
+                                                                                                                                    
+                                Dataset                     Created          Modified  NVar    NObs                                 
+                                                                                                                                    
+                                A.FACILITY         24JUN26:10:18:51  24JUN26:10:18:51    30      63                                 
+                                A.FACILITY_260623  24JUN26:14:42:39  24JUN26:14:42:39    30      63                                 
+                                                                                                                                    
+                                                                                                                                    
+                                                         Variables Summary                                                          
+                                                                                                                                    
+                                               Number of Variables in Common: 30.                                                   
+
+
+                                                                                                                                    
+                                                                                                                                    
+                                                        Observation Summary                                                         
+                                                                                                                                    
+                                                   Observation      Base  Compare                                                   
+                                                                                                                                    
+                                                   First Obs           1        1                                                   
+                                                   First Unequal       7        7                                                   
+                                                   Last  Unequal      61       61                                                   
+                                                   Last  Obs          63       63                                                   
+                                                                                                                                    
+                                  Number of Observations in Common: 63.                                                             
+                                  Total Number of Observations Read from A.FACILITY: 63.                                            
+                                  Total Number of Observations Read from A.FACILITY_260623: 63.                                     
+                                                                                                                                    
+                                  Number of Observations with Some Compared Variables Unequal: 7.                                   
+                                  Number of Observations with All Compared Variables Equal: 56.                                     
+                                                                                                                                    
+                                                                                                                                    
+                                                     Values Comparison Summary                                                      
+                                                                                                                                    
+                                  Number of Variables Compared with All Observations Equal: 27.                                     
+                                  Number of Variables Compared with Some Observations Unequal: 3.                                   
+                                  Total Number of Values which Compare Unequal: 8.                                                  
+                                  Maximum Difference: 1.8626E-09.                                                                   
+                                                                                                                                    
+                                                                                                                                    
+                                                   Variables with Unequal Values                                                    
+                                                                                                                                    
+                                                Variable  Type  Len  Ndif   MaxDif                                                  
+                                                                                                                                    
+                                                BALANCE   NUM     8     6  1.86E-9                                                  
+                                                BRLCBAL   NUM     8     1  1.86E-9                                                  
+                                                BRULCBAL  NUM     8     1  233E-12                                                  
+                                                                                                                                    
+
+
+
+
+Section G 
+
+COMPLIANCE/FINANCIAL CRIME COMPLIANCE FUNCTION 2026 
+
+                                                       The COMPARE Procedure                                                        
+                                          Comparison of A.FACILITY with A.FACILITY_260623                                           
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                               Value Comparison Results for Variables                                               
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||    BALANCE    balance      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                             7  ||   10798494   10798494  1.8626E-9  1.725E-14                                      
+                                             8  ||    7167282    7167282  9.313E-10  1.299E-14                                      
+                                            12  ||      50534      50534  7.276E-12   1.44E-14                                      
+                                            30  ||    1086262    1086262  2.328E-10  2.143E-14                                      
+                                            54  ||      42502      42502  7.276E-12  1.712E-14                                      
+                                            61  ||      42502      42502  7.276E-12  1.712E-14                                      
+                                     __________________________________________________________                                     
+                                                                                                                                    
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||    BRLCBAL    brlcbal      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                            45  ||   10736782   10736782  1.8626E-9  1.735E-14                                      
+                                     __________________________________________________________                                     
+                                                                                                                                    
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||   BRULCBAL   brulcbal      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                            45  ||    1283641    1283641  2.328E-10  1.814E-14                                      
+                                     __________________________________________________________                                     
+
+
+
+
+
+Section G 
+
+COMPLIANCE/FINANCIAL CRIME COMPLIANCE FUNCTION 2026 
+
+                                                       The COMPARE Procedure                                                        
+                                          Comparison of A.CUSTOMER with A.CUSTOMER_260623                                           
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                                         Data Set Summary                                                           
+                                                                                                                                    
+                                Dataset                     Created          Modified  NVar    NObs                                 
+                                                                                                                                    
+                                A.CUSTOMER         24JUN26:10:18:51  24JUN26:10:18:51    17      20                                 
+                                A.CUSTOMER_260623  24JUN26:14:42:39  24JUN26:14:42:39    17      20                                 
+                                                                                                                                    
+                                                                                                                                    
+                                                         Variables Summary                                                          
+                                                                                                                                    
+                                               Number of Variables in Common: 17.                                                   
+
+
+                                                                                                                                    
+                                                                                                                                    
+                                                        Observation Summary                                                         
+                                                                                                                                    
+                                                   Observation      Base  Compare                                                   
+                                                                                                                                    
+                                                   First Obs           1        1                                                   
+                                                   Last  Obs          20       20                                                   
+                                                                                                                                    
+                                  Number of Observations in Common: 20.                                                             
+                                  Total Number of Observations Read from A.CUSTOMER: 20.                                            
+                                  Total Number of Observations Read from A.CUSTOMER_260623: 20.                                     
+                                                                                                                                    
+                                  Number of Observations with Some Compared Variables Unequal: 0.                                   
+                                  Number of Observations with All Compared Variables Equal: 20.                                     
+                                                                                                                                    
+                                  NOTE: No unequal values were found. All values compared are exactly equal.                        
+                                                                                                                                    
+
+
+
+
+
+Section G 
+
+COMPLIANCE/FINANCIAL CRIME COMPLIANCE FUNCTION 2026 
+
+                                                       The COMPARE Procedure                                                        
+                                           Comparison of A.COMBINED with A.COMBINE_260623                                           
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                                         Data Set Summary                                                           
+                                                                                                                                    
+                                 Dataset                    Created          Modified  NVar    NObs                                 
+                                                                                                                                    
+                                 A.COMBINED        24JUN26:10:18:51  24JUN26:10:18:51     9      53                                 
+                                 A.COMBINE_260623  24JUN26:14:42:39  24JUN26:14:42:39     9      53                                 
+                                                                                                                                    
+                                                                                                                                    
+                                                         Variables Summary                                                          
+                                                                                                                                    
+                                               Number of Variables in Common: 9.                                                    
+
+
+                                                                                                                                    
+                                                                                                                                    
+                                                        Observation Summary                                                         
+                                                                                                                                    
+                                                   Observation      Base  Compare                                                   
+                                                                                                                                    
+                                                   First Obs           1        1                                                   
+                                                   First Unequal      17       17                                                   
+                                                   Last  Unequal      51       51                                                   
+                                                   Last  Obs          53       53                                                   
+                                                                                                                                    
+                                  Number of Observations in Common: 53.                                                             
+                                  Total Number of Observations Read from A.COMBINED: 53.                                            
+                                  Total Number of Observations Read from A.COMBINE_260623: 53.                                      
+                                                                                                                                    
+                                  Number of Observations with Some Compared Variables Unequal: 5.                                   
+                                  Number of Observations with All Compared Variables Equal: 48.                                     
+                                                                                                                                    
+                                                                                                                                    
+                                                     Values Comparison Summary                                                      
+                                                                                                                                    
+                                  Number of Variables Compared with All Observations Equal: 8.                                      
+                                  Number of Variables Compared with Some Observations Unequal: 1.                                   
+                                  Total Number of Values which Compare Unequal: 5.                                                  
+                                  Maximum Difference: 1.8626E-09.                                                                   
+                                                                                                                                    
+                                                                                                                                    
+                                                   Variables with Unequal Values                                                    
+                                                                                                                                    
+                                                Variable  Type  Len  Ndif   MaxDif                                                  
+                                                                                                                                    
+                                                BALANCE   NUM     8     5  1.86E-9                                                  
+                                                                                                                                    
+
+
+
+
+Section G 
+
+COMPLIANCE/FINANCIAL CRIME COMPLIANCE FUNCTION 2026 
+
+                                                       The COMPARE Procedure                                                        
+                                           Comparison of A.COMBINED with A.COMBINE_260623                                           
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                               Value Comparison Results for Variables                                               
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||    BALANCE    balance      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                            17  ||    1253045    1253045  2.328E-10  1.858E-14                                      
+                                            23  ||   15547147   15547147  1.8626E-9  1.198E-14                                      
+                                            27  ||     0.0100     0.0100  1.735E-18  1.735E-14                                      
+                                            33  ||    2094712    2094712  2.328E-10  1.112E-14                                      
+                                            51  ||      58556      58556  7.276E-12  1.243E-14                                      
+                                     __________________________________________________________         
+
+
+
+
+
+
+
+
+
+
+
+
+
 #!/usr/bin/env python3
 """Python replacement for the EIBWBILE JCL/SAS job.
 
