@@ -1,25 +1,38 @@
-LIBNAME DP      '/dwh/cmsbdptr';
-LIBNAME LNTRAN  '/dwh/cmsblntr';
-LIBNAME EBANK   '/dwh/cmsebnk';
-LIBNAME EQ      '/dwh/eq_d';
-LIBNAME IEQ     '/dwh/ieq_d';
-LIBNAME BTRADE  '/dwh/btrade';
-LIBNAME CARD    '/dwh/pbcs';
-LIBNAME CA      '/dwh/dp_ca';
-LIBNAME ICA     '/dwh/idp_ca';
-LIBNAME SA      '/dwh/dp_sa';
-LIBNAME ISA     '/dwh/idp_sa';
-LIBNAME FD      '/dwh/dp_fd';
-LIBNAME IFD     '/dwh/idp_fd';
-LIBNAME FCY     '/dwh/dp_fcy';
-LIBNAME IFCY    '/dwh/idp_fcy';
-LIBNAME GOLD    '/dwh/dp_gold';
-LIBNAME LN      '/dwh/ln_ln';
-LIBNAME ILN     '/dwh/iln_ln';
-LIBNAME PBCS    '/dwh/pbcs'; 
-LIBNAME TLB     '/dwh/dp_tlr';
-/*LIBNAME TEMP    '/dwh/dwh_m/tempsource/qrfnew';*/
-LIBNAME TEMP    '/stgsrcsys/host/holding/qrfnew';
+/*%include '/stgsrcsys/host/holding/CONVXLS_PMBREPORTS_REGEN_NEW.sas';*/
+/**/
+/*data _null_;*/
+/*        sftp_cmd =  "echo y|psftp drrsftp@192.168.193.235 -pw Password1 -b /sasdata/dwh/logs/sale2drr_uat.txt -be >> /sasdata/dwh/logs/sale2drr_uat.txt";*/
+/*        rc = system(sftp_cmd);*/
+/*   if rc > 0 then abort;*/
+/*run;*/
+
+/*x 'cp /eguser/egshared/egs_fd/eqrate260623.sas7bdat  /dwh/eq_d';*/
+/*x 'cp /eguser/egshared/egs_fd/eqrate06.sas7bdat 	 /dwh/eq_d';*/
+/*x 'cp /eguser/egshared/egs_fd/ieqrate260623.sas7bdat /dwh/ieq_d';*/
+/*x 'cp /eguser/egshared/egs_fd/ieqrate06.sas7bdat 	 /dwh/ieq_d';*/
+
+LIBNAME DP      ('/dwh/cmsbdptr','/dwh/cmsbdptr');
+LIBNAME LNTRAN  ('/dwh/cmsblntr','/dwh/cmsblntr');
+LIBNAME EBANK   ('/dwh/cmsebnk','/dwh/cmsebnk');
+LIBNAME EQ      ('/dwh/eq_d','/dwh/eq_d');
+LIBNAME IEQ     ('/dwh/ieq_d','/dwh/ieq_d');
+LIBNAME BTRADE  ('/dwh/btrade','/dwh/btrade');
+LIBNAME CARD    ('/dwh/pbcs','/exdwh/PBCS');
+LIBNAME CA      ('/dwh/dp_ca','/dwh/dp_ca');
+LIBNAME ICA     ('/dwh/idp_ca','/dwh/idp_ca');
+LIBNAME SA      ('/dwh/dp_sa','/dwh/dp_sa');
+LIBNAME ISA     ('/dwh/idp_sa','/dwh/idp_sa');
+LIBNAME FD      ('/dwh/dp_fd','/dwh/dp_fd');
+LIBNAME IFD     ('/dwh/idp_fd','/dwh/idp_fd');
+LIBNAME FCY     ('/dwh/dp_fcy','/dwh/dp_fcy');
+LIBNAME IFCY    ('/dwh/idp_fcy','/dwh/idp_fcy');
+LIBNAME GOLD    ('/dwh/dp_gold','/dwh/dp_gold');
+LIBNAME LN      ('/dwh/ln_ln','/dwh/ln_ln');
+LIBNAME ILN     ('/dwh/iln_ln','/dwh/iln_ln');
+LIBNAME PBCS    ('/dwh/pbcs','/exdwh/PBCS'); 
+LIBNAME TLB     ('/dwh/dp_tlr','/dwh/dp_tlr');
+LIBNAME TEMP    '/dwh/dwh_m/tempsource/qrfnew3';
+/*LIBNAME TEMP    '/stgsrcsys/host/holding';*/
 FILENAME PGM    '/dwh/ftp/batch/PBBDPFMT.txt';
 FILENAME BNM    '/sasdata/dwh/logs';
 /*FILENAME PGM1 	 '/dwh/ftp/batch';*/
@@ -110,7 +123,8 @@ RUN;
 
 
 DATA REPTDATE;
-  REPTDATE = TODAY()-DAY(TODAY());
+  TODAY1 = '2FEB2026'D;
+  REPTDATE = TODAY1-DAY(TODAY1);
   STARTDT  = MDY(MONTH(REPTDATE),1,YEAR(REPTDATE)); 
   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));      
   CALL SYMPUT('REPTMON' ,PUT(MONTH(REPTDATE),Z2.));   
@@ -241,10 +255,10 @@ PROC SORT DATA=CARD_BASE NODUPKEY; BY ACCTNO;RUN;
 
 *DEPOSIT;
 DATA DPBTRAN;
-   SET DP.DPBTRAN&REPTYEAR&REPTMON.01(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD LTRAIL1 LTRAIL2 CHANNEL USERID) 
-       DP.DPBTRAN&REPTYEAR&REPTMON.02(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD LTRAIL1 LTRAIL2 CHANNEL USERID)
-       DP.DPBTRAN&REPTYEAR&REPTMON.03(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD LTRAIL1 LTRAIL2 CHANNEL USERID) 
-       DP.DPBTRAN&REPTYEAR&REPTMON.04(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD LTRAIL1 LTRAIL2 CHANNEL USERID);
+         SET DP.DPBTRAN&REPTYEAR&REPTMON.01(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD LTRAIL1 LTRAIL2 LTRAIL3 CHANNEL USERID) 
+       DP.DPBTRAN&REPTYEAR&REPTMON.02(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD LTRAIL1 LTRAIL2 LTRAIL3 CHANNEL USERID)
+       DP.DPBTRAN&REPTYEAR&REPTMON.03(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD LTRAIL1 LTRAIL2 LTRAIL3 CHANNEL USERID) 
+       DP.DPBTRAN&REPTYEAR&REPTMON.04(KEEP=ACCTNO TRANCODE TRANAMT ORITXNCD LTRAIL1 LTRAIL2 LTRAIL3 CHANNEL USERID);
    IF ORITXNCD NE . THEN TRANCD = ORITXNCD;
    ELSE                  TRANCD = TRANCODE;
 RUN;
@@ -286,9 +300,9 @@ RUN;
 DATA DPBTRAN CASAFCY FD MONEYCHG CHEQUE;
   SET DPBTRAN;
 
-  IF TRANCD IN &CASH THEN DO;
+  IF TRANCD IN &CASH OR (USERID = '09998' AND TRANCD = 621 AND INDEX(LTRAIL2,'CASH DEPOSIT') AND INDEX(LTRAIL3,'CASH DEPOSIT'))THEN DO;
      CASHAMT = TRANAMT;
-	 CASHTRX = 1;
+     CASHTRX = 1;
   END;
   ELSE IF TRANCODE IN (2480,2481) THEN DO;
      CASHAMT = CASHIN;
@@ -356,7 +370,7 @@ DATA SHARE_BASE;
   WHERE PRODUCT IN (177,178,77,78);
   PREITEM = ITEM;
   ITEM = 22;
-  IF TRANCD IN &CASH THEN DO;
+  IF TRANCD IN &CASH OR (USERID = '09998' AND TRANCD = 621 AND INDEX(LTRAIL2,'CASH DEPOSIT') AND INDEX(LTRAIL2,'CASH DEPOSIT')) THEN DO;
      CASHAMT = TRANAMT;
 	 CASHTRX = 1;
   END;
@@ -467,7 +481,11 @@ DATA LNBTRAN;
 
   IF CHANNEL = 6 THEN DO;
      CASHAMT = TRANAMT;
-	 CASHTRX = 1;
+     CASHTRX = 1;
+  END;
+  ELSE IF TRANCODE = 614 AND CHANNEL IN (533,534) THEN DO; /* eSMR 2025-3785 */
+     CASHAMT = TRANAMT;
+     CASHTRX = 1;
   END;
 
   IF TRANCODE IN (310,710,713,750) THEN DO;
@@ -592,9 +610,9 @@ DATA CARDTRAN;
    IF AMOUNT < 0 THEN ITEM = 1.2;
    ELSE ITEM = 1.1;
 
-   IF TRTYPE IN (2000:2999) THEN DO;
+   IF TRTYPE IN (2000:2999,7093) THEN DO;
       CASHTRX = 1;
-	  CASHAMT = AMOUNT;
+      CASHAMT = AMOUNT;
    END;
 RUN;
 
@@ -1431,10 +1449,10 @@ RUN;
 
 DATA TRN_CARD;
   SET CC_TRX_SRC ZIIP_CARD;
-  IF 2000<=TRTYPE<=2999 THEN DO;
-     CASHTRX = 1;
-     CASHAMT = AMOUNT;
-  END;
+   IF TRTYPE IN (2000:2999,7093) THEN DO;
+      CASHTRX = 1;
+      CASHAMT = AMOUNT;
+   END;
 RUN;
 
 PROC SUMMARY DATA=TRN_CARD NWAY;
@@ -1526,11 +1544,11 @@ DATA DB_TRX_SRC;
    IF 7000<=TRTYPE<=7999 THEN DO;
       AMOUNT = AMOUNT * -1;
    END;
-   IF 2000<=TRTYPE<=2999 THEN DO;
+
+   IF TRTYPE IN (2000:2999,7093) THEN DO;
       CASHTRX = 1;
       CASHAMT = AMOUNT;
    END;
-
    ITEM = 18;
 RUN;
 
@@ -1791,7 +1809,7 @@ RUN;
 
 ODS HTML CLOSE;
 
-ODS HTML FILE="/stgsrcsys/host/holding/qrfnew/SECTION_D_PRODUCTS_AND_SERVICES_PBB_&REPTYR&REPTMON..XLS";
+ODS HTML FILE="/stgsrcsys/host/holding/AFTER_SECTION_D_PRODUCTS_AND_SERVICES_PBB_&REPTYR&REPTMON..XLS";
 
 TITLE1 'PRODUCTS AND SERVICES - Transaction Level ' "&REPTYR";
  PROC TABULATE DATA=TOT_ITEM_PBB MISSING;                                
@@ -1809,7 +1827,7 @@ RUN;
 
 ODS HTML CLOSE;
 
-ODS HTML FILE="/stgsrcsys/host/holding/qrfnew/SECTION_D_PRODUCTS_AND_SERVICES_PIBB_&REPTYR&REPTMON..XLS";
+ODS HTML FILE="/stgsrcsys/host/holding/AFTER_SECTION_D_PRODUCTS_AND_SERVICES_PIBB_&REPTYR&REPTMON..XLS";
 TITLE1 'PRODUCTS AND SERVICES - Transaction Level ' "&REPTYR";
  PROC TABULATE DATA=TOT_ITEM_PIBB MISSING;                                
           FORMAT ITEM COLINFO. MONTH MONFMT.;
@@ -1828,8 +1846,8 @@ ODS HTML CLOSE;
 
 /*DATA _NULL_;*/
 /*	FILE BNM(sas2qrf_d_new.txt) LRECL=100 TERMSTR=CRLF;*/
-/*	PUT @1 "put /stgsrcsys/host/holding/qrfnew/SECTION_D_PRODUCTS_AND_SERVICES_PBB_&REPTYR&REPTMON..XLS";*/
-/*	PUT @1 "put /stgsrcsys/host/holding/qrfnew/SECTION_D_PRODUCTS_AND_SERVICES_PIBB_&REPTYR&REPTMON..XLS";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/SECTION_D_PRODUCTS_AND_SERVICES_PBB_&REPTYR&REPTMON..XLS";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/SECTION_D_PRODUCTS_AND_SERVICES_PIBB_&REPTYR&REPTMON..XLS";*/
 /*	PUT @1 "quit"*/
 /*		;*/
 /*RUN;*/
@@ -1855,30 +1873,3 @@ ODS HTML CLOSE;
 /* INCLUDE SECTION G */
 
 /*%INCLUDE PGM1(SECT_G_PRD_SERV_TXNS.sas);*/
-
-
-
-Deposit Product Extraction Logic
-•	Cross Reference eSMR 2025-3434
-•	Dataset reference: CMSBDPTR.DPBTRAN
-•	USERID = 09998
-•	If ORITXNCD not = “ ” then ORITXNCD = 621 else TRANCODE = 621
-
-Card Product Extraction Logic
-•	Cross Reference eSMR 2025-3782
-•	Dataset reference: PBC.TRAN and IPBC.ITRAN
-•	TRTYPE = 7093
-
-Loan Product Extraction Logic
-•	Cross Reference eSMR 2025-3785
-•	Dataset reference: CMSBLNTR.LNBTRAN
-•	TRANCODE = 614
-•	Transaction code and Channel as table below:-
-TRANCODE 
-(Transaction Code)	CHANNEL
-(New Source Code)
-614	533 (IBCD Direct loan payment)
-614	534 (IBCD Indirect loan payment)
-
-
-
