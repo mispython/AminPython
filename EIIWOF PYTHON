@@ -68,9 +68,87 @@ if __name__ == "__main__":
 
 
 
+#!/usr/bin/env python3
+"""EIIWOF03 wrapper: configure SAS libraries and call reusable EIFMNP02."""
+
+import argparse
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+import pandas as pd
+import saspy
+
+import EIFMNP02
+
+
+DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
+
+
+def read_member(requested_path: Path) -> pd.DataFrame:
+    if requested_path.stem.upper() == "REPTDATE":
+        return pd.DataFrame(
+            {"REPTDATE": [pd.Timestamp(date.today() - timedelta(days=1))]}
+        )
+
+    path = requested_path.parent / f"{requested_path.stem.lower()}.sas7bdat"
+    if not path.is_file():
+        raise FileNotFoundError(f"Required SAS dataset not found: {path}")
+    frame = pd.read_sas(path, format="sas7bdat", encoding="latin-1")
+    return frame.rename(columns=lambda name: str(name).strip().upper())
+
+
+def write_member(frame: pd.DataFrame, requested_path: Path) -> None:
+    path = requested_path.parent / f"{requested_path.stem.lower()}.sas7bdat"
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    sas = saspy.SASsession()
+    try:
+        sas.submit(f"libname npl6 '{path.parent.resolve().as_posix()}';")
+        sas.df2sd(frame, table=path.stem, libref="npl6")
+    finally:
+        sas.endsas()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run job EIIWOF03.")
+    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    args = parser.parse_args()
+
+    required = [
+        "lnnote.sas7bdat",
+        "nplobal.sas7bdat",
+        "wiis.sas7bdat",
+        "waq.sas7bdat",
+        "wsp2.sas7bdat",
+    ]
+    missing = [name for name in required if not (args.input_dir / name).is_file()]
+    if missing:
+        raise FileNotFoundError("Missing input dataset(s): " + ", ".join(missing))
+
+    # Equivalent to //SYSIN DD DSN=SAP.BNM.PROGRAM(EIFMNP02).
+    EIFMNP02.read_table = read_member
+    EIFMNP02.write_table = write_member
+    sys.argv = [
+        str(Path(EIFMNP02.__file__)),
+        "--input-dir",
+        str(args.input_dir),
+        "--output-dir",
+        str(args.output_dir),
+    ]
+    EIFMNP02.main()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
 
 #!/usr/bin/env python3
-"""Python conversion of JCL/SAS job EIIWOF03 (program EIFMNP02)."""
+"""Python conversion of reusable SAS program EIFMNP02."""
 
 from __future__ import annotations
 
@@ -196,16 +274,16 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args()
 
-    report = read_table(args.input_dir / "REPTDATE.txt")
-    notes = read_table(args.input_dir / "LNNOTE.txt")
-    npLOBAL = read_table(args.input_dir / "NPLOBAL.txt")
-    wiis = read_table(args.input_dir / "WIIS.txt")
-    waq = read_table(args.input_dir / "WAQ.txt")
-    wsp2 = read_table(args.input_dir / "WSP2.txt")
+    report = pd.DataFrame({"REPTDATE": [pd.Timestamp.today().normalize() - pd.Timedelta(days=1)]})
+    notes = read_table(args.input_dir / "LNNOTE.sas7bdat")
+    npLOBAL = read_table(args.input_dir / "NPLOBAL.sas7bdat")
+    wiis = read_table(args.input_dir / "WIIS.sas7bdat")
+    waq = read_table(args.input_dir / "WAQ.sas7bdat")
+    wsp2 = read_table(args.input_dir / "WSP2.sas7bdat")
 
     report_date = pd.to_datetime(report.iloc[0]["REPTDATE"], errors="raise")
     report_month = f"{report_date.month:02d}"
-    write_table(report, args.output_dir / "REPTDATE.txt")
+    write_table(report, args.output_dir / "REPTDATE.sas7bdat")
 
     # SAS LOAN: all eligible, active notes sorted by account and note number.
     loan = eligible_notes(notes, LOAN_TYPES_1, unpaid=True)
@@ -224,7 +302,7 @@ def main() -> None:
     for name, frame in {"WIIS": wiis, "WAQ": waq, "WSP2": wsp2}.items():
         updated = coalesce_extra_columns(left_merge(frame, latest))
         updated_writeoff[name] = updated
-        write_table(updated, args.output_dir / f"{name}.txt")
+        write_table(updated, args.output_dir / f"{name}.sas7bdat")
 
     np_cols = [
         "ACCTNO", "NOTENO", "NTBRCH", "NAME", "LOANTYPE", "LOANSTAT",
@@ -321,98 +399,15 @@ def main() -> None:
             merged[column] = ""
     final = merged[OUTPUT_COLUMNS].copy()
 
-    write_table(final.loc[loan_mask], args.output_dir / f"LOAN{report_month}.txt")
-    write_table(final.loc[pending_mask], args.output_dir / f"PLOAN{report_month}.txt")
+    write_table(final.loc[loan_mask], args.output_dir / f"LOAN{report_month}.sas7bdat")
+    write_table(final.loc[pending_mask], args.output_dir / f"PLOAN{report_month}.sas7bdat")
 
-    print(f"Created LOAN{report_month}.txt: {int(loan_mask.sum())} rows")
-    print(f"Created PLOAN{report_month}.txt: {int(pending_mask.sum())} rows")
-
-
-if __name__ == "__main__":
-    main()
-
-
-
-
-
-
-
-#!/usr/bin/env python3
-"""EIIWOF03 wrapper: configure SAS libraries and call reusable EIFMNP02."""
-
-import argparse
-import sys
-from datetime import date, timedelta
-from pathlib import Path
-
-import pandas as pd
-import saspy
-
-import EIFMNP02
-
-
-DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
-DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
-
-
-def read_member(requested_path: Path) -> pd.DataFrame:
-    if requested_path.stem.upper() == "REPTDATE":
-        return pd.DataFrame(
-            {"REPTDATE": [pd.Timestamp(date.today() - timedelta(days=1))]}
-        )
-
-    path = requested_path.with_suffix(".sas7bdat")
-    if not path.is_file():
-        raise FileNotFoundError(f"Required SAS dataset not found: {path}")
-    frame = pd.read_sas(path, format="sas7bdat", encoding="latin-1")
-    return frame.rename(columns=lambda name: str(name).strip().upper())
-
-
-def write_member(frame: pd.DataFrame, requested_path: Path) -> None:
-    path = requested_path.with_suffix(".sas7bdat")
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    sas = saspy.SASsession()
-    try:
-        sas.submit(f"libname npl6 '{path.parent.resolve().as_posix()}';")
-        sas.df2sd(frame, table=path.stem, libref="npl6")
-    finally:
-        sas.endsas()
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run job EIIWOF03.")
-    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    args = parser.parse_args()
-
-    required = [
-        "LNNOTE.sas7bdat",
-        "NPLOBAL.sas7bdat",
-        "WIIS.sas7bdat",
-        "WAQ.sas7bdat",
-        "WSP2.sas7bdat",
-    ]
-    missing = [name for name in required if not (args.input_dir / name).is_file()]
-    if missing:
-        raise FileNotFoundError("Missing input dataset(s): " + ", ".join(missing))
-
-    # Equivalent to //SYSIN DD DSN=SAP.BNM.PROGRAM(EIFMNP02).
-    EIFMNP02.read_table = read_member
-    EIFMNP02.write_table = write_member
-    sys.argv = [
-        str(Path(EIFMNP02.__file__)),
-        "--input-dir",
-        str(args.input_dir),
-        "--output-dir",
-        str(args.output_dir),
-    ]
-    EIFMNP02.main()
+    print(f"Created LOAN{report_month}.sas7bdat: {int(loan_mask.sum())} rows")
+    print(f"Created PLOAN{report_month}.sas7bdat: {int(pending_mask.sum())} rows")
 
 
 if __name__ == "__main__":
     main()
-
 
 
 
