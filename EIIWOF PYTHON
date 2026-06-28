@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Python conversion of EIIWOF02, producing WOFFHP.sas7bdat."""
+
+import argparse
+from pathlib import Path
+
+import pandas as pd
+import saspy
+
+
+# Same default locations as the previous converted jobs.
+DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
+
+DEFAULT_INPUT_FILE = DEFAULT_INPUT_DIR / "LN_WRI2_OFF_MIS.txt"
+DEFAULT_OUTPUT_FILE = DEFAULT_OUTPUT_DIR / "WOFFHP.sas7bdat"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Extract and sort HP write-off accounts into WOFFHP.sas7bdat."
+    )
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT_FILE)
+    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_FILE)
+    parser.add_argument("--encoding", default="utf-8-sig")
+    args = parser.parse_args()
+
+    accounts: list[int] = []
+
+    with args.input.open("r", encoding=args.encoding, errors="replace") as source:
+        for line_number, line in enumerate(source, start=1):
+            account_text = line[141:151].strip()
+            cost_centre_text = line[235:239].strip()
+
+            try:
+                account_number = int(account_text)
+                cost_centre = int(cost_centre_text)
+            except ValueError:
+                print(f"WARNING: invalid numeric data on line {line_number}; skipped")
+                continue
+
+            if 3000 <= cost_centre <= 3999 or cost_centre in (4043, 4048):
+                accounts.append(account_number)
+
+    accounts.sort()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+
+    frame = pd.DataFrame({"ACCTNO": accounts})
+    sas = saspy.SASsession()
+    try:
+        output_directory = args.output.parent.resolve().as_posix()
+        sas.submit(f"libname npl '{output_directory}';")
+        sas.df2sd(frame, table=args.output.stem, libref="npl")
+    finally:
+        sas.endsas()
+
+    print(f"Created {args.output} with {len(frame)} rows")
+
+
+if __name__ == "__main__":
+    main()
