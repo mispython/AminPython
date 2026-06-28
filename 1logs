@@ -1,76 +1,356 @@
-source /sas/python/virt_edw/bin/activate
-/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py
-[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py
-**********************************************************
-* Job:      EIIWOF03_PAS                                 *
-* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
-*                                                        *
-* Modified: Sunday, June 28, 2026, 05:02:29 PM           *
-**********************************************************
-Program start : 2026/06/28 17:02:54
+#!/usr/bin/env python3
+"""EIIWOF03 wrapper: configure SAS libraries and call reusable EIFMNP02."""
 
-1       """EIIWOF03 wrapper: configure SAS libraries and call reusable EIFMNP02."""
-2       import argparse
-3       import sys
-4       from datetime import date, timedelta
-5       from pathlib import Path
-6       import pandas as pd
-7       import saspy
-8       import EIFMNP02
-9       DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
-10      DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
-11      def read_member(requested_path: Path) -> pd.DataFrame:
-12      def write_member(frame: pd.DataFrame, requested_path: Path) -> None:
-13      def main() -> None:
-14      if __name__ == "__main__":
-15          main()
-16          parser = argparse.ArgumentParser(description="Run job EIIWOF03.")
-17          parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
-18          parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-19          args = parser.parse_args()
-20          required = [
-21          missing = [name for name in required if not (args.input_dir / name).is_file()]
-22          if missing:
-23          EIFMNP02.read_table = read_member
-24          EIFMNP02.write_table = write_member
-25              str(Path(EIFMNP02.__file__)),
-26              "--input-dir",
-27              str(args.input_dir),
-28              "--output-dir",
-29              str(args.output_dir),
-30          sys.argv = [
-31          EIFMNP02.main()
-EIFMNP02 - NPL Account Preparation
-======================================================================
-Preparing NPL accounts for new and old guidelines
-======================================================================
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py", line 76, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py", line 72, in main
+import argparse
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+import pandas as pd
+import saspy
+
+import EIFMNP02
+
+
+DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
+
+
+def read_member(requested_path: Path) -> pd.DataFrame:
+    if requested_path.stem.upper() == "REPTDATE":
+        return pd.DataFrame(
+            {"REPTDATE": [pd.Timestamp(date.today() - timedelta(days=1))]}
+        )
+
+    path = requested_path.parent / f"{requested_path.stem.lower()}.sas7bdat"
+    if not path.is_file():
+        raise FileNotFoundError(f"Required SAS dataset not found: {path}")
+    frame = pd.read_sas(path, format="sas7bdat", encoding="latin-1")
+    return frame.rename(columns=lambda name: str(name).strip().upper())
+
+
+def write_member(frame: pd.DataFrame, requested_path: Path) -> None:
+    path = requested_path.parent / f"{requested_path.stem.lower()}.sas7bdat"
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    sas = saspy.SASsession()
+    try:
+        sas.submit(f"libname npl6 '{path.parent.resolve().as_posix()}';")
+        sas.df2sd(frame, table=path.stem, libref="npl6")
+    finally:
+        sas.endsas()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run job EIIWOF03.")
+    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    args = parser.parse_args()
+
+    required = [
+        "lnnote.sas7bdat",
+        "nplobal.sas7bdat",
+        "wiis.sas7bdat",
+        "waq.sas7bdat",
+        "wsp2.sas7bdat",
+    ]
+    missing = [name for name in required if not (args.input_dir / name).is_file()]
+    if missing:
+        raise FileNotFoundError("Missing input dataset(s): " + ", ".join(missing))
+
+    # Equivalent to //SYSIN DD DSN=SAP.BNM.PROGRAM(EIFMNP02).
+    EIFMNP02.read_table = read_member
+    EIFMNP02.write_table = write_member
+    sys.argv = [
+        str(Path(EIFMNP02.__file__)),
+        "--input-dir",
+        str(args.input_dir),
+        "--output-dir",
+        str(args.output_dir),
+    ]
     EIFMNP02.main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py", line 124, in main
-    df_reptdate = pl.read_parquet(INPUT_LOAN_REPTDATE)
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 128, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/polars/io/parquet/functions.py", line 289, in read_parquet
-    return lf.collect()
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/polars/_utils/deprecation.py", line 97, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/polars/lazyframe/opt_flags.py", line 330, in wrapper
-    return function(*args, **kwargs)
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/polars/lazyframe/frame.py", line 2335, in collect
-    return wrap_df(ldf.collect(engine, callback))
-FileNotFoundError: No such file or directory (os error 2): LOAN.REPTDATE.parquet
-
-This error occurred with the following context stack:
-        [1] 'parquet scan'
-        [2] 'sink'
 
 
-Total time elapsed : 00:00:01
-Memory used: 33.84 MB
-Program end : 2026/06/28 17:02:56
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+"""Python conversion of reusable SAS program EIFMNP02."""
+
+from __future__ import annotations
+
+import argparse
+import calendar
+from pathlib import Path
+
+import pandas as pd
+import saspy
+
+
+# Same default locations as the previous converted jobs.
+DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
+
+LOAN_TYPES_1 = {128, 130, 380, 381, 700, 705, 131, 132, 720, 725}
+LOAN_TYPES_2 = LOAN_TYPES_1 | {983, 993, 996}
+
+OUTPUT_COLUMNS = [
+    "LOANTYPE", "NTBRCH", "ACCTNO", "NOTENO", "NAME", "BORSTAT",
+    "LOANSTAT", "NETPROC", "ORGBAL", "CURBAL", "NOTETERM", "ISSDTE",
+    "BLDATE", "BILPAY", "INTRATE", "APPVALUE", "MARKETVL", "DAYS",
+    "TERMCHG", "IISP", "OIP", "SPP1", "SPP2", "CURBALP", "NETBALP",
+    "USER5", "FEEAMT", "FEEAMT3", "FEEAMT4", "EXIST", "FEEYTD",
+    "FEEPDYTD", "UHCP", "CENSUS7", "VINNO", "FEETOT2", "FEEAMT8",
+    "PENDBRH", "COSTCTR", "EARNTERM", "FEEAMTA", "FEEAMT5",
+    "OLDNOTEDAYARR", "ACCRUAL",
+]
+
+
+def read_table(path: Path) -> pd.DataFrame:
+    """Read a lowercase SAS7BDAT library member."""
+    path = path.parent / f"{path.stem.lower()}.sas7bdat"
+    frame = pd.read_sas(path, format="sas7bdat", encoding="latin-1")
+    return frame.rename(columns=lambda name: str(name).strip().upper())
+
+
+def write_table(frame: pd.DataFrame, path: Path) -> None:
+    """Write a genuine lowercase SAS7BDAT library member."""
+    path = path.parent / f"{path.stem.lower()}.sas7bdat"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sas = saspy.SASsession()
+    try:
+        sas.submit(f"libname pyout '{path.parent.resolve().as_posix()}';")
+        sas.df2sd(frame, table=path.stem, libref="pyout")
+    finally:
+        sas.endsas()
+
+
+def numeric(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame:
+        return pd.Series(float("nan"), index=frame.index)
+    return pd.to_numeric(frame[column], errors="coerce")
+
+
+def text(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame:
+        return pd.Series("", index=frame.index, dtype="string")
+    return frame[column].fillna("").astype(str).str.strip()
+
+
+def eligible_notes(notes: pd.DataFrame, loan_types: set[int], unpaid: bool) -> pd.DataFrame:
+    mask = (
+        text(notes, "REVERSED").ne("Y")
+        & numeric(notes, "NOTENO").notna()
+        & numeric(notes, "NTBRCH").notna()
+        & numeric(notes, "LOANTYPE").isin(loan_types)
+    )
+    if unpaid:
+        mask &= text(notes, "PAIDIND").ne("P")
+    return notes.loc[mask].copy()
+
+
+def latest_by_account(frame: pd.DataFrame) -> pd.DataFrame:
+    frame = frame.assign(
+        _ACCTNO=numeric(frame, "ACCTNO"),
+        _NOTENO=numeric(frame, "NOTENO"),
+    )
+    frame = frame.sort_values(
+        ["_ACCTNO", "_NOTENO"], ascending=[True, False], kind="stable"
+    )
+    return frame.drop_duplicates("_ACCTNO", keep="first").drop(
+        columns=["_ACCTNO", "_NOTENO"]
+    )
+
+
+def left_merge(base: pd.DataFrame, extra: pd.DataFrame) -> pd.DataFrame:
+    return base.merge(extra, on="ACCTNO", how="left", suffixes=("", "_EXTRA"))
+
+
+def coalesce_extra_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    for extra_name in [name for name in frame.columns if name.endswith("_EXTRA")]:
+        name = extra_name.removesuffix("_EXTRA")
+        if name in frame:
+            replacement = frame[extra_name].notna() & frame[extra_name].astype(str).ne("")
+            frame.loc[replacement, name] = frame.loc[replacement, extra_name]
+            frame = frame.drop(columns=extra_name)
+        else:
+            frame = frame.rename(columns={extra_name: name})
+    return frame
+
+
+def next_bill_date(issue_date: pd.Timestamp, bill_date: pd.Timestamp) -> pd.Timestamp:
+    if pd.isna(issue_date) or pd.isna(bill_date):
+        return bill_date
+    month = bill_date.month + 1
+    year = bill_date.year
+    if month > 12:
+        month = 1
+        year += 1
+    day = min(issue_date.day, calendar.monthrange(year, month)[1])
+    return pd.Timestamp(year=year, month=month, day=day)
+
+
+def parse_issue_date(value: object) -> pd.Timestamp:
+    try:
+        digits = str(int(float(value))).zfill(11)[:8]
+    except (TypeError, ValueError):
+        return pd.NaT
+    return pd.to_datetime(digits, format="%m%d%Y", errors="coerce")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the EIIWOF03 conversion.")
+    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    args = parser.parse_args()
+
+    report = pd.DataFrame({"REPTDATE": [pd.Timestamp.today().normalize() - pd.Timedelta(days=1)]})
+    notes = read_table(args.input_dir / "LNNOTE.sas7bdat")
+    npLOBAL = read_table(args.input_dir / "NPLOBAL.sas7bdat")
+    wiis = read_table(args.input_dir / "WIIS.sas7bdat")
+    waq = read_table(args.input_dir / "WAQ.sas7bdat")
+    wsp2 = read_table(args.input_dir / "WSP2.sas7bdat")
+
+    report_date = pd.to_datetime(report.iloc[0]["REPTDATE"], errors="raise")
+    report_month = f"{report_date.month:02d}"
+    write_table(report, args.output_dir / "REPTDATE.sas7bdat")
+
+    # SAS LOAN: all eligible, active notes sorted by account and note number.
+    loan = eligible_notes(notes, LOAN_TYPES_1, unpaid=True)
+    loan = loan.sort_values(["ACCTNO", "NOTENO"], kind="stable")
+
+    # SAS LNNOTE: latest note from the wider type list, regardless of PAIDIND.
+    latest = latest_by_account(eligible_notes(notes, LOAN_TYPES_2, unpaid=False))
+
+    # SAS LOANNO: latest unpaid note number, merged back into LNNOTE.
+    loan_no = latest_by_account(
+        eligible_notes(notes, LOAN_TYPES_2, unpaid=True)
+    )[["ACCTNO", "NOTENO"]]
+    latest = coalesce_extra_columns(left_merge(latest, loan_no))
+
+    updated_writeoff: dict[str, pd.DataFrame] = {}
+    for name, frame in {"WIIS": wiis, "WAQ": waq, "WSP2": wsp2}.items():
+        updated = coalesce_extra_columns(left_merge(frame, latest))
+        updated_writeoff[name] = updated
+        write_table(updated, args.output_dir / f"{name}.sas7bdat")
+
+    np_cols = [
+        "ACCTNO", "NOTENO", "NTBRCH", "NAME", "LOANTYPE", "LOANSTAT",
+        "IISP", "OIP", "SPP1", "SPP2", "CURBALP", "NETBALP", "EXIST", "UHCP",
+    ]
+    np_base = npLOBAL[[c for c in np_cols if c in npLOBAL]].copy()
+    np_base["_AA"] = True
+    nplobal6 = coalesce_extra_columns(left_merge(np_base, latest.drop(columns=["LOANSTAT"], errors="ignore")))
+
+    wiis_accounts = set(text(updated_writeoff["WIIS"], "ACCTNO"))
+    extra_wiis = latest[text(latest, "ACCTNO").isin(wiis_accounts)].copy()
+    extra_wiis["_AA"] = False
+    existing = set(text(nplobal6, "ACCTNO"))
+    extra_wiis = extra_wiis[~text(extra_wiis, "ACCTNO").isin(existing)]
+    nplobal6 = pd.concat([nplobal6, extra_wiis], ignore_index=True, sort=False)
+    nplobal6.loc[text(nplobal6, "ACCTNO").isin(wiis_accounts), "BORSTAT"] = "W"
+
+    merged = nplobal6.merge(
+        loan.drop(columns=["LOANSTAT"], errors="ignore"),
+        on="ACCTNO",
+        how="outer",
+        suffixes=("", "_LOAN"),
+        indicator=True,
+    )
+    merged = coalesce_extra_columns(
+        merged.rename(columns={c: c.removesuffix("_LOAN") + "_EXTRA"
+                               for c in merged if c.endswith("_LOAN")})
+    )
+    merged["_BB"] = merged["_merge"].isin(["both", "right"])
+    merged["_AA"] = merged["_AA"].fillna(False)
+
+    merged["ISSDTE"] = merged.get("ISSUEDT", "").map(parse_issue_date)
+    merged["BLDATE"] = pd.to_datetime(merged.get("BLDATE", ""), errors="coerce")
+    merged["CENSUS7"] = text(merged, "CENSUS").str.replace(".", "", regex=False).str[-1:]
+
+    special = numeric(merged, "ACCTNO").eq(8095419311)
+    merged.loc[special, "BLDATE"] = pd.Timestamp("1997-01-21")
+
+    days: list[float] = []
+    bill_dates: list[pd.Timestamp] = []
+    for _, row in merged.iterrows():
+        bill_date = row.get("BLDATE", pd.NaT)
+        bill_pay = pd.to_numeric(row.get("BILPAY"), errors="coerce")
+        bill_total = pd.to_numeric(row.get("BILTOT"), errors="coerce")
+        if pd.notna(bill_date) and bill_pay > 0:
+            bill_total = 0 if pd.isna(bill_total) else bill_total
+            if bill_total / bill_pay <= 0.01:
+                bill_date = next_bill_date(row.get("ISSDTE", pd.NaT), bill_date)
+        bill_dates.append(bill_date)
+        days.append((report_date - bill_date).days if pd.notna(bill_date) else float("nan"))
+    merged["BLDATE"] = bill_dates
+    merged["DAYS"] = days
+
+    old_days = numeric(merged, "OLDNOTEDAYARR")
+    old_note = numeric(merged, "NOTENO").between(98000, 98999)
+    old_mask = old_days.gt(0) & old_note
+    merged.loc[old_mask, "DAYS"] = merged.loc[old_mask, "DAYS"].clip(lower=0) + old_days[old_mask]
+
+    int_amt = numeric(merged, "INTAMT")
+    merged["TERMCHG"] = 0.0
+    merged.loc[int_amt.gt(0.1), "TERMCHG"] = (
+        int_amt + numeric(merged, "INTEARN2")
+    )[int_amt.gt(0.1)]
+
+    borstat = text(merged, "BORSTAT")
+    restructure = ~borstat.isin(["F", "I", "R", "Y", "W", "Z", "A"]) & numeric(
+        merged, "NOTENO"
+    ).isin([98010, 98011, 99010, 99011])
+    merged.loc[restructure, "BORSTAT"] = "S"
+
+    aa_no_bb = merged["_AA"] & ~merged["_BB"]
+    merged.loc[aa_no_bb, ["LOANSTAT", "DAYS"]] = [float("nan"), 0]
+    merged.loc[aa_no_bb, "BORSTAT"] = ""
+    aa_days = merged["_AA"] & merged["_BB"] & numeric(merged, "DAYS").le(0)
+    merged.loc[aa_days, "LOANSTAT"] = 1
+    reinstate = merged["_AA"] & numeric(merged, "LOANSTAT").eq(1) & text(
+        merged, "BORSTAT"
+    ).eq("")
+    merged.loc[reinstate, "BORSTAT"] = "A"
+
+    non_aa_npl = ~merged["_AA"] & (
+        numeric(merged, "DAYS").gt(89)
+        | ~text(merged, "BORSTAT").isin(["", "A", "C", "S", "T"])
+        | text(merged, "USER5").eq("N")
+    )
+    doubtful_pending = non_aa_npl & text(merged, "BORSTAT").eq("Y") & numeric(
+        merged, "DAYS"
+    ).le(182)
+    loan_mask = merged["_AA"] | (non_aa_npl & ~doubtful_pending)
+    pending_mask = ~merged["_AA"] & (~non_aa_npl | doubtful_pending)
+
+    for column in OUTPUT_COLUMNS:
+        if column not in merged:
+            merged[column] = ""
+    final = merged[OUTPUT_COLUMNS].copy()
+
+    write_table(final.loc[loan_mask], args.output_dir / f"LOAN{report_month}.sas7bdat")
+    write_table(final.loc[pending_mask], args.output_dir / f"PLOAN{report_month}.sas7bdat")
+
+    print(f"Created LOAN{report_month}.sas7bdat: {int(loan_mask.sum())} rows")
+    print(f"Created PLOAN{report_month}.sas7bdat: {int(pending_mask.sum())} rows")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
