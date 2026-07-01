@@ -1,459 +1,204 @@
-//EIIMPORT  JOB MISEIS,EIBWCCR3,MSGCLASS=X,MSGLEVEL=(1,1),CLASS=A,      JOB78647
-//         REGION=64M,NOTIFY=&SYSUID
-//********************************************************************
-//** ESMR: 2014-691
-//** DESC: GENERATE NEW REPORT: REPORTING REQUIREMENTS FOR ISLAMIC
-//**       PORTFOLIO EXPOSURE
-//** FREQ: QUARTERLY BASIS
-//********************************************************************
-//*
-//SAS609  EXEC SAS609
-//BNM     DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
-//PGM     DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-//EQUT    DD DSN=SAP.PIBB.EQUT(-4),DISP=SHR
-//PORTF   DD DSN=SAP.PIBB.BANK.PORTF(+1),
-//           DISP=(NEW,CATLG,DELETE),
-//           SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
-//           DCB=(LRECL=154,RECFM=FB,BLKSIZE=0)
-//SYSIN   DD *
+#!/usr/bin/env python
+"""Python replacement for the EIIMPORT JCL/SAS job.
 
-OPTIONS YEARCUTOFF=1950 NOCENTER;
+All inputs are SAS7BDAT files.  By default REPTDATE is yesterday, relative to
+the machine running this program.
+"""
 
-%INC PGM(PBBDPFMT);
+from __future__ import annotations
 
-DATA REPTDATE;
-     SET BNM.REPTDATE;
-     SELECT;
-     WHEN(01 <= DAY(REPTDATE)<= 08) DO;
-          CALL SYMPUT('NOWK', PUT('1', $1.));
-          REPTDATE1 = MDY(MONTH(REPTDATE),1,YEAR(REPTDATE))-1;
-     END;
-     WHEN(09 <= DAY(REPTDATE)<= 15)  CALL SYMPUT('NOWK', PUT('2',
-          $1.));
-     WHEN(16 <= DAY(REPTDATE)<= 22)  CALL SYMPUT('NOWK', PUT('3',
-          $1.));
-     OTHERWISE
-          CALL SYMPUT('NOWK', PUT('4', $1.));
-     END;
-   CALL SYMPUT('RDATE', PUT(REPTDATE,DDMMYY10.));
-   CALL SYMPUT('REPTDATE',REPTDATE);
-   CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
-   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
-   CALL SYMPUT('REPTYEAR1', PUT(REPTDATE, YEAR2.));
-   CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
-RUN;
-%PUT &RDATE;
+import argparse
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Iterable
 
-LIBNAME MIS "SAP.PIBB.D&REPTYEAR" DISP=SHR;
+import pandas as pd
 
-DATA SA;
-  SET BNM.SAVING;
-      FORMAT CONCEPT1   $35.
-             AMOUNT1    16.2
-             REPTDATE   Z5.;
-      RETAIN AMOUNT1    0.;
 
-      REPTDATE = &REPTDATE;
-      IF PRODUCT IN (204,207,214,215);
-      IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
-      CUSTCD=PUT(CUSTCODE, SACUSTCD.);
-      STATECD=PUT(BRANCH, STATECD.);
-      PRODCD=PUT(PRODUCT, SAPROD.);
-      AMTIND=PUT(PRODUCT, SADENOM.);
-      RANGE=INPUT(CURBAL, SDRANGE.);
-      RACE=PUT(RACE, $RACE.);
-      CONCEPT1 = 'WADIAH';
-      AMOUNT1 = CURBAL;
-RUN;
-PROC SUMMARY DATA=SA NWAY;
-BY REPTDATE CONCEPT1;
-VAR AMOUNT1 INTPAYBL;
-WHERE CONCEPT1 NE ' ';
-OUTPUT OUT=SUM_SA (DROP=_TYPE_ _FREQ_)
-       SUM=AMOUNT1 INTPAYBL;
-RUN;
+SA_PRODUCTS = {204, 207, 214, 215}
+CA_CONCEPTS = {
+    "WADIAH": {60, 61, 62, 63, 64, 66, 67, 93, 96, 97, 160, 161, 162, 163, 164, 165, 182},
+    "BAI BITHAMAN AJIL": {32, 70, 73, 94, 95, 166, 183, 184, 185, 187, 188},
+    "MURABAHAH": {169},
+    "BAI AL INAH": {33, 71, 167, 168},
+    "QARD": {440, 441, 442, 443, 444},
+    "MUSYARAKAH": {186},
+}
+# This is the source SAS input filter. Products 187 and 188 are deliberately
+# absent because they were absent from that filter, despite appearing above.
+CA_PRODUCTS = {
+    32, 33, 60, 61, 62, 63, 64, 66, 67, 70, 71, 73, 93, 94, 95, 96, 97,
+    160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 182, 183, 184, 185,
+    186, 440, 441, 442, 443, 444,
+}
+MGIA_CONCEPTS = {"MUDARABAH": {302, 396}, "ISTISMAR": {315, 394}}
+EQT_CONCEPTS = {
+    "BCS": "ISTISMAR",
+    "BCI": "MUDARABAH",
+    "BCT": "COMMODITY MURABAHAH TAWARRUQ",
+    "BCW": "WADIAH",
+}
 
-PROC SUMMARY DATA =SUM_SA (KEEP=REPTDATE AMOUNT1) NWAY;
-BY REPTDATE;
-VAR AMOUNT1;
-OUTPUT OUT = TEST1(DROP=_TYPE_ _FREQ_) SUM=AMOUNT1;
-RUN;
 
-DATA BASE1;
-     FORMAT CONCEPT1   $35.
-            REPTDATE   Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT1 = 'WADIAH'; AMOUNT1 = 0; OUTPUT;
-RUN;
-PROC SORT DATA=BASE1; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_SA; BY REPTDATE; RUN;
-PROC SORT DATA=TEST1(RENAME=(AMOUNT1=TOTAL1)); BY REPTDATE; RUN;
+def arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate the Islamic portfolio exposure report.")
+    parser.add_argument("--input-dir", type=Path, required=True, help="Root containing the SAS7BDAT inputs.")
+    parser.add_argument("--output", type=Path, default=Path("PORTF.txt"), help="Output text file.")
+    parser.add_argument(
+        "--report-date",
+        type=lambda value: datetime.strptime(value, "%Y-%m-%d").date(),
+        default=date.today() - timedelta(days=1),
+        help="Override REPTDATE (YYYY-MM-DD); default: yesterday.",
+    )
+    parser.add_argument("--saving", type=Path, help="Override SAVING.sas7bdat.")
+    parser.add_argument("--current", type=Path, help="Override CURRENT.sas7bdat.")
+    parser.add_argument("--fd", type=Path, help="Override FD.sas7bdat.")
+    parser.add_argument("--equt", type=Path, help="Override IUTFXyymmdd.sas7bdat.")
+    parser.add_argument("--ini", type=Path, help="Override W1ALmmw.sas7bdat.")
+    return parser.parse_args()
 
-DATA BASE_SA;
-     MERGE BASE1(IN=A) SUM_SA(IN=B) TEST1(IN=C);
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT1 AMOUNT1 TOTAL1;
-RUN;
 
-DATA CA;
-  SET BNM.CURRENT;
-      FORMAT CONCEPT2  $35.
-             AMOUNT2   16.2
-             REPTDATE  Z5.;
-      RETAIN AMOUNT2   0.;
+def locate(root: Path, filename: str, override: Path | None) -> Path:
+    if override:
+        path = override
+    else:
+        matches = [p for p in root.rglob("*") if p.is_file() and p.name.casefold() == filename.casefold()]
+        if not matches:
+            raise FileNotFoundError(f"Could not find {filename!r} below {root}")
+        if len(matches) > 1:
+            raise RuntimeError(f"Multiple files named {filename!r}; pass an explicit override: {matches}")
+        path = matches[0]
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    return path
 
-      REPTDATE = &REPTDATE;
-      IF PRODUCT IN (32,33,60,61,62,63,64,66,67,70,71,73,
-         93,94,95,96,97,160,161,162,163,164,165,166,
-         167,168,169,182,183,184,185,186,440,441,442,443,444);
-      IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
-      CUSTCD=PUT(CUSTCODE, SACUSTCD.);
-      STATECD=PUT(BRANCH, STATECD.);
-      PRODCD=PUT(PRODUCT, SAPROD.);
-      AMTIND=PUT(PRODUCT, SADENOM.);
-      RANGE=INPUT(CURBAL, SDRANGE.);
-      RACE=PUT(RACE, $RACE.);
-      IF PRODUCT IN (60,61,62,63,64,66,67,93,96,97,160,161,162,
-         163,164,165,182) THEN CONCEPT2 = 'WADIAH';
-      IF PRODUCT IN (32,70,73,94,95,166,183,184,185,187,188) THEN
-         CONCEPT2 = 'BAI BITHAMAN AJIL';
-      IF PRODUCT IN (169) THEN CONCEPT2 = 'MURABAHAH';
-      IF PRODUCT IN (33,71,167,168) THEN CONCEPT2 = 'BAI AL INAH';
-      IF PRODUCT IN (440,441,442,443,444) THEN CONCEPT2 = 'QARD';
-      IF PRODUCT IN (186) THEN CONCEPT2 = 'MUSYARAKAH';
-      AMOUNT2 = CURBAL;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT2; RUN;
 
-PROC SUMMARY DATA=CA NWAY;
-BY REPTDATE CONCEPT2;
-VAR AMOUNT2 INTPAYBL;
-WHERE CONCEPT2 NE ' ';
-OUTPUT OUT=SUM_CA (DROP=_TYPE_ _FREQ_)
-       SUM=AMOUNT2 INTPAYBL;
-RUN;
+def load(path: Path, required: Iterable[str]) -> pd.DataFrame:
+    frame = pd.read_sas(path, format="sas7bdat", encoding="utf-8")
+    frame.columns = [str(column).upper() for column in frame.columns]
+    missing = set(required) - set(frame.columns)
+    if missing:
+        raise ValueError(f"{path} is missing columns: {', '.join(sorted(missing))}")
+    return frame
 
-PROC SUMMARY DATA =SUM_CA(KEEP=REPTDATE AMOUNT2)    NWAY;
-BY REPTDATE;
-VAR AMOUNT2;
-OUTPUT OUT = TEST2(DROP=_TYPE_ _FREQ_) SUM=AMOUNT2;
-RUN;
 
-DATA BASE2;
-     FORMAT CONCEPT2   $35.
-            REPTDATE   Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT2 = 'WADIAH'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'BAI BITHAMAN AJIL'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'BAI AL INAH'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'MURABAHAH'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'QARD'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'MUSYARAKAH'; AMOUNT2 = 0; OUTPUT;
-RUN;
+def clean_text(series: pd.Series) -> pd.Series:
+    return series.fillna("").astype(str).str.strip()
 
-PROC SORT DATA=BASE2; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_CA; BY REPTDATE; RUN;
-PROC SORT DATA=TEST2(RENAME=(AMOUNT2=TOTAL2)); BY REPTDATE; RUN;
 
-DATA BASE_CA;
-     MERGE BASE2(IN=A) SUM_CA(IN=B) TEST2(IN=C);
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT2 AMOUNT2 TOTAL2;
-RUN;
+def eligible_deposits(frame: pd.DataFrame, products: set[int]) -> pd.DataFrame:
+    product = pd.to_numeric(frame["PRODUCT"], errors="coerce")
+    balance = pd.to_numeric(frame["CURBAL"], errors="coerce")
+    open_indicator = clean_text(frame["OPENIND"]).str.upper()
+    return frame.loc[product.isin(products) & ~open_indicator.isin({"B", "C", "P"}) & balance.ge(0)].copy()
 
-DATA MGIA;
-  SET BNM.FD;
-      FORMAT CONCEPT3  $35.
-             AMOUNT3   16.2
-             REPTDATE  Z5.;
-      RETAIN AMOUNT3   0.;
 
-      REPTDATE = &REPTDATE;
-      IF PRODUCT IN (302,396,315,394);
-      IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
-      CUSTCD=PUT(CUSTCODE, SACUSTCD.);
-      STATECD=PUT(BRANCH, STATECD.);
-      PRODCD=PUT(PRODUCT, SAPROD.);
-      AMTIND=PUT(PRODUCT, SADENOM.);
-      RANGE=INPUT(CURBAL, SDRANGE.);
-      RACE=PUT(RACE, $RACE.);
-      IF PRODUCT IN (302,396) THEN CONCEPT3 = 'MUDARABAH';
-      IF PRODUCT IN (315,394) THEN CONCEPT3 = 'ISTISMAR';
-      AMOUNT3 = CURBAL;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT3; RUN;
+def concept_amounts(
+    frame: pd.DataFrame,
+    mapping: dict[str, set[int]],
+    amount_column: str,
+    defaults: Iterable[str],
+) -> dict[str, float]:
+    result = {concept: 0.0 for concept in defaults}
+    products = pd.to_numeric(frame["PRODUCT"], errors="coerce")
+    amounts = pd.to_numeric(frame[amount_column], errors="coerce").fillna(0)
+    for concept, product_codes in mapping.items():
+        result[concept] = float(amounts.loc[products.isin(product_codes)].sum())
+    return result
 
-PROC SUMMARY DATA=MGIA NWAY;
-BY REPTDATE CONCEPT3;
-VAR AMOUNT3 INTPAYBL;
-WHERE CONCEPT3 NE ' ';
-OUTPUT OUT=SUM_MGIA (DROP=_TYPE_ _FREQ_)
-       SUM=AMOUNT3 INTPAYBL;
-RUN;
 
-PROC SUMMARY DATA =SUM_MGIA (KEEP=REPTDATE AMOUNT3) NWAY;
-BY REPTDATE;
-VAR AMOUNT3;
-OUTPUT OUT = TEST3(DROP=_TYPE_ _FREQ_) SUM=AMOUNT3;
-RUN;
+def week_number(report_date: date) -> int:
+    if report_date.day <= 8:
+        return 1
+    if report_date.day <= 15:
+        return 2
+    if report_date.day <= 22:
+        return 3
+    return 4
 
-DATA BASE3;
-     FORMAT CONCEPT3  $35.
-            REPTDATE  Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT3 = 'MUDARABAH'; AMOUNT3 = 0; OUTPUT;
-     CONCEPT3 = 'ISTISMAR';  AMOUNT3 = 0; OUTPUT;
-RUN;
 
-PROC SORT DATA=BASE3; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_MGIA; BY REPTDATE; RUN;
-PROC SORT DATA=TEST3(RENAME=(AMOUNT3=TOTAL3)); BY REPTDATE; RUN;
+def report_rows(args: argparse.Namespace) -> list[tuple[float, str, float]]:
+    root = args.input_dir.resolve()
+    stamp = args.report_date.strftime("%y%m%d")
+    ini_name = f"W1AL{args.report_date:%m}{week_number(args.report_date)}.sas7bdat"
 
-DATA BASE_MGIA;
-     MERGE BASE3(IN=A) SUM_MGIA(IN=B) TEST3(IN=C);
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT3 AMOUNT3 TOTAL3;
-RUN;
+    saving = load(locate(root, "SAVING.sas7bdat", args.saving), {"PRODUCT", "OPENIND", "CURBAL"})
+    current = load(locate(root, "CURRENT.sas7bdat", args.current), {"PRODUCT", "OPENIND", "CURBAL"})
+    fd = load(locate(root, "FD.sas7bdat", args.fd), {"PRODUCT", "OPENIND", "CURBAL"})
+    equt = load(locate(root, f"IUTFX{stamp}.sas7bdat", args.equt), {"DEALTYPE", "AMTPAY"})
+    ini = load(locate(root, ini_name, args.ini), {"SET_ID", "AMOUNT"})
 
-DATA COMM;
-     SET BNM.FD;
-     FORMAT CONCEPT4    $35.
-            AMOUNT4     16.2
-            REPTDATE    Z5.;
-     RETAIN AMOUNT4     0;
+    sa = eligible_deposits(saving, SA_PRODUCTS)
+    sa_amounts = {"WADIAH": float(pd.to_numeric(sa["CURBAL"], errors="coerce").fillna(0).sum())}
 
-     REPTDATE = &REPTDATE;
-     IF PRODUCT IN (316,393);
-     IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
-     CUSTCD=PUT(CUSTCODE, SACUSTCD.);
-     STATECD=PUT(BRANCH, STATECD.);
-     PRODCD=PUT(PRODUCT, SAPROD.);
-     AMTIND=PUT(PRODUCT, SADENOM.);
-     RANGE=INPUT(CURBAL, SDRANGE.);
-     RACE=PUT(RACE, $RACE.);
-     CONCEPT4 = 'COMMODITY MURABAHAH TAWWARRUQ';
-     AMOUNT4 = CURBAL;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT4; RUN;
+    ca = eligible_deposits(current, CA_PRODUCTS)
+    ca_amounts = concept_amounts(ca, CA_CONCEPTS, "CURBAL", CA_CONCEPTS)
 
-PROC SUMMARY DATA=COMM NWAY;
-BY REPTDATE CONCEPT4;
-VAR AMOUNT4 INTPAYBL;
-WHERE CONCEPT4 NE ' ';
-OUTPUT OUT=SUM_COMM (DROP=_TYPE_ _FREQ_)
-       SUM=AMOUNT4 INTPAYBL;
-RUN;
+    mgia = eligible_deposits(fd, set().union(*MGIA_CONCEPTS.values()))
+    mgia_amounts = concept_amounts(mgia, MGIA_CONCEPTS, "CURBAL", MGIA_CONCEPTS)
 
-PROC SUMMARY DATA =COMM (KEEP=REPTDATE AMOUNT4) NWAY;
-BY REPTDATE;
-VAR AMOUNT4;
-OUTPUT OUT = TEST4(DROP=_TYPE_ _FREQ_) SUM=AMOUNT4;
-RUN;
+    comm = eligible_deposits(fd, {316, 393})
+    comm_amounts = {
+        "COMMODITY MURABAHAH TAWARRUQ":
+            float(pd.to_numeric(comm["CURBAL"], errors="coerce").fillna(0).sum())
+    }
 
-DATA BASE4;
-     FORMAT CONCEPT4  $35.
-            REPTDATE  Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT4 = 'COMMODITY MURABAHAH TAWARRUQ'; AMOUNT4 = 0;
-     OUTPUT;
-RUN;
+    deal_types = clean_text(equt["DEALTYPE"]).str.upper()
+    pay = pd.to_numeric(equt["AMTPAY"], errors="coerce").fillna(0)
+    equt_amounts = {
+        concept: float(pay.loc[deal_types.eq(code)].sum())
+        for code, concept in EQT_CONCEPTS.items()
+    }
 
-PROC SORT DATA=BASE4; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_COMM; BY REPTDATE; RUN;
-PROC SORT DATA=TEST4(RENAME=(AMOUNT4=TOTAL4)); BY REPTDATE; RUN;
+    set_ids = clean_text(ini["SET_ID"]).str.upper()
+    ini_amounts = {
+        "BAI AL INAH":
+            float(pd.to_numeric(ini.loc[set_ids.eq("F142150NIDI"), "AMOUNT"], errors="coerce").fillna(0).sum())
+    }
 
-DATA BASE_COMM;
-     MERGE BASE4(IN=A) SUM_COMM TEST4;
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT4 AMOUNT4 TOTAL4;
-RUN;
+    sections = [
+        (1.0, "1.SAVINGS", 1.1, sa_amounts),
+        (2.0, "2.CURRENT", 2.1, ca_amounts),
+    ]
+    term_parts = [
+        (3.1, "A.MGIA", 3.11, mgia_amounts),
+        (3.2, "B.COMMODITY MURABAHAH", 3.21, comm_amounts),
+        (3.3, "C.SHORT TERM DEPOSIT", 3.31, equt_amounts),
+        (3.4, "D.INI", 3.41, ini_amounts),
+    ]
 
-DATA EQT;
-     SET EQUT.IUTFX&REPTYEAR1&REPTMON&REPTDAY;
-     FORMAT CONCEPT5   $35.
-            AMOUNT5    16.2
-            REPTDATE   Z5.;
-     RETAIN AMOUNT5    0;
+    rows: list[tuple[float, str, float]] = []
+    for total_id, title, detail_id, amounts in sections:
+        rows.append((total_id, title, sum(amounts.values())))
+        rows.extend((detail_id, concept, amount) for concept, amount in amounts.items())
+    rows.append((3.0, "3.TERM", sum(sum(values.values()) for _, _, _, values in term_parts)))
+    for total_id, title, detail_id, amounts in term_parts:
+        rows.append((total_id, title, sum(amounts.values())))
+        rows.extend((detail_id, concept, amount) for concept, amount in amounts.items())
+    return sorted(rows, key=lambda row: row[0])
 
-     REPTDATE = &REPTDATE;
-     IF DEALTYPE IN ('BCS') THEN CONCEPT5 = 'ISTISMAR';
-     IF DEALTYPE IN ('BCI') THEN CONCEPT5 = 'MUDARABAH';
-     IF DEALTYPE IN ('BCT') THEN
-        CONCEPT5='COMMODITY MURABAHAH TAWARRUQ';
-     IF DEALTYPE IN ('BCW') THEN CONCEPT5 = 'WADIAH';
-     AMOUNT5 = AMTPAY;
-     AMOUNT5 = AMTPAY;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT5; RUN;
 
-PROC SUMMARY DATA = EQT NWAY;
-BY REPTDATE CONCEPT5;
-VAR AMOUNT5;
-WHERE CONCEPT5 NE ' ';
-OUTPUT OUT=SUM_EQT (DROP=_TYPE_ _FREQ_) SUM=;
-RUN;
+def write_report(path: Path, report_date: date, rows: list[tuple[float, str, float]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        " ",
+        "TITLE: REPORTING REQUIREMENTS FOR ISLAMIC BANKING PORTFOLIO EXPOSURE ",
+        "       (INVESTMENT,DEPOSIT,DERIVATIVES AND SUKUK HOLDING) ACCORDING TO PRODUCT AND SHARIAH APPROVED",
+        f"       AS AT :{report_date:%d/%m/%Y}",
+        "ITEM/CONCEPT",
+        "DEPOSIT/INVESTMENT;RM(AMOUNT);",
+    ]
+    lines.extend(f"{concept};{amount:.2f};" for _, concept, amount in rows)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-PROC SUMMARY DATA =SUM_EQT (KEEP=REPTDATE AMOUNT5) NWAY;
-BY REPTDATE;
-VAR AMOUNT5;
-OUTPUT OUT = TEST5(DROP=_TYPE_ _FREQ_) SUM=AMOUNT5;
-RUN;
 
-PROC SORT DATA=SUM_EQT; BY REPTDATE; RUN;
-PROC SORT DATA=TEST5(RENAME=(AMOUNT5=TOTAL5)); BY REPTDATE; RUN;
+def main() -> None:
+    args = arguments()
+    rows = report_rows(args)
+    write_report(args.output, args.report_date, rows)
+    print(f"Created {args.output.resolve()} for REPTDATE {args.report_date:%Y-%m-%d}")
 
-DATA BASE_EQT;
-     MERGE SUM_EQT TEST5;
-     BY REPTDATE;
-   KEEP REPTDATE CONCEPT5 AMOUNT5 TOTAL5;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT5 AMOUNT5 TOTAL5;
 
-DATA BASE5;
-     FORMAT CONCEPT5   $35.
-            REPTDATE   Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT5 = 'MUDARABAH'; AMOUNT5 = 0; OUTPUT;
-     CONCEPT5 = 'ISTISMAR'; AMOUNT5 = 0;  OUTPUT;
-     CONCEPT5 = 'WADIAH'; AMOUNT5 = 0;  OUTPUT;
-     CONCEPT5 = 'COMMODITY MURABAHAH TAWARRUQ'; AMOUNT5 = 0; OUTPUT;
-RUN;
-
-PROC SORT DATA=BASE5; BY REPTDATE CONCEPT5; RUN;
-
-DATA BASE_EQT;
-     MERGE BASE5(IN=A) BASE_EQT;
-     BY REPTDATE CONCEPT5;
-   KEEP CONCEPT5 AMOUNT5 TOTAL5;
-RUN;
-
-DATA INI;
-     SET MIS.W1AL&REPTMON&NOWK;
-     FORMAT CONCEPT6  $35.
-            AMOUNT6   16.2
-            REPTDATE  Z5.;
-     RETAIN AMOUNT6   0.;
-
-     REPTDATE = &REPTDATE;
-     IF SET_ID IN ('F142150NIDI') THEN DO;
-        CONCEPT6 = 'BAI AL INAH';
-        AMOUNT6 = AMOUNT;
-     END;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT6; RUN;
-
-PROC SUMMARY DATA = INI NWAY;
-BY REPTDATE CONCEPT6;
-VAR AMOUNT6;
-WHERE CONCEPT6 NE ' ';
-OUTPUT OUT=SUM_INI (DROP=_TYPE_ _FREQ_) SUM=;
-RUN;
-
-PROC SUMMARY DATA =SUM_INI (KEEP=REPTDATE AMOUNT6) NWAY;
-BY REPTDATE;
-VAR AMOUNT6;
-OUTPUT OUT = TEST6(DROP=_TYPE_ _FREQ_) SUM=AMOUNT6;
-RUN;
-
-DATA BASE6;
-     FORMAT CONCEPT6   $35.
-            REPTDATE   Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT6 = 'BAI AL INAH'; AMOUNT6 = 0;
-     OUTPUT;
-RUN;
-
-PROC SORT DATA=BASE6; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_INI; BY REPTDATE; RUN;
-PROC SORT DATA=TEST6(RENAME=(AMOUNT6=TOTAL6)); BY REPTDATE; RUN;
-
-DATA BASE_INI;
-     MERGE BASE6(IN=A) SUM_INI(IN=B) TEST6(IN=C);
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT6 AMOUNT6 TOTAL6;
-RUN;
-
-DATA TERM;
-     SET TEST3(RENAME=(TOTAL3=AMOUNT))
-         TEST4(RENAME=(TOTAL4=AMOUNT))
-         TEST5(RENAME=(TOTAL5=AMOUNT))
-         TEST6(RENAME=(TOTAL6=AMOUNT));
-     FORMAT TERM    16.2;
-     RETAIN TERM    0.;
-     TERM = SUM(TERM,AMOUNT);
-RUN;
-PROC SORT; BY TERM; RUN;
-
-DATA TERM1;
-     SET TERM(KEEP=TERM)  END=LASTONE;
-     FORMAT HIGH_TERM    16.2;
-     HIGH_TERM = 0;
-     IF TERM > HIGH_TERM THEN HIGH_TERM=TERM;
-     IF LASTONE;
-     KEEP HIGH_TERM;
-RUN;
-PROC PRINT DATA=TERM1; RUN;
-
-DATA PORTEX;
-     SET BASE_SA(IN=A) BASE_CA(IN=B) BASE_MGIA(IN=C)
-         BASE_COMM(IN=D) BASE_EQT(IN=E) BASE_INI(IN=F);
-     FORMAT CONCEPT $60.
-            AMT   16.2;
-     IF      A THEN DO; ID=1.1;  CONCEPT=CONCEPT1; AMT=AMOUNT1; END;
-     ELSE IF B THEN DO; ID=2.1;  CONCEPT=CONCEPT2; AMT=AMOUNT2; END;
-     ELSE IF C THEN DO; ID=3.11; CONCEPT=CONCEPT3; AMT=AMOUNT3; END;
-     ELSE IF D THEN DO; ID=3.21; CONCEPT=CONCEPT4; AMT=AMOUNT4; END;
-     ELSE IF E THEN DO; ID=3.31; CONCEPT=CONCEPT5; AMT=AMOUNT5; END;
-     ELSE IF F THEN DO; ID=3.41; CONCEPT=CONCEPT6; AMT=AMOUNT6; END;
-     KEEP ID  CONCEPT AMT;
-RUN;
-
-DATA TOTAL;
-     SET BASE_SA(IN=A) BASE_CA(IN=B) TERM1(IN=C) BASE_MGIA(IN=D)
-         BASE_COMM(IN=E) BASE_EQT(IN=F) BASE_INI(IN=G);
-     FORMAT CONCEPT $60.
-            AMT 16.2;
-     IF A THEN DO;      ID=1.0; CONCEPT='1.SAVINGS';  AMT=TOTAL1; END;
-     ELSE IF B THEN DO; ID=2.0; CONCEPT='2.CURRENT';  AMT=TOTAL2; END;
-     ELSE IF C THEN DO; ID=3.0; CONCEPT='3.TERM';   AMT=HIGH_TERM; END;
-     ELSE IF D THEN DO; ID=3.1; CONCEPT='A.MGIA';   AMT=TOTAL3; END;
-     ELSE IF E THEN DO; ID=3.2; CONCEPT='B.COMMODITY MURABAHAH';
-                                                    AMT=TOTAL4; END;
-     ELSE IF F THEN DO; ID=3.3; CONCEPT='C.SHORT TERM DEPOSIT';
-                                                    AMT=TOTAL5; END;
-     ELSE IF G THEN DO; ID=3.4; CONCEPT='D.INI';    AMT=TOTAL6; END;
-     KEEP ID CONCEPT AMT;
-RUN;
-PROC SORT DATA=TOTAL; BY ID DESCENDING AMT; RUN;
-PROC SORT DATA=TOTAL NODUPKEYS; BY ID; RUN;
-
-DATA PORTALL;
-     SET PORTEX TOTAL;
-RUN;
-PROC SORT DATA=PORTALL; BY ID; RUN;
-
-DATA _NULL_;
-   SET PORTALL;
-   FILE PORTF;
-
-   IF _N_ = 1 THEN DO;
-   PUT @001 ' ';
-   PUT @001 'TITLE: REPORTING REQUIREMENTS FOR ISLAMIC BANKING'
-   PUT @051 'PORTFOLIO EXPOSURE ';
-   PUT @008 '(INVESTMENT,DEPOSIT,DERIVATIVES AND SUKUK HOLDING)'
-   PUT @058 'ACCORDING TO PRODUCT AND SHARIAH APPROVED';
-   PUT @008 'AS AT :' "&RDATE";
-
-   PUT @1 'ITEM/CONCEPT';
-   PUT @1 'DEPOSIT/INVESTMENT'  ';'   'RM(AMOUNT)'       ';'
-          ;
-     END;
-
-     PUT @1 CONCEPT           ';' AMT              ';'
-          ;
-RUN;
+if __name__ == "__main__":
+    main()
