@@ -55,3 +55,68 @@ local:/sas/deposit/mart/report/VIP_ELITE_MASTER_NEW06.TXT => remote:/WMTB-PDD/DE
 local:/dwh/ftp/drr/VIP_ELITE_INSURANCE_NEW06.TXT => remote:/WMTB-PDD/DEPOSIT CAMPAIGN/RCB Elite Exclusive Privilege/VIP_ELITE_INSURANCE_NEW062025.TXT
 local:/dwh/ftp/drr/VIP_ELITE_INVESTMENT_NEW06.TXT => remote:/WMTB-PDD/DEPOSIT CAMPAIGN/RCB Elite Exclusive Privilege/VIP_ELITE_INVESTMENT_NEW062025.TXT
 local:/dwh/ftp/drr/VIP_ELITE_SHARETRADING_NEW06.TXT => remote:/WMTB-PDD/DEPOSIT CAMPAIGN/RCB Elite Exclusive Privilege/VIP_ELITE_SHARETRADING_NEW062025.TXT
+
+
+
+
+#!/usr/bin/env python3
+
+from datetime import date, timedelta
+from pathlib import Path
+import subprocess
+
+import pandas as pd
+
+
+CONTROL = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
+BATCH = Path("/sasdata/dwh/logs/RCB_ELITE22.txt")
+LOG = Path("/sasdata/dwh/logs/RCB_ELITE22_LOG.txt")
+REMOTE_DIR = "/WMTB-PDD/DEPOSIT CAMPAIGN/RCB Elite Exclusive Privilege"
+
+# Previous month-end replaces the SAS reporting-date macros.
+reptdate = date.today().replace(day=1) - timedelta(days=1)
+reptmon = reptdate.strftime("%m")
+reptyear = reptdate.strftime("%Y")
+
+files = [
+    (f"/dwh/ftp/drr/VIP_ELITE_DEPOSIT_NEW{reptmon}.TXT",
+     f"VIP_ELITE_DEPOSIT_NEW{reptmon}{reptyear}.TXT"),
+    (f"/sas/deposit/mart/report/VIP_ELITE_MASTER_NEW{reptmon}.TXT",
+     f"VIP_ELITE_MASTER_NEW{reptmon}{reptyear}.TXT"),
+    (f"/dwh/ftp/drr/VIP_ELITE_INSURANCE_NEW{reptmon}.TXT",
+     f"VIP_ELITE_INSURANCE_NEW{reptmon}{reptyear}.TXT"),
+    (f"/dwh/ftp/drr/VIP_ELITE_INVESTMENT_NEW{reptmon}.TXT",
+     f"VIP_ELITE_INVESTMENT_NEW{reptmon}{reptyear}.TXT"),
+    (f"/dwh/ftp/drr/VIP_ELITE_SHARETRADING_NEW{reptmon}.TXT",
+     f"VIP_ELITE_SHARETRADING_NEW{reptmon}{reptyear}.TXT"),
+]
+
+BATCH.parent.mkdir(parents=True, exist_ok=True)
+batch_lines = [f'cd "{REMOTE_DIR}"']
+batch_lines += [f"put {local} {remote}" for local, remote in files]
+BATCH.write_bytes(("\r\n".join(batch_lines) + "\r\n").encode("utf-8"))
+
+ctl = pd.read_sas(CONTROL, format="sas7bdat", encoding="utf-8")
+ctl.columns = ctl.columns.str.upper()
+row = ctl[
+    ctl["HOST_DESC"].fillna("").str.contains(
+        "Data Report Repository (DRR)", regex=False
+    )
+].iloc[0]
+
+command = [
+    "psftp", "-pw", str(row["SFTP_PW"]).strip(),
+    f'{str(row["SFTP_ID"]).strip()}@{str(row["HOST_IP"]).strip()}',
+    "-b", str(BATCH), "-be",
+]
+
+with LOG.open("w", encoding="utf-8") as log:
+    result = subprocess.run(
+        command, input="y\n", text=True,
+        stdout=log, stderr=subprocess.STDOUT,
+    )
+
+if result.returncode != 0:
+    raise SystemExit(f"PSFTP failed ({result.returncode}). See {LOG}")
+
+print(f"SFTP completed. Log: {LOG}")
