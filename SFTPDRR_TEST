@@ -1,0 +1,25 @@
+LIBNAME CTL     '/sasdata/dwh/control';
+
+data _null_;
+	set ctl.ctl_dwh_sftp_info;
+	where index(trim(host_desc),'Data Report Repository (DRR)');
+	
+	call symput('idx',compress(sftp_id));
+	call symput('passwordx',compress(sftp_pw));
+	call symput('hostx',compress(host_ip));
+run;
+
+data _null_;
+	sftp_cmd =  "echo y|psftp -pw &passwordx &idx.@&hostx -b /sasdata/dwh/logs/RCB_ELITE22.txt -be > /sasdata/dwh/logs/RCB_ELITE22_LOG.txt";
+	rc = system(sftp_cmd);
+   if rc > 0 then abort;
+run; 
+
+
+FILE : ctl_dwh_sftp_info.sas7bdat
+
+SFTP_ID	SFTP_PW	HOST_IP	HOST_DESC	HOST_KEY
+drrsftp	Password1	192.168.193.235	Data Report Repository (DRR)	
+
+
+
