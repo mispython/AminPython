@@ -10,8 +10,8 @@ import pandas as pd
 from pbbdpfmt2 import BRANCHCD
 
 
-DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
-DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+DEFAULT_BASE = Path("/dwh/btrade")
+DEFAULT_OUTPUT_DIR = Path("/dwh/ftp/drr")
 CONTROL = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
 BATCH = Path("/sasdata/dwh/logs/EIBMBTMY.txt")
 FTP_LOG = Path("/sasdata/dwh/logs/EIBMBTMY_LOG.txt")
@@ -265,6 +265,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 
