@@ -1,5 +1,7 @@
 
-
+cd /sasdata/rawdata/cis
+put //RBP2.B033.UNLOAD.CUSTMSCD.DESC(0) CIS_MSCD_MAP_%OYYYY.%OMM.%ODD
+put //RBP2.B033.BANKCTRL.OCCUP          CIS_OCCUP_MAP_%OYYYY.%OMM.%ODD
 
 
 # libname eguser V8 '/stgsrcsys/host/uat';                               
