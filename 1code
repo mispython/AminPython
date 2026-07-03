@@ -1,50 +1,3 @@
-
-cd /sasdata/rawdata/cis
-put //RBP2.B033.UNLOAD.CUSTMSCD.DESC(0) CIS_MSCD_MAP_%OYYYY.%OMM.%ODD
-put //RBP2.B033.BANKCTRL.OCCUP          CIS_OCCUP_MAP_%OYYYY.%OMM.%ODD
-
-
-# libname eguser V8 '/stgsrcsys/host/uat';                               
-# proc cimport lib=eguser infile='/stgsrcsys/host/uat/AIADATA_FTP_EIDAIABL';  
-# RUN;
-
-# libname a '/stgsrcsys/host/uat';
-
-
-# data occup_260622;
-# 	set a.occup_260622;
-# run; 
-
-# data misc_260622;
-# 	set a.misc_260622;
-# run; 
-
-# data cisfmt_260622;
-# 	set a.cisfmt_260622;
-# run; 
-
-# data occup;
-# 	set a.occup;
-# run; 
-
-# data misc;
-# 	set a.misc;
-# run; 
-
-# data cisfmt;
-# 	set a.cisfmt;
-# run; 
-
-# PROC COMPARE BASE=occup COMPARE=occup_260622;
-# RUN;
-
-# PROC COMPARE BASE=misc COMPARE=misc_260622;
-# RUN;
-
-# PROC COMPARE BASE=cisfmt COMPARE=cisfmt_260622;
-# RUN;
-
-
 #!/usr/bin/env python3
 """Python replacement for the EIBKCTRL JCL/SAS job.
 
@@ -62,8 +15,8 @@ from pathlib import Path
 
 
 # Same default locations as the previous converted job.
-DEFAULT_INPUT_DIR = Path("Data_Warehouse/MIS/XMIS/input/prod")
-DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "output"
+DEFAULT_INPUT_DIR = Path("/sasdata/rawdata/cis")
+DEFAULT_OUTPUT_DIR = Path("/host_pq/mis/output/bank_control")
 
 OCCUP_COLUMNS = ("START", "LABEL", "TYPE", "FMTNAME")
 MISC_COLUMNS = (
@@ -171,7 +124,7 @@ def build_cisfmt(
 def dated_input_names(run_date: date) -> tuple[str, str]:
     """Return the OCCUP and MISC filenames fetched for the previous day."""
     file_date = run_date - timedelta(days=1)
-    suffix = file_date.strftime("%Y%m%d")
+    suffix = file_date.strftime("%Y.%m.%d")
     return f"CIS_OCCUP_MAP_{suffix}", f"CIS_MSCD_MAP_{suffix}"
 
 
@@ -333,3 +286,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
