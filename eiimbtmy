@@ -1,3 +1,103 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
+from pbbdpfmt2 import BRANCHCD
+
+
+DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+
+REQUIRED_COLUMNS = ["LEVELS", "D", "ACCTNO", "RETAILID", "BRANCH", "APPRLIMT"]
+
+
+def parse_report_date(value: str | None) -> date:
+    if not value:
+        first_day_this_month = date.today().replace(day=1)
+        return first_day_this_month - timedelta(days=1)
+
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            pass
+
+    raise ValueError("Invalid report date. Use YYYY-MM-DD, DD/MM/YYYY, or DD/MM/YY.")
+
+
+def sas_date(value: date) -> str:
+    return value.strftime("%d/%m/%y")
+
+
+def read_input(path: Path) -> pd.DataFrame:
+    df = pd.read_sas(path, format="sas7bdat", encoding="utf-8")
+    df.columns = [col.upper().strip() for col in df.columns]
+
+    missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+    if missing:
+        raise ValueError(
+            "Missing required columns: "
+            + ", ".join(missing)
+            + "\nAvailable columns: "
+            + ", ".join(df.columns)
+        )
+
+    return df[REQUIRED_COLUMNS].copy()
+
+
+def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    df["ACCTNO"] = df["ACCTNO"].fillna("").astype(str).str.strip()
+    df["RETAILID"] = df["RETAILID"].fillna("").astype(str).str.strip()
+
+    df["LEVELS"] = pd.to_numeric(df["LEVELS"], errors="coerce")
+    df["D"] = pd.to_numeric(df["D"], errors="coerce")
+    df["BRANCH"] = pd.to_numeric(df["BRANCH"], errors="coerce")
+    df["APPRLIMT"] = pd.to_numeric(df["APPRLIMT"], errors="coerce")
+
+    return df
+
+
+def build_report(df: pd.DataFrame) -> pd.DataFrame:
+    approve = df[
+        (df["LEVELS"] == 1)
+        & (df["D"] == 1)
+        & (df["ACCTNO"].str[:2] == "28")
+    ].copy()
+
+    approve["CATEGORY"] = ""
+    approve.loc[approve["RETAILID"] == "C", "CATEGORY"] = "CORPORATE"
+    approve.loc[approve["RETAILID"] == "R", "CATEGORY"] = "RETAIL"
+
+    prt = (
+        approve.groupby(["BRANCH", "CATEGORY"], dropna=False)
+        .agg(
+            ACCT=("APPRLIMT", "size"),
+            APPRLIMT=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    prt = prt[prt["BRANCH"] > 0].copy()
+    prt["BRANCH"] = prt["BRANCH"].astype(int)
+    prt.loc[prt["BRANCH"] >= 3000, "BRANCH"] -= 3000
+    prt["BRHNAME"] = prt["BRANCH"].map(BRANCHCD).fillna("")
+    prt["BRANCHX"] = prt["BRANCH"].astype(str).str.zfill(3) + "-" + prt["BRHNAME"]
+
+    totals = (
+        prt.groupby("BRANCHX", dropna=False)
+        .agg(
+            TOTAL_ACCTS=("ACCT", "sum"),
+            TOTAL_LIMITS=("APPRLIMT", "sum"),
+        )
+        .reset_index()
+    )
+
+    categories = prt.pivot_table(
+        index="BRANCHX",
         columns="CATEGORY",
         values=["ACCT", "APPRLIMT"],
         aggfunc="sum",
