@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""Python replacement for the EIBMOVER JCL/SAS job."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_INPUT = Path("/host_pq/dwh/input/ELDS/ELDS_EXCNPL")
+DEFAULT_OUTPUT_DIR = Path("/dwh/elds")
+
+CHAR_LENGTHS = {
+    "ICNO": 12,
+    "AANO": 13,
+    "APPVDT": 10,
+    "NAME": 60,
+    "FACILITY": 30,
+    "PRODUCT": 3,
+    "APPVBY": 3,
+    "APPVNM": 60,
+    "APPVDES": 60,
+    "CRR": 10,
+    "RECMNM": 60,
+    "RECMDES": 60,
+    "CUST": 10,
+    "BADCCRIS": 1,
+    "SEGID": 1,
+    "CUSTIND": 1,
+}
+
+
+def text(line: str, start: int, width: int) -> str:
+    """Read a SAS-style 1-based fixed-width character field."""
+    return line[start - 1:start - 1 + width].strip()
+
+
+def number(line: str, start: int, width: int) -> float | None:
+    value = text(line, start, width).replace(",", "")
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError as error:
+        raise ValueError(
+            f"Invalid numeric value {value!r} at column {start}"
+        ) from error
+
+
+def parse_line(line: str) -> dict[str, object]:
+    cust = text(line, 440, 10)
+    return {
+        "ICNO": text(line, 1, 12),
+        "AANO": text(line, 16, 13),
+        "APPVDT": text(line, 32, 10),
+        "BRANCH": number(line, 45, 3),
+        "NAME": text(line, 51, 60),
+        "FACILITY": text(line, 114, 30),
+        "PRODUCT": text(line, 147, 3),
+        "APPVLIMT": number(line, 153, 13),
+        "APPVBY": text(line, 169, 3),
+        "APPVNM": text(line, 175, 60),
+        "APPVDES": text(line, 238, 60),
+        "CRR": text(line, 301, 10),
+        "RECMNM": text(line, 314, 60),
+        "RECMDES": text(line, 377, 60),
+        "CUST": cust,
+        "BADCCRIS": text(line, 453, 1),
+        "SEGID": text(line, 457, 1),
+        "CUSTIND": "C" if cust.upper() == "COMMERCIAL" else "I",
+    }
+
+
+def read_input(path: Path, encoding: str) -> pd.DataFrame:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing input file: {path}")
+
+    with path.open("r", encoding=encoding, errors="replace") as source:
+        next(source, None)  # SAS FIRSTOBS=2
+        rows = [parse_line(line.rstrip("\r\n")) for line in source]
+
+    rows = [row for row in rows if row["ICNO"]]
+    return pd.DataFrame(rows)
+
+
+def parse_date(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
+
+
+def write_sas7bdat(
+    frame: pd.DataFrame,
+    output_dir: Path,
+    table: str,
+) -> Path:
+    try:
+        import saspy
+    except ImportError as error:
+        raise RuntimeError(
+            "Writing SAS7BDAT requires saspy and a configured SAS runtime"
+        ) from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sas = saspy.SASsession()
+    try:
+        sas_path = str(output_dir.resolve()).replace("'", "''")
+        result = sas.submit(f"libname ELDS '{sas_path}';")
+        if "ERROR:" in result.get("LOG", ""):
+            raise RuntimeError(result["LOG"])
+        sas.df2sd(
+            frame,
+            table=table,
+            libref="ELDS",
+            char_lengths=CHAR_LENGTHS,
+        )
+    finally:
+        sas.endsas()
+
+    return output_dir / f"{table}.sas7bdat"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--report-date",
+        type=parse_date,
+        default=date.today().replace(day=1) - timedelta(days=1),
+    )
+    parser.add_argument("--encoding", default="utf-8")
+    args = parser.parse_args()
+
+    frame = read_input(args.input, args.encoding)
+    table = f"ELOVER{args.report_date:%m}4{args.report_date:%y}"
+    output = write_sas7bdat(frame, args.output_dir, table)
+
+    print(frame.head(50).to_string(index=False))
+    print(f"\nInput      : {args.input}")
+    print(f"Rows output: {len(frame):,}")
+    print(f"SAS7BDAT   : {output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
