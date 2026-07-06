@@ -1,339 +1,208 @@
-IHAVE THIS ISSUE
+//EIBMTCSM JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB07068
+/*JOBPARM S=S1M2
+//**********************************************************************
+//* TITLE   : EXTRACT THE PB BANK CARD TRANSACTIONAL INFORMATION FROM
+//*           OCM TO SAS DATAWAREHOUSE
+//* DATASET : ATMTRNXmmyy
+//* ESMR    : 2010-4423
+//* DATE    : 24-02-2011 (PROGAAB)
+//*
+//* TITLE   : GENERATE DAILY SAS EXTRACTION FILE FOR MASTERCARD
+//*           QUARTERLY REPORT - POPULATE DATA FIELDS INTO PBCS
+//* DATASET : ATM_CASHyyyymm
+//* ESMR    : 2018-562
+//* DATE    : 28-02-2018 (PROGJKA)
+//**********************************************************************
+//DELETE  EXEC PGM=IEFBR14
+//DEL01   DD DSN=SAP.PBB.ATMFTP,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(CYL,(0))
+//DEL01   DD DSN=SAP.PBB.ATMCSFTP,
+//           DISP=(MOD,DELETE,DELETE),
+//           SPACE=(CYL,(0))
+//**********************************************************************
+//CREATE  EXEC PGM=IEFBR14
+//CRT01   DD DSN=SAP.PBB.ATMFTP,
+//           DISP=(NEW,CATLG,DELETE),
+//           DCB=(RECFM=FB,LRECL=80,BLKSIZE=27920),
+//           SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)
+//CRT01   DD DSN=SAP.PBB.ATMCSFTP,
+//           DISP=(NEW,CATLG,DELETE),
+//           DCB=(RECFM=FB,LRECL=80,BLKSIZE=27920),
+//           SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)
+//*
+//EIBMTCSM  EXEC SAS609
+//DEPO      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//OCMTXT    DD DSN=ATP.TCS.JNL.MONTHLY.EXTRACT(0),DISP=SHR
+//OCM       DD DSN=SAP.PBB.OCM,DISP=OLD
+//TEMP      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
+//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//             SPACE=(CYL,(100,50)),UNIT=(SYSDA,5)
+//SYSIN     DD *
 
+OPTIONS YEARCUTOFF=1950 NOCENTER;
 
-Dear Amin,
-
-We noted that DEALREF: D423074 was not appeared in the January 2026 Interbank Listing generated in DRR. 
-
-
-
-
-
-
-BUT I CHECJ MY SOURCE FILE DAILY_BORROW_INTEXP_FCY and DAILY_LEND_INTEREST_FCY does not have the dealref.
-
-SO i check the opriginal program that generate that dataset. CHEC WHICH PART GENERATING THE FILE
-
-
-LIBNAME  WLK_GL		'/dwh/wlk_gl';
-LIBNAME  DM_TD_PL	'/dwh/dm_td_pl';
-LIBNAME  EGS_FD     '/eguser/egshared/egs_fd';
-FILENAME MENARA		'/sasdata/rawdata/menara';
-
-/************************************************************************************************************************************************/
-/*  Desc        : MIS Data Mart                                                                                                                 */
-/*                Create 2 datasets to store daily Interbank Borrowing interest expense & Interbank Lending Interest Income in foreign currency */
-/*  eSMR        : 2025-897 (JKA)                                                                                      							*/
-/*  Requester 	: Ting Hui Wen, Finance Division - MIS, 03-21773487 									 	 		                            */
-/*  Frequemcy   : Run on 8th of the month (inc:DM_BORROW_LEND_CALL_ACC.sas                                                                      */
-/************************************************************************************************************************************************/
+PROC FORMAT;
+   VALUE TYPE
+     0    =  'INCOMPLETE TRXN'
+     1    =  'CASH WITHDRAWAL'
+     2    =  'BALANCE INQUIRY'
+     3    =  'DEPOSIT'
+     4    =  'TRANSFER'
+     5    =  'PAYMENT ENCLOSED'
+     6    =  'SPECIAL'
+     7    =  'SECURITY EXPOSURE'
+     8    =  'PAYMENT FROM'
+     9    =  'CASH CHECK (USED SCWDRWL)'
+    11    =  'LAST 6 TRANSACTIONS'
+    12    =  'CELCOM PREPAID'
+    13    =  'MAXIS  PREPAID'
+    14    =  'DIGI   PREPAID'
+    17    =  'POS PURCHASE W/CASH BACK'
+    21    =  'PREAUTH FOR DAY2DAY'
+    10    =  '1ST DEPOSIT(FOR DEP SLIP)'
+    31    =  '2ND FIXED DEPOSIT'
+    32    =  '2ND DEPOSIT'
+    33    =  '1ST FIXED DEPOSIT'
+    34    =  '1ST TRANSFER'
+    35    =  '1ST GIRO'
+    36    =  '1ST PISA'
+    50    =  'CDT 1ST MSG'
+    51    =  'CDT: ENCASH'
+    65    =  'JARING PREPAID'
+    66    =  'NEW IC ENTERED'
+    67    =  'NEXTEL PREPAID'
+    68    =  'TMNET PREPAID & PREP ONE'
+    69    =  'ESA STATUS INQUIRY'
+    70    =  'ESA CANCELLATION'
+    71    =  'PINLESS TOPUP (1ST PART)'
+    72    =  'PINLESS TOPUP (2ND PART)'
+    81    =  'E-RIGHTS APPL (1ST PART)'
+    82    =  'E-RIGHTS APPL (2ND PART)'
+    97    =  'JOMPAY - 1ST PART'
+    98    =  'JOMPAY - 2ND PART'
+   129    =  'FAST CASH'
+   130    =  'CHECK DEPOSIT (USED SCDEP)'
+   131    =  'CHECK DEP W C/B (SCDEPCB)'
+   132    =  'DEPOSIT WITH CASH BACK'
+   133    =  'ENV DEP WITH CASH BACK'
+   135    =  'PAYMENT FROM/TO'
+   136    =  'BILL PAYMENT / GIRO'
+   137    =  'PIN CHANGE'
+   138    =  'CHEQUE BOOK ORDER'
+   139    =  'FIXED DEPOSIT'
+   140    =  'MINI STATEMENT'
+   141    =  'GIRO 1ST'
+   142    =  'CANCEL PRESSED'
+   143    =  'CUST TIMEOUT'
+   144    =  'HOST TIMEOUT'
+   145    =  'RETURN CARD PRESSED'
+   146    =  'GIRO CREDIT CARD PYMT'
+   147    =  'CARD REMOVAL TOUT'
+   148    =  'POS PURCHASE'
+   149    =  'POS VOID'
+   160    =  'MP LOADING'
+   150    =  'EBNK REGISTRATION'
+   151    =  'SMS TOPUP-REGISTRATION'
+   152    =  'SMS TOPUP-TERMINATION'
+   153    =  'REQUEST FOR TAC'
+   154    =  'REGISTER PHONE FOR TAC'
+   155    =  'LATEST PHONE# UPDATE'
+   156    =  'CONFIRM LATEST PHONE#'
+   157    =  'REGIONAL LINK REGN'
+   158    =  'AIRASIA INQUIRY'
+   159    =  'AIRASIA PAYMENT'
+   161    =  'TOUCH N GO (LOADING)'
+   162    =  'CHG DAILY W/D LIMIT'
+   163    =  'CANCEL PRE-AUTH'
+   164    =  'PMO HP REGISTRATION'
+   165    =  'CHG DAILY RETAIL LIMIT'
+   166    =  'ACTIVATE OVERSEAS W/D'
+   167    =  'DEACTIVATE OVERSEAS W/D'
+   168    =  'CONVERT BANKCARD TO D2D'
+   169    =  'MYMOBILE REGISTRATION'
+   170    =  'EBANK RESET PIN'
+   171    =  'MYMOBILE RESET PIN'
+   172    =  'CUSTOMER CONSENT'
+   173    =  'OPT STATUS INQUIRY'
+   174    =  'OPT STATUS UPDATE'
+   175    =  'NEW DAILY XFER LIMIT'
+   176    =  'CONTACTLESS PINLESS LIMIT'
+   225    =  'MINI STATEMENT'
+   226    =  'LAST TEN TRANS'
+   227    =  'DEPOSITORY LISTING'
+   ;
+RUN;
 
 DATA REPTDATE;
-	DD 		 = &SAS_DT_SASDLY;
-	TODATE   = DD -1;
-	REPTDATE = DD - DAY(DD);
-   	STARTDT  = MDY(MONTH(REPTDATE),1,PUT(REPTDATE,YEAR4.));
-
-	CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
-   	CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-   	CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
-   	CALL SYMPUT('YEAR4',PUT(REPTDATE,YEAR4.));
-   	CALL SYMPUT('STARTDT',STARTDT);
-   	CALL SYMPUT('REPTDATE',REPTDATE);
-	CALL SYMPUT('WKDAY',PUT(DAY(DD),Z2.));
-	CALL SYMPUT('REPTDD',PUT(DAY(TODATE),Z2.));
-	CALL SYMPUT('REPTMM',PUT(MONTH(TODATE),Z2.));
-	CALL SYMPUT('REPTYY',PUT(TODATE,YEAR2.));
+   SET DEPO.REPTDATE;
+   DELTDATE = INTNX('MONTH',REPTDATE,-7,'E');
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+   CALL SYMPUT('REPTYR1',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('NEXT_MTH',PUT(MONTH(DELTDATE),Z2.));
+   CALL SYMPUT('REPTDATE',REPTDATE);
 RUN;
 
-%MACRO RUN8TH;
-%IF &WKDAY EQ 08 %THEN %DO;
-
-/* TO APPEND DAILY G39 FROM DAY 1 - DAY 7 */
-%MACRO APPEND(DSN,DSOUT);
-	PROC DATASETS LIB=WORK NOLIST; DELETE &DSOUT; RUN;
-	%DO I=1 %TO &REPTDD;
-		%LET RDAY=%SYSFUNC(PUTN(&I,Z2.));
-		PROC APPEND DATA=&DSN&REPTYY&REPTMM&RDAY BASE=&DSOUT; RUN;
-	%END;
-%MEND APPEND;
-%APPEND(WLK_GL.G39_,G39_DLY);
-
-DATA G39;
-	SET WLK_GL.G39_&REPTYEAR&REPTMON G39_DLY;
+PROC DATASETS LIBRARY=OCM;
+   DELETE ATMTRNX&NEXT_MTH;
 RUN;
 
-PROC SQL;
-	CREATE TABLE DST_IBB_IBL01 AS 
-   	SELECT t1.ENTITY_CD, 
-           t1.ACK, 
-           t1.NATURAL_ACCT, 
-           t1.WALKER_PROD, 
-           t1.CURRENCY_CD, 
-           t1.SOURCE_CURRENCY_CD, 
-           t1.REC_TYPE, 
-           t1.YEAR, 
-           t1.VERSION, 
-           t1.EFFECTIVE_DT FORMAT=DDMMYY10. AS EFFECTIVE_DT, 
-           t1.JE_GROUP_NUM, 
-           t1.JE_GROUP_DT, 
-           t1.JE_NUM, 
-           t1.JE_SEQ_NUM, 
-           t1.JE_DT, 
-           t1.JE_ENTRY_TIME, 
-           t1.JE_AMT, 
-           t1.ORIG_JE_AMT, 
-           t1.JE_ENTRY_DT, 
-           t1.POSTING_DT, 
-           t1.POSTING_TIME, 
-           t1.JE_DESC, 
-           t1.JE_DOC_REF, 
-           t1.JE_TRAN_TYPE_CD, 
-           t1.TERMINAL_ID, 
-           t1.USERID, 
-           t1.SOURCE_ACK, 
-           t1.AUTO_ENTRY_FLG, 
-           t1.PERIOD, 
-           t1.SUMMARY_ACK_FLG, 
-           t1.ENCUMB_ID, 
-           t1.CONVERSION_RT_IND, 
-           t1.EXCHANGE_RT, 
-           t1.BASE_CURRENCY_FLG, 
-           t1.EXCHANGE_RT_TYPE, 
-           t1.EXCHANGE_RT_EFFECTIVE_DT, 
-           t1.SERIAL_NUM, 
-           t1.TFR_PRICE_EFFECTIVE_DT, 
-           t1.RECON_FLG, 
-           t1.SOURCE_SYSTEM_CD, 
-           t1.SOURCE_SYSTEM_SEQ, 
-           t1.GEN_DATE, 
-           t2.TYPE, 
-           /* VALID_IND */
-           (CASE WHEN t1.CURRENCY_CD <> "MYR" AND t1.SOURCE_CURRENCY_CD = "" THEN 1
-                 WHEN t1.CURRENCY_CD = "MYR" AND t1.SOURCE_CURRENCY_CD = "" AND SUBSTR(t1.JE_DESC,1,21) = "PBB_LND_ACCRINT_REVAL" THEN 1
-                 WHEN t1.CURRENCY_CD = "MYR" AND t1.SOURCE_CURRENCY_CD = "" AND SUBSTR(t1.JE_DESC,1,22) = "PIBB_LND_ACCRINT_REVAL" THEN 1
-                 ELSE 0 
-            END) AS VALID_IND
-      	FROM G39 t1
-		INNER JOIN EGS_FD.KEEP_IBB_IBL_FCY_NATURAL_ACCT t2 ON (t1.NATURAL_ACCT = t2.NATURAL_ACCT);
-QUIT;
+DATA TEMP.ATMTRNX&REPTMON&REPTYEAR
+      OCM.ATMTRNX&REPTMON;
+  DROP YY MM DD TRNXDT COMPIND AUTHIND;
+  INFILE OCMTXT;
+  INPUT @071 CARDNO    $20.
+        @012 BRANCH    PD3.
+        @015 TERMNO    IB4.
+        @001 TRNXDT    PD5.
+        @006 TRNXTIME  PD4.
+        @019 TRNXCODE  IB2.
+        @010 ATMTYPE     2.
+        @021 TRNXAMT   PD8.2
+        @029 SUCCESS_TRAN_AMT PD8.2
+        @038 COMPIND    $1.
+        @039 AUTHIND    $1.
+        @047 DENIAL_CD   3.
+        @055 CARDTYPE   $2.
+        @091 ACCTNO     16.
+        @167 STATE_CD   $2.
+        ;
 
-DATA TD_MIGRATE_MAP_MERGE;
-    LENGTH
-        ENTITY           $ 4
-        DEALTYPE         $ 3
-        DEALREF          $ 7
-        Mapping_D        $ 6
-        CUSTEQTP         $ 2 ;
-    FORMAT
-        ENTITY           $CHAR4.
-        DEALTYPE         $CHAR3.
-        DEALREF          $CHAR7.
-        Mapping_D        $CHAR6.
-        CUSTEQTP         $CHAR2. ;
-    INFORMAT
-        ENTITY           $CHAR4.
-        DEALTYPE         $CHAR3.
-        DEALREF          $CHAR7.
-        Mapping_D        $CHAR6.
-        CUSTEQTP         $CHAR2. ;
-    INFILE MENARA(TD_MIGRATE_MAP_MERGE.csv)
-        LRECL=26
-        ENCODING="LATIN1"
-        TERMSTR=CRLF
-        DLM=','
-        MISSOVER
-        DSD ;
-    INPUT
-        ENTITY           : $CHAR4.
-        DEALTYPE         : $CHAR3.
-        DEALREF          : $CHAR7.
-        Mapping_D        : $CHAR6.
-        CUSTEQTP         : $CHAR2. ;
+  TRNXTYPE = PUT(TRNXCODE,TYPE.);
+
+  IF TRNXDT NE . THEN DO;
+     YY = SUBSTR(TRNXDT, 5,4);
+     MM = SUBSTR(TRNXDT, 9,2);
+     DD = SUBSTR(TRNXDT,11,2);
+     TRNXDATE = MDY(MM,DD,YY);
+  END;
+
+  FORMAT TERMNO     Z4.
+         TRNXTIME   Z6.;
+
+  IF COMPIND EQ 'S' AND AUTHIND EQ 'A' THEN
+     TRNXSTAT = 'S';
+  ELSE
+     TRNXSTAT = 'R';
 RUN;
 
-PROC SQL;
-   CREATE TABLE DST_IBB_IBL02 AS 
-   SELECT t1.ENTITY_CD, 
-          t1.ACK, 
-          t1.NATURAL_ACCT, 
-          t1.WALKER_PROD, 
-          t1.CURRENCY_CD, 
-          t1.SOURCE_CURRENCY_CD, 
-          t1.REC_TYPE, 
-          t1.YEAR, 
-          t1.VERSION, 
-          t1.EFFECTIVE_DT, 
-          t1.JE_GROUP_NUM, 
-          t1.JE_GROUP_DT, 
-          t1.JE_NUM, 
-          /* DEALREF */
-            (case when t2.DEALREF is not missing THEN t2.DEALREF
-            ELSE 
-            CASE WHEN UPCASE(SUBSTR(t1.JE_NUM ,1,1)) IN ("A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P"
-                                                         ,"Q","R","S","T","U","V","W","X","Y","Z")
-                      AND SUBSTR(t1.JE_NUM ,2,1) IN ("0","1","2","3","4","5","6","7","8","9") THEN t1.JE_NUM
-            ELSE TRIM(t1.JE_NUM) || SUBSTR(t1.ACK,8,15) END
-            
-            end) AS DEALREF, 
-          t1.JE_SEQ_NUM, 
-          t1.JE_DT, 
-          t1.JE_ENTRY_TIME, 
-          t1.JE_AMT, 
-          t1.ORIG_JE_AMT, 
-          t1.JE_ENTRY_DT, 
-          t1.POSTING_DT, 
-          t1.POSTING_TIME, 
-          t1.JE_DESC, 
-          t1.JE_DOC_REF, 
-          t1.JE_TRAN_TYPE_CD, 
-          t1.TERMINAL_ID, 
-          t1.USERID, 
-          t1.SOURCE_ACK, 
-          t1.AUTO_ENTRY_FLG, 
-          t1.PERIOD, 
-          t1.SUMMARY_ACK_FLG, 
-          t1.ENCUMB_ID, 
-          t1.CONVERSION_RT_IND, 
-          t1.EXCHANGE_RT, 
-          t1.BASE_CURRENCY_FLG, 
-          t1.EXCHANGE_RT_TYPE, 
-          t1.EXCHANGE_RT_EFFECTIVE_DT, 
-          t1.SERIAL_NUM, 
-          t1.TFR_PRICE_EFFECTIVE_DT, 
-          t1.RECON_FLG, 
-          t1.SOURCE_SYSTEM_CD, 
-          t1.SOURCE_SYSTEM_SEQ, 
-          t1.GEN_DATE, 
-          t1.TYPE, 
-          t1.VALID_IND, 
-          t2.DEALTYPE, 
-          t2.CUSTEQTP
-      FROM DST_IBB_IBL01 t1
-           LEFT JOIN TD_MIGRATE_MAP_MERGE t2 ON (t1.JE_NUM = t2.Mapping_D)
-      WHERE t1.EFFECTIVE_DT BETWEEN &STARTDT AND &REPTDATE;
-QUIT;
+DATA TEMP.ATM_CASH&REPTYR1&REPTMON;
+   SET TEMP.ATMTRNX&REPTMON&REPTYEAR;
 
-/* IBB */
-PROC SQL;
-   CREATE TABLE DST_IBB04 AS 
-   SELECT t1.DEALREF, 
-          /* DATE */
-            (put(month(t1.EFFECTIVE_DT)*100+day(t1.EFFECTIVE_DT),z4.)) AS DATE, 
-          t1.EFFECTIVE_DT AS EFFECTIVE_DT, 
-          /* JE_AMT */
-            (SUM(t1.JE_AMT)*-1) FORMAT=COMMA32.2 AS JE_AMT
-      FROM DST_IBB_IBL02 t1
-      WHERE t1.TYPE = 'IBB' AND t1.VALID_IND = 1
-      GROUP BY t1.DEALREF,
-               (CALCULATED DATE),
-               t1.EFFECTIVE_DT
-      HAVING ROUND( CALCULATED JE_AMT) <>0;
-QUIT;
-PROC SORT DATA=DST_IBB04; BY DEALREF; RUN;
+   WHERE TRNXSTAT = 'S' AND
+         CARDTYPE IN ('00','02','03','04') AND
+         TRNXCODE IN (001,002,129);
 
-PROC TRANSPOSE DATA=DST_IBB04
-	OUT=DAILY_IBB_INTEXP_FCY_DD(LABEL="Split DST_IBB04" DROP=_NAME_)
-	PREFIX=DLY_INTEXP_
-;
-	BY DEALREF;
+   FORMAT TRNXDATE DDMMYY10.;
 
-	ID DATE;
-	VAR JE_AMT;
-RUN; QUIT;
-
-%MACRO APPEND(DATANAME);
-%IF &REPTMON = 1 %THEN %DO;
-DATA CRDLY(KEEP=COLS);
-   DO REPTDATE=MDY(1,1,&REPTYEAR) TO MDY(12,31,&REPTYEAR);
-   COLS = 'DLY_INTEXP_'||SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4); OUTPUT;
-   END;
-   IF MOD(&REPTYEAR,4) NE 0 THEN DO;
-   COLS = 'DLY_INTEXP_0229'; OUTPUT;
-   END;
+   KEEP TRNXDATE TRNXTIME CARDNO TRNXAMT TRNXTYPE;
 RUN;
 
-PROC SORT; BY COLS; RUN;
-PROC TRANSPOSE DATA=CRDLY OUT=TRNDLY(DROP=_NAME_); ID COLS; RUN;
-
-DATA &DATANAME;
-   SET DAILY_IBB_INTEXP_FCY_DD TRNDLY;
+FILENAME TRANFILE 'SAP.PBB.ATMFTP' DISP=OLD;
+PROC CPORT LIBRARY=TEMP FILE=TRANFILE; SELECT ATMTRNX&REPTMON&REPTYEAR;
 RUN;
 
-%END;
-%ELSE %DO; 
-
-PROC SORT DATA=&DATANAME; BY DEALREF; RUN;
-
-DATA &DATANAME;
-	MERGE &DATANAME DAILY_IBB_INTEXP_FCY_DD;
-	BY DEALREF;
+FILENAME TRANFILE 'SAP.PBB.ATMCSFTP' DISP=OLD;
+PROC CPORT LIBRARY=TEMP FILE=TRANFILE; SELECT ATM_CASH&REPTYR1&REPTMON;
 RUN;
-
-%END;
-%MEND APPEND;
-%APPEND(DM_TD_PL.DAILY_BORROW_INTEXP_FCY_&YEAR4);
-
-/* IBL */
-PROC SQL;
-   CREATE TABLE DST_IBL04 AS 
-   SELECT t1.DEALREF, 
-          /* DATE */
-            (put(month(t1.EFFECTIVE_DT)*100+day(t1.EFFECTIVE_DT),z4.)) AS DATE, 
-          t1.EFFECTIVE_DT AS EFFECTIVE_DT, 
-          /* JE_AMT */
-            (SUM(t1.JE_AMT)) FORMAT=COMMA32.2 AS JE_AMT
-      FROM DST_IBB_IBL02 t1
-      WHERE t1.TYPE = 'IBL' AND t1.VALID_IND = 1
-      GROUP BY t1.DEALREF,
-               (CALCULATED DATE),
-               t1.EFFECTIVE_DT
-      HAVING ROUND( CALCULATED JE_AMT) <>0;
-QUIT;
-PROC SORT DATA=DST_IBL04; BY DEALREF; RUN;
-
-PROC TRANSPOSE DATA=DST_IBL04
-	OUT=DAILY_IBL_LEND_FCY_DD(LABEL="Split DST_IBL04" DROP=_NAME_ )
-	PREFIX=DLY_ACCRUAL_
-;
-	BY DEALREF;
-
-	ID DATE;
-	VAR JE_AMT;
-RUN; QUIT;
-
-%MACRO APPENDIBL(DATANAME);
-%IF &REPTMON = 1 %THEN %DO;
-DATA CRDLYX(KEEP=COLS);
-   DO REPTDATE=MDY(1,1,&REPTYEAR) TO MDY(12,31,&REPTYEAR);
-   COLS = 'DLY_ACCRUAL_'||SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4); OUTPUT;
-   END;
-   IF MOD(&REPTYEAR,4) NE 0 THEN DO;
-   COLS = 'DLY_ACCRUAL_0229'; OUTPUT;
-   END;
-RUN;
-
-PROC SORT; BY COLS; RUN;
-PROC TRANSPOSE DATA=CRDLYX OUT=TRNDLYX(DROP=_NAME_); ID COLS; RUN;
-
-DATA &DATANAME;
-   SET DAILY_IBL_LEND_FCY_DD TRNDLYX;
-RUN;
-
-%END;
-%ELSE %DO; 
-
-PROC SORT DATA=&DATANAME; BY DEALREF; RUN;
-
-DATA &DATANAME;
-	MERGE &DATANAME DAILY_IBL_LEND_FCY_DD;
-	BY DEALREF;
-RUN;
-
-%END;
-%MEND APPENDIBL;
-%APPENDIBL(DM_TD_PL.DAILY_LEND_INTEREST_FCY_&YEAR4);
-
-%END;
-%MEND;
-%RUN8TH;
