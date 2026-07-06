@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Python replacement for the EIBMTCSM JCL/SAS job."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_INPUT = Path("/host_pq/dwh/input/OCM/JNL_MONTHLY")
+DEFAULT_OUTPUT_DIR = Path("/dwh/pbcs")
+
+TYPE_FORMAT = {
+    0: "INCOMPLETE TRXN", 1: "CASH WITHDRAWAL", 2: "BALANCE INQUIRY",
+    3: "DEPOSIT", 4: "TRANSFER", 5: "PAYMENT ENCLOSED", 6: "SPECIAL",
+    7: "SECURITY EXPOSURE", 8: "PAYMENT FROM",
+    9: "CASH CHECK (USED SCWDRWL)", 10: "1ST DEPOSIT(FOR DEP SLIP)",
+    11: "LAST 6 TRANSACTIONS", 12: "CELCOM PREPAID",
+    13: "MAXIS  PREPAID", 14: "DIGI   PREPAID",
+    17: "POS PURCHASE W/CASH BACK", 21: "PREAUTH FOR DAY2DAY",
+    31: "2ND FIXED DEPOSIT", 32: "2ND DEPOSIT",
+    33: "1ST FIXED DEPOSIT", 34: "1ST TRANSFER", 35: "1ST GIRO",
+    36: "1ST PISA", 50: "CDT 1ST MSG", 51: "CDT: ENCASH",
+    65: "JARING PREPAID", 66: "NEW IC ENTERED", 67: "NEXTEL PREPAID",
+    68: "TMNET PREPAID & PREP ONE", 69: "ESA STATUS INQUIRY",
+    70: "ESA CANCELLATION", 71: "PINLESS TOPUP (1ST PART)",
+    72: "PINLESS TOPUP (2ND PART)", 81: "E-RIGHTS APPL (1ST PART)",
+    82: "E-RIGHTS APPL (2ND PART)", 97: "JOMPAY - 1ST PART",
+    98: "JOMPAY - 2ND PART", 129: "FAST CASH",
+    130: "CHECK DEPOSIT (USED SCDEP)", 131: "CHECK DEP W C/B (SCDEPCB)",
+    132: "DEPOSIT WITH CASH BACK", 133: "ENV DEP WITH CASH BACK",
+    135: "PAYMENT FROM/TO", 136: "BILL PAYMENT / GIRO",
+    137: "PIN CHANGE", 138: "CHEQUE BOOK ORDER", 139: "FIXED DEPOSIT",
+    140: "MINI STATEMENT", 141: "GIRO 1ST", 142: "CANCEL PRESSED",
+    143: "CUST TIMEOUT", 144: "HOST TIMEOUT",
+    145: "RETURN CARD PRESSED", 146: "GIRO CREDIT CARD PYMT",
+    147: "CARD REMOVAL TOUT", 148: "POS PURCHASE", 149: "POS VOID",
+    150: "EBNK REGISTRATION", 151: "SMS TOPUP-REGISTRATION",
+    152: "SMS TOPUP-TERMINATION", 153: "REQUEST FOR TAC",
+    154: "REGISTER PHONE FOR TAC", 155: "LATEST PHONE# UPDATE",
+    156: "CONFIRM LATEST PHONE#", 157: "REGIONAL LINK REGN",
+    158: "AIRASIA INQUIRY", 159: "AIRASIA PAYMENT", 160: "MP LOADING",
+    161: "TOUCH N GO (LOADING)", 162: "CHG DAILY W/D LIMIT",
+    163: "CANCEL PRE-AUTH", 164: "PMO HP REGISTRATION",
+    165: "CHG DAILY RETAIL LIMIT", 166: "ACTIVATE OVERSEAS W/D",
+    167: "DEACTIVATE OVERSEAS W/D", 168: "CONVERT BANKCARD TO D2D",
+    169: "MYMOBILE REGISTRATION", 170: "EBANK RESET PIN",
+    171: "MYMOBILE RESET PIN", 172: "CUSTOMER CONSENT",
+    173: "OPT STATUS INQUIRY", 174: "OPT STATUS UPDATE",
+    175: "NEW DAILY XFER LIMIT", 176: "CONTACTLESS PINLESS LIMIT",
+    225: "MINI STATEMENT", 226: "LAST TEN TRANS",
+    227: "DEPOSITORY LISTING",
+}
+
+
+def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
+    """Decode a mainframe packed-decimal value (SAS PD informat)."""
+    if not raw or all(byte == 0 for byte in raw):
+        return None
+    nibbles = [nibble for byte in raw for nibble in (byte >> 4, byte & 0x0F)]
+    sign = -1 if nibbles.pop() in (0x0B, 0x0D) else 1
+    if any(nibble > 9 for nibble in nibbles):
+        return None
+    value = Decimal("".join(map(str, nibbles)))
+    return sign * value.scaleb(-scale)
+
+
+def binary_integer(raw: bytes) -> int | None:
+    """Decode a mainframe big-endian signed integer (SAS IB informat)."""
+    return int.from_bytes(raw, byteorder="big", signed=True) if raw else None
+
+
+def decoded(raw: bytes, encoding: str) -> str:
+    return raw.decode(encoding, errors="replace").strip()
+
+
+def numeric_text(raw: bytes, encoding: str) -> int | None:
+    value = decoded(raw, encoding)
+    return int(value) if value else None
+
+
+def transaction_date(value: Decimal | None) -> str:
+    if value is None:
+        return ""
+    digits = str(abs(int(value))).zfill(8)[-8:]
+    try:
+        return datetime.strptime(digits, "%Y%m%d").date().isoformat()
+    except ValueError:
+        return ""
+
+
+def parse_record(record: bytes, encoding: str) -> dict[str, object]:
+    if len(record) < 168:
+        raise ValueError(f"Record is only {len(record)} bytes; expected at least 168")
+
+    trnxdt = packed_decimal(record[0:5])
+    trnxtime = packed_decimal(record[5:9])
+    branch = packed_decimal(record[11:14])
+    trnxcode = binary_integer(record[18:20])
+    compind = decoded(record[37:38], encoding)
+    authind = decoded(record[38:39], encoding)
+
+    return {
+        "CARDNO": decoded(record[70:90], encoding),
+        "BRANCH": int(branch) if branch is not None else None,
+        "TERMNO": binary_integer(record[14:18]),
+        "TRNXTIME": str(int(trnxtime)).zfill(6) if trnxtime is not None else "",
+        "TRNXCODE": trnxcode,
+        "ATMTYPE": numeric_text(record[9:11], encoding),
+        "TRNXAMT": float(packed_decimal(record[20:28], 2) or 0),
+        "SUCCESS_TRAN_AMT": float(packed_decimal(record[28:36], 2) or 0),
+        "DENIAL_CD": numeric_text(record[46:49], encoding),
+        "CARDTYPE": decoded(record[54:56], encoding),
+        "ACCTNO": decoded(record[90:106], encoding),
+        "STATE_CD": decoded(record[166:168], encoding),
+        "TRNXTYPE": TYPE_FORMAT.get(trnxcode, ""),
+        "TRNXDATE": transaction_date(trnxdt),
+        "TRNXSTAT": "S" if compind == "S" and authind == "A" else "R",
+    }
+
+
+def read_records(path: Path, record_length: int | None) -> list[bytes]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing input file: {path}")
+    content = path.read_bytes()
+    if record_length:
+        if len(content) % record_length:
+            raise ValueError("Input size is not divisible by --record-length")
+        return [
+            content[offset:offset + record_length]
+            for offset in range(0, len(content), record_length)
+        ]
+    return [record.rstrip(b"\r") for record in content.split(b"\n") if record.strip()]
+
+
+def parse_date(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
+
+
+def write_sas7bdat(output_dir: Path, tables: dict[str, pd.DataFrame]) -> dict[str, Path]:
+    """Write DataFrames as SAS7BDAT through the configured SAS runtime."""
+    try:
+        import saspy
+    except ImportError as error:
+        raise RuntimeError(
+            "Writing SAS7BDAT requires saspy and a configured SAS runtime"
+        ) from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sas = saspy.SASsession()
+    try:
+        sas_path = str(output_dir.resolve()).replace("'", "''")
+        result = sas.submit(f"libname OUT '{sas_path}';")
+        if "ERROR:" in result.get("LOG", ""):
+            raise RuntimeError(result["LOG"])
+        for table, frame in tables.items():
+            sas.df2sd(frame, table=table, libref="OUT")
+    finally:
+        sas.endsas()
+
+    return {table: output_dir / f"{table}.sas7bdat" for table in tables}
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--report-date", type=parse_date,
+        default=date.today().replace(day=1) - timedelta(days=1),
+    )
+    parser.add_argument("--encoding", default="cp037")
+    parser.add_argument(
+        "--record-length",
+        type=int,
+        help="fixed record length; omit when records are newline-delimited",
+    )
+    args = parser.parse_args()
+
+    rows = [
+        parse_record(record, args.encoding)
+        for record in read_records(args.input, args.record_length)
+    ]
+    transactions = pd.DataFrame(rows)
+    cash = transactions[
+        (transactions["TRNXSTAT"] == "S")
+        & transactions["CARDTYPE"].isin(["00", "02", "03", "04"])
+        & transactions["TRNXCODE"].isin([1, 2, 129])
+    ][["TRNXDATE", "TRNXTIME", "CARDNO", "TRNXAMT", "TRNXTYPE"]]
+
+    month, year2 = args.report_date.strftime("%m"), args.report_date.strftime("%y")
+    full_table = f"ATMTRNX{month}{year2}"
+    cash_table = f"ATM_CASH{args.report_date:%Y%m}"
+    outputs = write_sas7bdat(
+        args.output_dir, {full_table: transactions, cash_table: cash}
+    )
+
+    print(f"Input       : {args.input}")
+    print(f"Rows input  : {len(transactions):,}")
+    print(f"ATMTRNX     : {outputs[full_table]}")
+    print(f"ATM_CASH    : {outputs[cash_table]}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+
+
+
