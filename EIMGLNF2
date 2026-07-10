@@ -168,3 +168,208 @@ DATA GLFUNDX;
    END;
    RETURN;
 RUN;
+
+
+
+
+#!/usr/bin/env python3
+"""Python replacement for the EIMGLNF2 JCL/SAS job.
+
+Creates the second fixed-width GL Walker interface file for NEF repayment.
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date, datetime
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_INPUT_DIR = Path("/host_pq/mis/input/NEF")
+DEFAULT_OUTPUT_DIR = Path("/host_pq/mis/output/NEF")
+DEFAULT_MASTER = "master.sas7bdat"
+DEFAULT_GLFILE = "GLNEF_SEC"
+ARID = "PNEF"
+JDESC = "BG REPAYMENT OF NEF"
+REPORT_DAY = 25
+
+
+def parse_date(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
+
+
+def read_master(path: Path) -> pd.DataFrame:
+    """Read MAST.MASTER. Only BRHCODE and REPAY25 are used."""
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing MASTER file: {path}")
+
+    if path.suffix.lower() == ".sas7bdat":
+        frame = pd.read_sas(path, format="sas7bdat", encoding="utf-8")
+    else:
+        frame = pd.read_csv(path)
+
+    frame.columns = [column.upper() for column in frame.columns]
+    required = {"BRHCODE", "REPAY25"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"MASTER missing column(s): {', '.join(sorted(missing))}")
+
+    return frame[["BRHCODE", "REPAY25"]].copy()
+
+
+def build_glfund(master: pd.DataFrame) -> pd.DataFrame:
+    """Emulate DATA GLFUND from MAST.MASTER then PROC SUMMARY."""
+    if master.empty:
+        return pd.DataFrame(columns=["BRHCODE", "ARID", "JDESC", "REPAY25"])
+
+    glfund = master.copy()
+    glfund["ARID"] = ARID
+    glfund["JDESC"] = JDESC
+    glfund["BRHCODE"] = pd.to_numeric(glfund["BRHCODE"], errors="coerce")
+    glfund["REPAY25"] = pd.to_numeric(glfund["REPAY25"], errors="coerce").fillna(0)
+
+    summary = (
+        glfund
+        .groupby(["BRHCODE", "ARID", "JDESC"], dropna=False, as_index=False)[["REPAY25"]]
+        .sum()
+        .sort_values(["BRHCODE", "ARID", "JDESC"])
+        .reset_index(drop=True)
+    )
+    return summary
+
+
+def amount16(value: float | int | None) -> str:
+    """SAS PUT amount Z17.2 then COMPRESS('.',) => 16 digits."""
+    amount = 0.0 if value is None or pd.isna(value) else round(float(value), 2)
+    return f"{abs(amount):017.2f}".replace(".", "")
+
+
+def put_line(assignments: list[tuple[int, object, int | None, str]]) -> str:
+    """Build a 324-byte fixed-width line using SAS PUT absolute columns."""
+    chars = [" "] * 324
+    for start, value, width, kind in assignments:
+        if kind == "zint":
+            raw = f"{int(float(value)):0{width}d}"
+        elif kind == "char":
+            raw = "" if value is None or pd.isna(value) else str(value)
+            raw = raw[:width].ljust(width) if width else raw
+        else:
+            raw = "" if value is None or pd.isna(value) else str(value)
+        for offset, char in enumerate(raw):
+            index = start - 1 + offset
+            if index < len(chars):
+                chars[index] = char
+    return "".join(chars)
+
+
+def header_line(report_date: date, rptdte: str, rpttime: str) -> str:
+    return put_line([
+        (1, "INTFBNMF", 8, "char"),
+        (9, "0", 1, "char"),
+        (18, f"{report_date:%Y}", 4, "char"),
+        (22, f"{report_date:%m}", 2, "char"),
+        (24, f"{REPORT_DAY:02d}", 2, "char"),
+        (26, rptdte, 8, "char"),
+        (34, rpttime, 6, "char"),
+    ])
+
+
+def trailer_line(report_date: date, rptdte: str, rpttime: str, credit_total: float, count: int) -> str:
+    return put_line([
+        (1, "INTFBNMF", 8, "char"),
+        (9, "9", 1, "char"),
+        (18, f"{report_date:%Y}", 4, "char"),
+        (22, f"{report_date:%m}", 2, "char"),
+        (24, f"{REPORT_DAY:02d}", 2, "char"),
+        (26, rptdte, 8, "char"),
+        (34, rpttime, 6, "char"),
+        (40, "+", 1, "char"),
+        (41, "0000000000000000", 16, "char"),
+        (57, "-", 1, "char"),
+        (58, amount16(credit_total), 16, "char"),
+        (74, "+", 1, "char"),
+        (75, "0000000000000000", 16, "char"),
+        (91, "-", 1, "char"),
+        (92, "0000000000000000", 16, "char"),
+        (108, count, 9, "zint"),
+    ])
+
+
+def detail_line(row: pd.Series, report_date: date) -> tuple[str, float]:
+    repay25 = round(float(row["REPAY25"]), 2)
+    return put_line([
+        (1, "INTFBNMF", 8, "char"),
+        (9, "1", 1, "char"),
+        (10, row["ARID"], 8, "char"),
+        (18, "PBBH", 4, "char"),
+        (22, int(row["BRHCODE"]), 4, "zint"),
+        (71, "MYR", 3, "char"),
+        (77, f"{report_date:%Y}", 4, "char"),
+        (81, f"{report_date:%m}", 2, "char"),
+        (83, f"{REPORT_DAY:02d}", 2, "char"),
+        (85, "-", 1, "char"),
+        (86, amount16(repay25), 16, "char"),
+        (102, row["JDESC"], 60, "char"),
+        (162, row["ARID"], 8, "char"),
+        (172, "BNMF", 4, "char"),
+        (252, "+", 1, "char"),
+        (253, "0000000000000000", 16, "char"),
+        (273, "+", 1, "char"),
+        (274, "000000000000000", 15, "char"),
+        (307, "+", 1, "char"),
+        (308, "0000000000000000", 16, "char"),
+    ]), repay25
+
+
+def write_glfile(glfund: pd.DataFrame, output_path: Path, report_date: date, run_datetime: datetime) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    rptdte = run_datetime.strftime("%Y%m%d")
+    rpttime = run_datetime.strftime("%H%M%S")
+
+    credit_total = 0.0
+    count = 0
+    lines = [header_line(report_date, rptdte, rpttime)]
+
+    if not glfund.empty:
+        for _, row in glfund.iterrows():
+            line, repay25 = detail_line(row, report_date)
+            lines.append(line)
+            credit_total += repay25
+            count += 1
+
+    lines.append(trailer_line(report_date, rptdte, rpttime, credit_total, count))
+    with output_path.open("w", encoding="utf-8", newline="") as target:
+        for line in lines:
+            target.write(line + "\n")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Convert EIMGLNF2 SAS job to Python")
+    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
+    parser.add_argument("--master", type=Path, help="MAST.MASTER input, SAS7BDAT or CSV")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--glfile", type=Path, help="Output GL fixed-width file")
+    parser.add_argument("--report-date", type=parse_date, default=date.today())
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    master_path = args.master or args.input_dir / DEFAULT_MASTER
+    output_path = args.glfile or args.output_dir / f"{DEFAULT_GLFILE}_{args.report_date:%Y%m%d}"
+
+    master = read_master(master_path)
+    glfund = build_glfund(master)
+    write_glfile(glfund, output_path, args.report_date, datetime.now())
+
+    print(f"Read {len(master)} MASTER row(s)")
+    print(f"Wrote {output_path}")
+
+
+if __name__ == "__main__":
+    main()
