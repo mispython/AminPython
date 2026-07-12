@@ -58,6 +58,234 @@ PROC SORT; BY ACCTNO;
 PROC PRINT;
 
 
+#!/usr/bin/env python3
+"""Python replacement for EIAWOF02, PBB HP write-off account upload."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_WOFF = Path("/host_pq/mis/input/NPL_HP/LN_WRI2_OFF_MIS")
+DEFAULT_OUTPUT_DIR = Path("/host_pq/mis/input/NPL_HP/SASDATA_WOFF")
+DEFAULT_TABLE = "WOFFHP"
+
+
+def read_num(line: str, start: int, width: int) -> int | None:
+    value = line[start - 1:start - 1 + width].strip()
+    return int(value) if value else None
+
+
+def is_pibb_costctr(costctr: int | None) -> bool:
+    return costctr is not None and (
+        3000 <= costctr <= 3999 or costctr in {4043, 4048}
+    )
+
+
+def read_woff(path: Path) -> pd.DataFrame:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing WOFF file: {path}")
+
+    rows: list[dict[str, int]] = []
+
+    with path.open("r", encoding="utf-8", errors="replace") as source:
+        for line in source:
+            acctno = read_num(line, 142, 10)
+            costctr = read_num(line, 236, 4)
+
+            if acctno is None:
+                continue
+
+            # EIAWOF02:
+            # IF PIBB COSTCTR THEN DELETE;
+            # ELSE OUTPUT NPL.WOFFHP;
+            if is_pibb_costctr(costctr):
+                continue
+
+            rows.append({"ACCTNO": acctno})
+
+    return pd.DataFrame(rows).sort_values("ACCTNO")
+
+
+def write_sas7bdat(frame: pd.DataFrame, output_dir: Path, table: str) -> None:
+    try:
+        import saspy
+    except ImportError as error:
+        raise RuntimeError(
+            "Writing SAS7BDAT requires saspy and a configured SAS runtime"
+        ) from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    sas = saspy.SASsession()
+    try:
+        sas_path = str(output_dir.resolve()).replace("'", "''")
+        result = sas.submit(f"libname NPL '{sas_path}';")
+
+        if "ERROR:" in result.get("LOG", ""):
+            raise RuntimeError(result["LOG"])
+
+        sas.df2sd(frame, table=table, libref="NPL")
+    finally:
+        sas.endsas()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIAWOF02 PBB write-off upload")
+    parser.add_argument("--woff", type=Path, default=DEFAULT_WOFF)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--table", default=DEFAULT_TABLE)
+    args = parser.parse_args()
+
+    frame = read_woff(args.woff)
+    write_sas7bdat(frame, args.output_dir, args.table)
+
+    print(f"Wrote {args.output_dir / (args.table + '.sas7bdat')}")
+    print(f"Rows: {len(frame)}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+//EIIWOF02 JOB MISEIS,EIFWOFFA,MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
+//         NOTIFY=&SYSUID
+//* **********************************************
+//*   UPLOAD FROM TEXT FILE PROVIDE BY CCD
+//*   (A/C TO BE WRITE OFF)
+//* **********************************************
+//EIAWOF02 EXEC SAS609
+//*WOFF    DD DSN=OPER.RESTORE.PBB.NPL.HP.WOFF01.TXT,DISP=SHR
+//*WOFF    DD DSN=SAP.PIBB.WAPPR.TXT,DISP=SHR
+//WOFF     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD *
+OPTIONS YEARCUTOFF=1950 NOCENTER;
+
+  *** UPLOAD FROM TEXT FILE PROVIDE BY CCD ***;
+  *** CHECK THE POSITION OF EACH FIELDS    ***;
+
+DATA NPL.WOFFHP(KEEP=ACCTNO);
+  INFILE WOFF;
+  INPUT @142 ACCTNO    10.
+        @236 COSTCTR    4.
+        ;
+  IF ((3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048));
+RUN;
+PROC SORT; BY ACCTNO;
+PROC PRINT;
+
+
+
+
+
+PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP
+
+
+
+#!/usr/bin/env python3
+"""Python replacement for EIIWOF02, PIBB HP write-off account upload."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_WOFF = Path("/host_pq/mis/input/NPL_HP/LN_WRI2_OFF_MIS")
+DEFAULT_OUTPUT_DIR = Path("/host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF")
+DEFAULT_TABLE = "WOFFHP"
+
+
+def read_num(line: str, start: int, width: int) -> int | None:
+    value = line[start - 1:start - 1 + width].strip()
+    return int(value) if value else None
+
+
+def is_pibb_costctr(costctr: int | None) -> bool:
+    return costctr is not None and (
+        3000 <= costctr <= 3999 or costctr in {4043, 4048}
+    )
+
+
+def read_woff(path: Path) -> pd.DataFrame:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing WOFF file: {path}")
+
+    rows: list[dict[str, int]] = []
+
+    with path.open("r", encoding="utf-8", errors="replace") as source:
+        for line in source:
+            acctno = read_num(line, 142, 10)
+            costctr = read_num(line, 236, 4)
+
+            if acctno is None:
+                continue
+
+            # EIIWOF02:
+            # IF PIBB COSTCTR;
+            # Keep PIBB accounts only.
+            if not is_pibb_costctr(costctr):
+                continue
+
+            rows.append({"ACCTNO": acctno})
+
+    return pd.DataFrame(rows).sort_values("ACCTNO")
+
+
+def write_sas7bdat(frame: pd.DataFrame, output_dir: Path, table: str) -> None:
+    try:
+        import saspy
+    except ImportError as error:
+        raise RuntimeError(
+            "Writing SAS7BDAT requires saspy and a configured SAS runtime"
+        ) from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    sas = saspy.SASsession()
+    try:
+        sas_path = str(output_dir.resolve()).replace("'", "''")
+        result = sas.submit(f"libname NPL '{sas_path}';")
+
+        if "ERROR:" in result.get("LOG", ""):
+            raise RuntimeError(result["LOG"])
+
+        sas.df2sd(frame, table=table, libref="NPL")
+    finally:
+        sas.endsas()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIIWOF02 PIBB write-off upload")
+    parser.add_argument("--woff", type=Path, default=DEFAULT_WOFF)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--table", default=DEFAULT_TABLE)
+    args = parser.parse_args()
+
+    frame = read_woff(args.woff)
+    write_sas7bdat(frame, args.output_dir, args.table)
+
+    print(f"Wrote {args.output_dir / (args.table + '.sas7bdat')}")
+    print(f"Rows: {len(frame)}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
 
 
 
