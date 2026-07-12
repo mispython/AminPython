@@ -563,3 +563,424 @@ DATA NPL6.LOAN&REPTMON
 RUN;
 
 
+
+
+
+
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+
+DEFAULT_INPUT_DIR = Path("/host_pq/mis/input/NPL_HP")
+DEFAULT_PROGRAM = Path("/host_pq/mis/program/EIFMNP02.py")
+
+# EIIWOF03 = PIBB
+DEFAULT_REPTDATE = DEFAULT_INPUT_DIR / "PIBB_REPTDATE.sas7bdat"
+DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "PIBB_LNNOTE.sas7bdat"
+DEFAULT_NPL6_DIR = DEFAULT_INPUT_DIR / "PIBB_SASDATA_WOFF"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIIWOF03 - PIBB wrapper job")
+    parser.add_argument("--reptdate", type=Path, default=DEFAULT_REPTDATE)
+    parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
+    parser.add_argument("--npl6-dir", type=Path, default=DEFAULT_NPL6_DIR)
+    parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
+
+    args = parser.parse_args()
+
+    for path in [args.reptdate, args.lnnote, args.program]:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing file: {path}")
+
+    if not args.npl6_dir.exists():
+        raise FileNotFoundError(f"Missing NPL6 folder: {args.npl6_dir}")
+
+    cmd = [
+        sys.executable,
+        str(args.program),
+        "--reptdate",
+        str(args.reptdate),
+        "--lnnote",
+        str(args.lnnote),
+        "--npl6-dir",
+        str(args.npl6_dir),
+    ]
+
+    print("EIIWOF03 - PIBB")
+    print(f"REPTDATE : {args.reptdate}")
+    print(f"LNNOTE   : {args.lnnote}")
+    print(f"NPL6     : {args.npl6_dir}")
+    print(f"PROGRAM  : {args.program}")
+
+    subprocess.run(cmd, check=True)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+
+DEFAULT_INPUT_DIR = Path("/host_pq/mis/input/NPL_HP")
+DEFAULT_PROGRAM = Path("/host_pq/mis/program/EIFMNP02.py")
+
+# EIAWOF03 = PBB
+DEFAULT_REPTDATE = DEFAULT_INPUT_DIR / "PBB_REPTDATE.sas7bdat"
+DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "PBB_LNNOTE.sas7bdat"
+DEFAULT_NPL6_DIR = DEFAULT_INPUT_DIR / "SASDATA_WOFF"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIAWOF03 - PBB wrapper job")
+    parser.add_argument("--reptdate", type=Path, default=DEFAULT_REPTDATE)
+    parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
+    parser.add_argument("--npl6-dir", type=Path, default=DEFAULT_NPL6_DIR)
+    parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
+
+    args = parser.parse_args()
+
+    for path in [args.reptdate, args.lnnote, args.program]:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing file: {path}")
+
+    if not args.npl6_dir.exists():
+        raise FileNotFoundError(f"Missing NPL6 folder: {args.npl6_dir}")
+
+    cmd = [
+        sys.executable,
+        str(args.program),
+        "--reptdate",
+        str(args.reptdate),
+        "--lnnote",
+        str(args.lnnote),
+        "--npl6-dir",
+        str(args.npl6_dir),
+    ]
+
+    print("EIAWOF03 - PBB")
+    print(f"REPTDATE : {args.reptdate}")
+    print(f"LNNOTE   : {args.lnnote}")
+    print(f"NPL6     : {args.npl6_dir}")
+    print(f"PROGRAM  : {args.program}")
+
+    subprocess.run(cmd, check=True)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import pandas as pd
+import pyreadstat
+
+
+def read_sas(path: Path) -> pd.DataFrame:
+    df, _ = pyreadstat.read_sas7bdat(str(path))
+    df.columns = [c.upper() for c in df.columns]
+    return df
+
+
+def write_output(df: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path, index=False)
+
+
+def sas_month_name(reptdate) -> str:
+    return pd.to_datetime(reptdate).strftime("%m")
+
+
+def is_missing(series: pd.Series) -> pd.Series:
+    return series.isna()
+
+
+def not_missing(series: pd.Series) -> pd.Series:
+    return ~series.isna()
+
+
+def not_equal(series: pd.Series, value) -> pd.Series:
+    return series.fillna("") != value
+
+
+def next_bldate(row: pd.Series) -> pd.Timestamp:
+    issdte = row.get("ISSDTE")
+    bldate = row.get("BLDATE")
+
+    if pd.isna(issdte) or pd.isna(bldate):
+        return bldate
+
+    issdte = pd.to_datetime(issdte)
+    bldate = pd.to_datetime(bldate)
+
+    dd = issdte.day
+    mm = bldate.month + 1
+    yy = bldate.year
+
+    if mm > 12:
+        mm = 1
+        yy += 1
+
+    last_day = pd.Timestamp(year=yy, month=mm, day=1) + pd.offsets.MonthEnd(0)
+    dd = min(dd, last_day.day)
+
+    return pd.Timestamp(year=yy, month=mm, day=dd)
+
+
+def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
+    loan_types = [128, 130, 380, 381, 700, 705, 131, 132, 720, 725]
+
+    df = lnnote[
+        (lnnote["REVERSED"].fillna("") != "Y")
+        & lnnote["NOTENO"].notna()
+        & (lnnote["PAIDIND"].fillna("") != "P")
+        & lnnote["NTBRCH"].notna()
+        & lnnote["LOANTYPE"].isin(loan_types)
+    ].copy()
+
+    return df.sort_values(["ACCTNO", "NOTENO"])
+
+
+def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
+    loan_types = [128, 130, 700, 705, 983, 993, 996, 380, 381, 131, 132, 720, 725]
+
+    df = lnnote[
+        (lnnote["REVERSED"].fillna("") != "Y")
+        & lnnote["NOTENO"].notna()
+        & lnnote["NTBRCH"].notna()
+        & lnnote["LOANTYPE"].isin(loan_types)
+    ].copy()
+
+    df = df.drop(columns=["NFEEAMT10", "NFEEAMT11", "NFEEAMT12"], errors="ignore")
+    df = df.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
+    df = df.drop_duplicates(subset=["ACCTNO"], keep="first")
+
+    loanno_types = [128, 130, 380, 381, 700, 705, 983, 993, 996, 131, 132, 720, 725]
+
+    loanno = lnnote[
+        (lnnote["REVERSED"].fillna("") != "Y")
+        & lnnote["NOTENO"].notna()
+        & (lnnote["PAIDIND"].fillna("") != "P")
+        & lnnote["NTBRCH"].notna()
+        & lnnote["LOANTYPE"].isin(loanno_types)
+    ][["ACCTNO", "NOTENO"]].copy()
+
+    loanno = loanno.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
+    loanno = loanno.drop_duplicates(subset=["ACCTNO"], keep="first")
+
+    df = df.drop(columns=["NOTENO"], errors="ignore").merge(loanno, on="ACCTNO", how="left")
+    return df.sort_values("ACCTNO")
+
+
+def merge_note_into(base: pd.DataFrame, lnnote: pd.DataFrame) -> pd.DataFrame:
+    return (
+        base.sort_values("ACCTNO")
+        .merge(lnnote, on="ACCTNO", how="left", suffixes=("", "_LNNOTE"))
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIFMNP02 pure Python conversion")
+    parser.add_argument("--reptdate", type=Path, required=True)
+    parser.add_argument("--lnnote", type=Path, required=True)
+    parser.add_argument("--npl6-dir", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    args = parser.parse_args()
+
+    reptdate = read_sas(args.reptdate)
+    lnnote_raw = read_sas(args.lnnote)
+
+    wiis = read_sas(args.npl6_dir / "WIIS.sas7bdat")
+    waq = read_sas(args.npl6_dir / "WAQ.sas7bdat")
+    wsp2 = read_sas(args.npl6_dir / "WSP2.sas7bdat")
+    nplobal = read_sas(args.npl6_dir / "NPLOBAL.sas7bdat")
+
+    rept_date_value = pd.to_datetime(reptdate.iloc[0]["REPTDATE"])
+    reptmon = rept_date_value.strftime("%m")
+
+    loan = prepare_loan(lnnote_raw)
+    lnnote = prepare_lnnote(lnnote_raw)
+
+    wiis_out = merge_note_into(wiis, lnnote)
+    waq_out = merge_note_into(waq, lnnote)
+    wsp2_out = merge_note_into(wsp2, lnnote)
+
+    nplobal_keep = [
+        "ACCTNO", "NOTENO", "NTBRCH", "NAME", "LOANTYPE", "LOANSTAT",
+        "IISP", "OIP", "SPP1", "SPP2", "CURBALP", "NETBALP", "EXIST", "UHCP",
+    ]
+    nplobal_sort = nplobal[[c for c in nplobal_keep if c in nplobal.columns]].copy()
+
+    wiis_acct = wiis[["ACCTNO"]].drop_duplicates().copy()
+    wiis_acct["IN_WIIS"] = True
+
+    nplobal6 = (
+        nplobal_sort.merge(lnnote, on="ACCTNO", how="outer", suffixes=("", "_LNNOTE"))
+        .merge(wiis_acct, on="ACCTNO", how="left")
+    )
+
+    nplobal6["IN_WIIS"] = nplobal6["IN_WIIS"].fillna(False)
+    nplobal6.loc[nplobal6["IN_WIIS"], "BORSTAT"] = "W"
+    nplobal6 = nplobal6.drop(columns=["IN_WIIS"], errors="ignore")
+
+    merged = nplobal6.merge(
+        loan.drop(columns=["LOANSTAT"], errors="ignore"),
+        on="ACCTNO",
+        how="outer",
+        suffixes=("", "_LOAN"),
+        indicator=True,
+    )
+
+    merged["REPTDATE"] = rept_date_value
+
+    if "BORSTAT" not in merged.columns:
+        merged["BORSTAT"] = ""
+
+    merged = merged[merged["BORSTAT"].fillna("") != "Z"].copy()
+
+    if "ISSUEDT" in merged.columns:
+        issue_str = merged["ISSUEDT"].fillna(0).astype(int).astype(str).str.zfill(11).str[:8]
+        merged["ISSDTE"] = pd.to_datetime(issue_str, format="%m%d%Y", errors="coerce")
+
+    if "CENSUS" in merged.columns:
+        merged["CENSUS7"] = merged["CENSUS"].map(
+            lambda x: f"{x:8.2f}"[6:7] if pd.notna(x) else ""
+        )
+
+    merged.loc[merged["ACCTNO"] == 8095419311, "BLDATE"] = pd.Timestamp("1997-01-21")
+
+    merged["BLDATE"] = pd.to_datetime(merged["BLDATE"], errors="coerce")
+
+    biltot = merged.get("BILTOT", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+    bilpay = merged.get("BILPAY", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+
+    nxt_mask = (
+        merged["BLDATE"].notna()
+        & (bilpay > 0)
+        & ((biltot / bilpay.replace(0, pd.NA)) <= 0.01)
+    )
+    merged.loc[nxt_mask, "BLDATE"] = merged.loc[nxt_mask].apply(next_bldate, axis=1)
+
+    merged["DAYS"] = (rept_date_value - merged["BLDATE"]).dt.days
+
+    old_arr = merged.get("OLDNOTEDAYARR", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+    noteno = merged.get("NOTENO", pd.Series(index=merged.index, dtype="float64"))
+
+    arr_mask = (old_arr > 0) & (noteno >= 98000) & (noteno <= 98999)
+    merged.loc[arr_mask & (merged["DAYS"] < 0), "DAYS"] = 0
+    merged.loc[arr_mask, "DAYS"] = merged.loc[arr_mask, "DAYS"] + old_arr[arr_mask]
+
+    intamt = merged.get("INTAMT", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+    intearn2 = merged.get("INTEARN2", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+    merged["TERMCHG"] = 0
+    merged.loc[intamt > 0.1, "TERMCHG"] = intamt[intamt > 0.1] + intearn2[intamt > 0.1]
+
+    stat_mask = (
+        ~merged["BORSTAT"].fillna("").isin(["F", "I", "R", "Y", "W", "Z", "A"])
+        & merged["NOTENO"].isin([98010, 98011, 99010, 99011])
+    )
+    merged.loc[stat_mask, "BORSTAT"] = "S"
+
+    from_nplobal = merged["_merge"].isin(["both", "left_only"])
+
+    no_loan_mask = from_nplobal & (merged["_merge"] == "left_only")
+    merged.loc[no_loan_mask, "LOANSTAT"] = pd.NA
+    merged.loc[no_loan_mask, "DAYS"] = 0
+    merged.loc[no_loan_mask, "BORSTAT"] = ""
+
+    merged.loc[from_nplobal & (merged["DAYS"] <= 0), "LOANSTAT"] = 1
+    merged.loc[
+        from_nplobal
+        & (merged["LOANSTAT"] == 1)
+        & (merged["BORSTAT"].fillna("") == ""),
+        "BORSTAT",
+    ] = "A"
+
+    loan_rows = from_nplobal.copy()
+
+    other_condition = (
+        (merged["DAYS"] > 89)
+        | (~merged["BORSTAT"].fillna("").isin(["", "A", "C", "S", "T"]))
+        | (merged.get("USER5", pd.Series(index=merged.index, dtype="object")).fillna("") == "N")
+    )
+
+    ploan_rows = ~from_nplobal & ~other_condition
+    loan_rows = loan_rows | (~from_nplobal & other_condition)
+
+    y_to_ploan = (
+        ~from_nplobal
+        & other_condition
+        & (merged["BORSTAT"].fillna("") == "Y")
+        & (merged["DAYS"] <= 182)
+    )
+
+    loan_rows = loan_rows & ~y_to_ploan
+    ploan_rows = ploan_rows | y_to_ploan
+
+    keep_cols = [
+        "LOANTYPE", "NTBRCH", "ACCTNO", "NOTENO", "NAME", "BORSTAT", "LOANSTAT",
+        "NETPROC", "ORGBAL", "CURBAL", "NOTETERM", "ISSDTE", "BLDATE", "BILPAY",
+        "INTRATE", "APPVALUE", "MARKETVL", "DAYS", "TERMCHG", "IISP", "OIP",
+        "SPP1", "SPP2", "CURBALP", "NETBALP", "USER5", "FEEAMT", "FEEAMT3",
+        "FEEAMT4", "EXIST", "FEEYTD", "FEEPDYTD", "UHCP", "CENSUS7", "VINNO",
+        "FEETOT2", "FEEAMT8", "PENDBRH", "COSTCTR", "EARNTERM", "FEEAMTA",
+        "FEEAMT5", "OLDNOTEDAYARR", "ACCRUAL",
+    ]
+    keep_cols = [c for c in keep_cols if c in merged.columns]
+
+    output_dir = args.output_dir
+    write_output(reptdate, output_dir / "REPTDATE.parquet")
+    write_output(wiis_out, output_dir / "WIIS.parquet")
+    write_output(waq_out, output_dir / "WAQ.parquet")
+    write_output(wsp2_out, output_dir / "WSP2.parquet")
+    write_output(merged.loc[loan_rows, keep_cols], output_dir / f"LOAN{reptmon}.parquet")
+    write_output(merged.loc[ploan_rows, keep_cols], output_dir / f"PLOAN{reptmon}.parquet")
+
+    print(f"Created {output_dir / f'LOAN{reptmon}.parquet'}")
+    print(f"Created {output_dir / f'PLOAN{reptmon}.parquet'}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
