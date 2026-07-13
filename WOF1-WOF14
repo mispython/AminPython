@@ -984,3 +984,128 @@ if __name__ == "__main__":
 
 
 
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+
+DEFAULT_INPUT_DIR = Path("/host_pq/mis/input/NPL_HP")
+DEFAULT_PROGRAM = Path("/host_pq/mis/program/EIFMNP02.py")
+
+DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "PBB_LNNOTE.sas7bdat"
+DEFAULT_NPL6_DIR = DEFAULT_INPUT_DIR / "SASDATA_WOFF"
+
+
+def default_reptdate_value() -> str:
+    return (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIAWOF03 - PBB wrapper job")
+    parser.add_argument("--reptdate-value", default=default_reptdate_value())
+    parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
+    parser.add_argument("--npl6-dir", type=Path, default=DEFAULT_NPL6_DIR)
+    parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
+
+    args = parser.parse_args()
+
+    for path in [args.lnnote, args.program]:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing file: {path}")
+
+    if not args.npl6_dir.exists():
+        raise FileNotFoundError(f"Missing NPL6 folder: {args.npl6_dir}")
+
+    cmd = [
+        sys.executable,
+        str(args.program),
+        "--reptdate-value",
+        args.reptdate_value,
+        "--lnnote",
+        str(args.lnnote),
+        "--npl6-dir",
+        str(args.npl6_dir),
+    ]
+
+    print("EIAWOF03 - PBB")
+    print(f"REPTDATE : {args.reptdate_value}")
+    print(f"LNNOTE   : {args.lnnote}")
+    print(f"NPL6     : {args.npl6_dir}")
+    print(f"PROGRAM  : {args.program}")
+
+    subprocess.run(cmd, check=True)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+
+DEFAULT_INPUT_DIR = Path("/host_pq/mis/input/NPL_HP")
+DEFAULT_PROGRAM = Path("/host_pq/mis/program/EIFMNP02.py")
+
+DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "PIBB_LNNOTE.sas7bdat"
+DEFAULT_NPL6_DIR = DEFAULT_INPUT_DIR / "PIBB_SASDATA_WOFF"
+
+
+def default_reptdate_value() -> str:
+    return (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIIWOF03 - PIBB wrapper job")
+    parser.add_argument("--reptdate-value", default=default_reptdate_value())
+    parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
+    parser.add_argument("--npl6-dir", type=Path, default=DEFAULT_NPL6_DIR)
+    parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
+
+    args = parser.parse_args()
+
+    for path in [args.lnnote, args.program]:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing file: {path}")
+
+    if not args.npl6_dir.exists():
+        raise FileNotFoundError(f"Missing NPL6 folder: {args.npl6_dir}")
+
+    cmd = [
+        sys.executable,
+        str(args.program),
+        "--reptdate-value",
+        args.reptdate_value,
+        "--lnnote",
+        str(args.lnnote),
+        "--npl6-dir",
+        str(args.npl6_dir),
+    ]
+
+    print("EIIWOF03 - PIBB")
+    print(f"REPTDATE : {args.reptdate_value}")
+    print(f"LNNOTE   : {args.lnnote}")
+    print(f"NPL6     : {args.npl6_dir}")
+    print(f"PROGRAM  : {args.program}")
+
+    subprocess.run(cmd, check=True)
+
+
+if __name__ == "__main__":
+    main()
