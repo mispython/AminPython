@@ -2064,3 +2064,151 @@ OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
 
 
 
+
+EIIWOF03.py
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+
+DEFAULT_INPUT_DIR = Path("/host_pq/mis/input/NPL_HP")
+DEFAULT_PROGRAM = Path("/host_pq/mis/program/EIFMNP02.py")
+
+# EIIWOF03 = PIBB
+DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "PIBB_LNNOTE.sas7bdat"
+DEFAULT_WIIS = DEFAULT_INPUT_DIR / "PIBB_WIIS.sas7bdat"
+DEFAULT_WAQ = DEFAULT_INPUT_DIR / "PIBB_WAQ.sas7bdat"
+DEFAULT_WSP2 = DEFAULT_INPUT_DIR / "PIBB_WSP2.sas7bdat"
+DEFAULT_NPLOBAL = DEFAULT_INPUT_DIR / "PIBB_NPLOBAL.sas7bdat"
+DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "PIBB_SASDATA_WOFF"
+
+
+def default_reptdate_value() -> str:
+    return (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIIWOF03 - PIBB wrapper job")
+    parser.add_argument("--reptdate-value", default=default_reptdate_value())
+    parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
+    parser.add_argument("--wiis", type=Path, default=DEFAULT_WIIS)
+    parser.add_argument("--waq", type=Path, default=DEFAULT_WAQ)
+    parser.add_argument("--wsp2", type=Path, default=DEFAULT_WSP2)
+    parser.add_argument("--nplobal", type=Path, default=DEFAULT_NPLOBAL)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
+
+    args = parser.parse_args()
+
+    for path in [args.lnnote, args.wiis, args.waq, args.wsp2, args.nplobal, args.program]:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing file: {path}")
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        str(args.program),
+        "--reptdate-value", args.reptdate_value,
+        "--lnnote", str(args.lnnote),
+        "--wiis", str(args.wiis),
+        "--waq", str(args.waq),
+        "--wsp2", str(args.wsp2),
+        "--nplobal", str(args.nplobal),
+        "--output-dir", str(args.output_dir),
+    ]
+
+    print("EIIWOF03 - PIBB")
+    print(f"REPTDATE : {args.reptdate_value}")
+    print(f"LNNOTE   : {args.lnnote}")
+    print(f"WIIS     : {args.wiis}")
+    print(f"WAQ      : {args.waq}")
+    print(f"WSP2     : {args.wsp2}")
+    print(f"NPLOBAL  : {args.nplobal}")
+    print(f"OUTPUT   : {args.output_dir}")
+    print(f"PROGRAM  : {args.program}")
+
+    subprocess.run(cmd, check=True)
+
+
+if __name__ == "__main__":
+    main()
+EIAWOF03.py
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+
+DEFAULT_INPUT_DIR = Path("/host_pq/mis/input/NPL_HP")
+DEFAULT_PROGRAM = Path("/host_pq/mis/program/EIFMNP02.py")
+
+# EIAWOF03 = PBB
+DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "PBB_LNNOTE.sas7bdat"
+DEFAULT_WIIS = DEFAULT_INPUT_DIR / "WIIS.sas7bdat"
+DEFAULT_WAQ = DEFAULT_INPUT_DIR / "WAQ.sas7bdat"
+DEFAULT_WSP2 = DEFAULT_INPUT_DIR / "WSP2.sas7bdat"
+DEFAULT_NPLOBAL = DEFAULT_INPUT_DIR / "NPLOBAL.sas7bdat"
+DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "SASDATA_WOFF"
+
+
+def default_reptdate_value() -> str:
+    return (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIAWOF03 - PBB wrapper job")
+    parser.add_argument("--reptdate-value", default=default_reptdate_value())
+    parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
+    parser.add_argument("--wiis", type=Path, default=DEFAULT_WIIS)
+    parser.add_argument("--waq", type=Path, default=DEFAULT_WAQ)
+    parser.add_argument("--wsp2", type=Path, default=DEFAULT_WSP2)
+    parser.add_argument("--nplobal", type=Path, default=DEFAULT_NPLOBAL)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
+
+    args = parser.parse_args()
+
+    for path in [args.lnnote, args.wiis, args.waq, args.wsp2, args.nplobal, args.program]:
+        if not path.exists():
+            raise FileNotFoundError(f"Missing file: {path}")
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable,
+        str(args.program),
+        "--reptdate-value", args.reptdate_value,
+        "--lnnote", str(args.lnnote),
+        "--wiis", str(args.wiis),
+        "--waq", str(args.waq),
+        "--wsp2", str(args.wsp2),
+        "--nplobal", str(args.nplobal),
+        "--output-dir", str(args.output_dir),
+    ]
+
+    print("EIAWOF03 - PBB")
+    print(f"REPTDATE : {args.reptdate_value}")
+    print(f"LNNOTE   : {args.lnnote}")
+    print(f"WIIS     : {args.wiis}")
+    print(f"WAQ      : {args.waq}")
+    print(f"WSP2     : {args.wsp2}")
+    print(f"NPLOBAL  : {args.nplobal}")
+    print(f"OUTPUT   : {args.output_dir}")
+    print(f"PROGRAM  : {args.program}")
+
+    subprocess.run(cmd, check=True)
+
+
+if __name__ == "__main__":
+    main()
+
