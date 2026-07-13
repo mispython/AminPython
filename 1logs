@@ -1,68 +1,124 @@
-source /sas/python/virt_edw/bin/activate
-/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMPORT_PAS.py
-[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIMPORT_PAS.py
+Total time elapsed : 00:00:00
+Memory used: 0.49 MB
+Program end : 2026/07/13 10:56:22
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py
 **********************************************************
-* Job:      EIIMPORT_PAS                                 *
+* Job:      EIIWOF03_PAS                                 *
 * Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
 *                                                        *
-* Modified: Wednesday, July 01, 2026, 11:42:26 AM        *
+* Modified: Monday, July 13, 2026, 11:00:49 AM           *
 **********************************************************
-Program start : 2026/07/01 16:10:07
+Program start : 2026/07/13 11:00:55
 
-1       """Python replacement for the EIIMPORT JCL/SAS job.
-2       from __future__ import annotations
-3       import argparse
-4       from collections import defaultdict
-5       from datetime import date, datetime, timedelta
+1       from __future__ import annotations
+2       import argparse
+3       import subprocess
+4       import sys
+5       from datetime import date, timedelta
 6       from pathlib import Path
-7       from typing import Iterable
-8       import pandas as pd
-9       SA_PRODUCTS = {204, 207, 214, 215}
-10          "WADIAH": {60, 61, 62, 63, 64, 66, 67, 93, 96, 97, 160, 161, 162, 163, 164, 165, 182},
-11          "BAI BITHAMAN AJIL": {32, 70, 73, 94, 95, 166, 183, 184, 185, 187, 188},
-12          "MURABAHAH": {169},
-13          "BAI AL INAH": {33, 71, 167, 168},
-14          "QARD": {440, 441, 442, 443, 444},
-15          "MUSYARAKAH": {186},
-16      CA_CONCEPTS = {
-17      CA_PRODUCTS = {
-18      MGIA_CONCEPTS = {"MUDARABAH": {302, 396}, "ISTISMAR": {315, 394}}
-19          "BCS": "ISTISMAR",
-20          "BCI": "MUDARABAH",
-21          "BCT": "COMMODITY MURABAHAH TAWARRUQ",
-22          "BCW": "WADIAH",
-23      EQT_CONCEPTS = {
-24      def arguments() -> argparse.Namespace:
-25      def locate(root: Path, filename: str, override: Path | None) -> Path:
-26      def load(path: Path, required: Iterable[str]) -> pd.DataFrame:
-27      def clean_text(series: pd.Series) -> pd.Series:
-28      def eligible_deposits(frame: pd.DataFrame, products: set[int]) -> pd.DataFrame:
-29      def concept_amounts(
-30      def week_number(report_date: date) -> int:
-31      def report_rows(args: argparse.Namespace) -> list[tuple[float, str, float]]:
-32      def write_report(path: Path, report_date: date, rows: list[tuple[float, str, float]]) -> None:
-33      def main() -> None:
-34      if __name__ == "__main__":
-35          main()
-36          args = arguments()
-37          parser = argparse.ArgumentParser(description="Generate the Islamic portfolio exposure report.")
-38          parser.add_argument("--input-dir", type=Path, required=True, help="Root containing the SAS7BDAT inputs.")
-39          parser.add_argument("--output", type=Path, default=Path("PORTF.txt"), help="Output text file.")
-40          parser.add_argument(
-41              "--report-date",
-42              type=lambda value: datetime.strptime(value, "%Y-%m-%d").date(),
-43              default=date.today() - timedelta(days=1),
-44              help="Override REPTDATE (YYYY-MM-DD); default: yesterday.",
-45          parser.add_argument("--saving", type=Path, help="Override SAVING.sas7bdat.")
-46          parser.add_argument("--current", type=Path, help="Override CURRENT.sas7bdat.")
-47          parser.add_argument("--fd", type=Path, help="Override FD.sas7bdat.")
-48          parser.add_argument("--equt", type=Path, help="Override IUTFXyymmdd.sas7bdat.")
-49          parser.add_argument("--ini", type=Path, help="Override W1ALmmw.sas7bdat.")
-50          return parser.parse_args()
-usage: EIIMPORT_PAS.py [-h] --input-dir INPUT_DIR [--output OUTPUT] [--report-date REPORT_DATE] [--saving SAVING] [--current CURRENT] [--fd FD] [--equt EQUT] [--ini INI]
-EIIMPORT_PAS.py: error: the following arguments are required: --input-dir
+7       DEFAULT_INPUT_DIR = Path("host_pq/mis/input/NPL_HP")
+8       DEFAULT_PROGRAM = Path("Data_Warehouse/MIS/XMIS/EIFMNP02.py")
+9       DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "pibb_lnnote.sas7bdat"
+10      DEFAULT_WIIS = DEFAULT_INPUT_DIR / "wiis.sas7bdat"
+11      DEFAULT_WAQ = DEFAULT_INPUT_DIR / "waq.sas7bdat"
+12      DEFAULT_WSP2 = DEFAULT_INPUT_DIR / "wsp2.sas7bdat"
+13      DEFAULT_NPLOBAL = DEFAULT_INPUT_DIR / "nplobal.sas7bdat"
+14      DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "PIBB_SASDATA_WOFF"
+15      def default_reptdate_value() -> str:
+16      def main() -> None:
+17      if __name__ == "__main__":
+18          main()
+19          parser = argparse.ArgumentParser(description="EIIWOF03 - PIBB wrapper job")
+20          parser.add_argument("--reptdate-value", default=default_reptdate_value())
+21          return (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+22          parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
+23          parser.add_argument("--wiis", type=Path, default=DEFAULT_WIIS)
+24          parser.add_argument("--waq", type=Path, default=DEFAULT_WAQ)
+25          parser.add_argument("--wsp2", type=Path, default=DEFAULT_WSP2)
+26          parser.add_argument("--nplobal", type=Path, default=DEFAULT_NPLOBAL)
+27          parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+28          parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
+29          args = parser.parse_args()
+30          for path in [args.lnnote, args.wiis, args.waq, args.wsp2, args.nplobal, args.program]:
+31              if not path.exists():
+32          args.output_dir.mkdir(parents=True, exist_ok=True)
+33              sys.executable,
+34              str(args.program),
+35              "--reptdate-value", args.reptdate_value,
+36              "--lnnote", str(args.lnnote),
+37              "--wiis", str(args.wiis),
+38              "--waq", str(args.waq),
+39              "--wsp2", str(args.wsp2),
+40              "--nplobal", str(args.nplobal),
+41              "--output-dir", str(args.output_dir),
+42          cmd = [
+43          print("EIIWOF03 - PIBB")
+EIIWOF03 - PIBB
+44          print(f"REPTDATE : {args.reptdate_value}")
+REPTDATE : 20260712
+45          print(f"LNNOTE   : {args.lnnote}")
+LNNOTE   : host_pq/mis/input/NPL_HP/pibb_lnnote.sas7bdat
+46          print(f"WIIS     : {args.wiis}")
+WIIS     : host_pq/mis/input/NPL_HP/wiis.sas7bdat
+47          print(f"WAQ      : {args.waq}")
+WAQ      : host_pq/mis/input/NPL_HP/waq.sas7bdat
+48          print(f"WSP2     : {args.wsp2}")
+WSP2     : host_pq/mis/input/NPL_HP/wsp2.sas7bdat
+49          print(f"NPLOBAL  : {args.nplobal}")
+NPLOBAL  : host_pq/mis/input/NPL_HP/nplobal.sas7bdat
+50          print(f"OUTPUT   : {args.output_dir}")
+OUTPUT   : host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF
+51          print(f"PROGRAM  : {args.program}")
+PROGRAM  : Data_Warehouse/MIS/XMIS/EIFMNP02.py
+52          subprocess.run(cmd, check=True)
+**********************************************************
+* Job:      EIFMNP02                                     *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Monday, July 13, 2026, 10:02:44 AM           *
+**********************************************************
+Program start : 2026/07/13 11:00:59
+
+1       from __future__ import annotations
+2       import argparse
+3       from pathlib import Path
+4       import pandas as pd
+5       import pyreadstat
+6       def read_sas(path: Path) -> pd.DataFrame:
+7       def write_output(df: pd.DataFrame, path: Path) -> None:
+8       def sas_month_name(reptdate) -> str:
+9       def is_missing(series: pd.Series) -> pd.Series:
+10      def not_missing(series: pd.Series) -> pd.Series:
+11      def not_equal(series: pd.Series, value) -> pd.Series:
+12      def next_bldate(row: pd.Series) -> pd.Timestamp:
+13      def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
+14      def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
+15      def merge_note_into(base: pd.DataFrame, lnnote: pd.DataFrame) -> pd.DataFrame:
+16      def main() -> None:
+17      if __name__ == "__main__":
+18          main()
+19          parser = argparse.ArgumentParser(description="EIFMNP02 pure Python conversion")
+20          parser.add_argument("--reptdate", type=Path, required=True)
+21          parser.add_argument("--lnnote", type=Path, required=True)
+22          parser.add_argument("--npl6-dir", type=Path, required=True)
+23          parser.add_argument("--output-dir", type=Path, required=True)
+24          args = parser.parse_args()
+usage: EIFMNP02.py [-h] --reptdate REPTDATE --lnnote LNNOTE --npl6-dir NPL6_DIR --output-dir OUTPUT_DIR
+EIFMNP02.py: error: the following arguments are required: --reptdate, --npl6-dir
 
 Total time elapsed : 00:00:00
-Memory used: 1.16 MB
-Program end : 2026/07/01 16:10:07
+Memory used: 1.94 MB
+Program end : 2026/07/13 11:00:59
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py", line 72, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py", line 68, in main
+    subprocess.run(cmd, check=True)
+  File "/usr/lib64/python3.9/subprocess.py", line 528, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/sas/python/virt_edw/bin/python', 'Data_Warehouse/MIS/XMIS/EIFMNP02.py', '--reptdate-value', '20260712', '--lnnote', 'host_pq/mis/input/NPL_HP/pibb_lnnote.sas7bdat', '--wiis', 'host_pq/mis/input/NPL_HP/wiis.sas7bdat', '--waq', 'host_pq/mis/input/NPL_HP/waq.sas7bdat', '--wsp2', 'host_pq/mis/input/NPL_HP/wsp2.sas7bdat', '--nplobal', 'host_pq/mis/input/NPL_HP/nplobal.sas7bdat', '--output-dir', 'host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF']' returned non-zero exit status 2.
+
+Total time elapsed : 00:00:05
+Memory used: 0.79 MB
+Program end : 2026/07/13 11:01:00
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
