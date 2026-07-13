@@ -1,14 +1,14 @@
-Total time elapsed : 00:00:00
-Memory used: 0.49 MB
-Program end : 2026/07/13 10:56:22
+source /sas/python/virt_edw/bin/activate
+/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py
+[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
 (virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py
 **********************************************************
 * Job:      EIIWOF03_PAS                                 *
 * Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
 *                                                        *
-* Modified: Monday, July 13, 2026, 11:00:49 AM           *
+* Modified: Monday, July 13, 2026, 11:21:34 AM           *
 **********************************************************
-Program start : 2026/07/13 11:00:55
+Program start : 2026/07/13 11:21:44
 
 1       from __future__ import annotations
 2       import argparse
@@ -75,40 +75,237 @@ PROGRAM  : Data_Warehouse/MIS/XMIS/EIFMNP02.py
 * Job:      EIFMNP02                                     *
 * Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
 *                                                        *
-* Modified: Monday, July 13, 2026, 10:02:44 AM           *
+* Modified: Monday, July 13, 2026, 11:21:27 AM           *
 **********************************************************
-Program start : 2026/07/13 11:00:59
+Program start : 2026/07/13 11:21:49
 
 1       from __future__ import annotations
 2       import argparse
 3       from pathlib import Path
 4       import pandas as pd
 5       import pyreadstat
-6       def read_sas(path: Path) -> pd.DataFrame:
-7       def write_output(df: pd.DataFrame, path: Path) -> None:
-8       def sas_month_name(reptdate) -> str:
-9       def is_missing(series: pd.Series) -> pd.Series:
-10      def not_missing(series: pd.Series) -> pd.Series:
-11      def not_equal(series: pd.Series, value) -> pd.Series:
-12      def next_bldate(row: pd.Series) -> pd.Timestamp:
-13      def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
-14      def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
-15      def merge_note_into(base: pd.DataFrame, lnnote: pd.DataFrame) -> pd.DataFrame:
-16      def main() -> None:
-17      if __name__ == "__main__":
-18          main()
-19          parser = argparse.ArgumentParser(description="EIFMNP02 pure Python conversion")
-20          parser.add_argument("--reptdate", type=Path, required=True)
-21          parser.add_argument("--lnnote", type=Path, required=True)
-22          parser.add_argument("--npl6-dir", type=Path, required=True)
+6       import saspy
+7       def read_sas(path: Path) -> pd.DataFrame:
+8       def write_sas7bdat(sas: saspy.SASsession, df: pd.DataFrame, table_name: str, libref: str = "OUT") -> None:
+9       def next_bldate(row: pd.Series) -> pd.Timestamp:
+10      def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
+11      def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
+12      def merge_note_into(base: pd.DataFrame, lnnote: pd.DataFrame) -> pd.DataFrame:
+13      def main() -> None:
+14      if __name__ == "__main__":
+15          main()
+16          parser = argparse.ArgumentParser(description="EIFMNP02 pure Python conversion")
+17          parser.add_argument("--reptdate-value", required=True)
+18          parser.add_argument("--lnnote", type=Path, required=True)
+19          parser.add_argument("--wiis", type=Path, required=True)
+20          parser.add_argument("--waq", type=Path, required=True)
+21          parser.add_argument("--wsp2", type=Path, required=True)
+22          parser.add_argument("--nplobal", type=Path, required=True)
 23          parser.add_argument("--output-dir", type=Path, required=True)
 24          args = parser.parse_args()
-usage: EIFMNP02.py [-h] --reptdate REPTDATE --lnnote LNNOTE --npl6-dir NPL6_DIR --output-dir OUTPUT_DIR
-EIFMNP02.py: error: the following arguments are required: --reptdate, --npl6-dir
+25          for path in [args.lnnote, args.wiis, args.waq, args.wsp2, args.nplobal]:
+26              if not path.exists():
+27          args.output_dir.mkdir(parents=True, exist_ok=True)
+28          rept_date_value = pd.to_datetime(args.reptdate_value, format="%Y%m%d")
+29          reptmon = rept_date_value.strftime("%m")
+30          lnnote_raw = read_sas(args.lnnote)
+31          df, _ = pyreadstat.read_sas7bdat(str(path))
+32          df.columns = [c.upper() for c in df.columns]
+33          return df
+34          wiis = read_sas(args.wiis)
+35          waq = read_sas(args.waq)
+36          wsp2 = read_sas(args.wsp2)
+37          nplobal = read_sas(args.nplobal)
+38          reptdate = pd.DataFrame({"REPTDATE": [rept_date_value]})
+39          loan = prepare_loan(lnnote_raw)
+40          loan_types = [128, 130, 380, 381, 700, 705, 131, 132, 720, 725]
+41          df = lnnote[
+42              (lnnote["REVERSED"].fillna("") != "Y")
+43              & lnnote["NOTENO"].notna()
+44              & (lnnote["PAIDIND"].fillna("") != "P")
+45              & lnnote["NTBRCH"].notna()
+46              & lnnote["LOANTYPE"].isin(loan_types)
+47          return df.sort_values(["ACCTNO", "NOTENO"])
+48          lnnote = prepare_lnnote(lnnote_raw)
+49          lnnote_types = [128, 130, 700, 705, 983, 993, 996, 380, 381, 131, 132, 720, 725]
+50          df = lnnote[
+51              (lnnote["REVERSED"].fillna("") != "Y")
+52              & lnnote["NOTENO"].notna()
+53              & lnnote["NTBRCH"].notna()
+54              & lnnote["LOANTYPE"].isin(lnnote_types)
+55          df = df.drop(columns=["NFEEAMT10", "NFEEAMT11", "NFEEAMT12"], errors="ignore")
+56          df = df.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
+57          df = df.drop_duplicates(subset=["ACCTNO"], keep="first")
+58          loanno_types = [128, 130, 380, 381, 700, 705, 983, 993, 996, 131, 132, 720, 725]
+59          loanno = lnnote[
+60              (lnnote["REVERSED"].fillna("") != "Y")
+61              & lnnote["NOTENO"].notna()
+62              & (lnnote["PAIDIND"].fillna("") != "P")
+63              & lnnote["NTBRCH"].notna()
+64              & lnnote["LOANTYPE"].isin(loanno_types)
+65          ][["ACCTNO", "NOTENO"]].copy()
+66          loanno = loanno.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
+67          loanno = loanno.drop_duplicates(subset=["ACCTNO"], keep="first")
+68          df = df.drop(columns=["NOTENO"], errors="ignore")
+69          df = df.merge(loanno, on="ACCTNO", how="left")
+70          return df.sort_values("ACCTNO")
+71          wiis_out = merge_note_into(wiis, lnnote)
+72          return base.sort_values("ACCTNO").merge(
+73              lnnote,
+74              on="ACCTNO",
+75              how="left",
+76              suffixes=("", "_LNNOTE"),
+77          waq_out = merge_note_into(waq, lnnote)
+78          wsp2_out = merge_note_into(wsp2, lnnote)
+79          nplobal_keep = [
+80          nplobal_base = nplobal[[c for c in nplobal_keep if c in nplobal.columns]].copy()
+81          wiis_acct = wiis[["ACCTNO"]].drop_duplicates().copy()
+82          wiis_acct["IN_WIIS"] = True
+83          nplobal6_base = nplobal_base.merge(wiis_acct, on="ACCTNO", how="outer")
+84          nplobal6_base["IN_WIIS"] = nplobal6_base["IN_WIIS"].fillna(False)
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py:152: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  nplobal6_base["IN_WIIS"] = nplobal6_base["IN_WIIS"].fillna(False)
+85          nplobal6 = nplobal6_base.merge(
+86              lnnote,
+87              on="ACCTNO",
+88              how="left",
+89              suffixes=("", "_LNNOTE"),
+90          nplobal6.loc[nplobal6["IN_WIIS"], "BORSTAT"] = "W"
+91          nplobal6 = nplobal6.drop(columns=["IN_WIIS"], errors="ignore")
+92          merged = nplobal6.merge(
+93              loan.drop(columns=["LOANSTAT"], errors="ignore"),
+94              on="ACCTNO",
+95              how="outer",
+96              suffixes=("", "_LOAN"),
+97              indicator=True,
+98          merged["REPTDATE"] = rept_date_value
+99          if "BORSTAT" not in merged.columns:
+100         merged = merged[merged["BORSTAT"].fillna("") != "Z"].copy()
+101         if "ISSUEDT" in merged.columns:
+102                 merged["ISSUEDT"]
+103                 .fillna(0)
+104                 .astype("int64")
+105                 .astype(str)
+106                 .str.zfill(11)
+107                 .str[:8]
+108             issue_str = (
+109             merged["ISSDTE"] = pd.to_datetime(issue_str, format="%m%d%Y", errors="coerce")
+110         if "CENSUS" in merged.columns:
+111             merged["CENSUS7"] = merged["CENSUS"].map(
+112                 lambda x: f"{x:8.2f}"[6:7] if pd.notna(x) else ""
+113         if "ACCTNO" in merged.columns:
+114             merged.loc[merged["ACCTNO"] == 8095419311, "BLDATE"] = pd.Timestamp("1997-01-21")
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py:196: FutureWarning: Setting an item of incompatible dtype is deprecated and will raise an error in a future version of pandas. Value '1997-01-21 00:00:00' has dtype incompatible with float64, please explicitly cast to a compatible dtype first.
+  merged.loc[merged["ACCTNO"] == 8095419311, "BLDATE"] = pd.Timestamp("1997-01-21")
+115         if "BLDATE" in merged.columns:
+116             merged["BLDATE"] = pd.to_datetime(merged["BLDATE"], errors="coerce")
+117         biltot = merged.get("BILTOT", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+118         bilpay = merged.get("BILPAY", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+119         safe_bilpay = bilpay.replace(0, pd.NA)
+120             merged["BLDATE"].notna()
+121             & (bilpay > 0)
+122             & ((biltot / safe_bilpay) <= 0.01)
+123         nxt_mask = (
+124         merged.loc[nxt_mask, "BLDATE"] = merged.loc[nxt_mask].apply(next_bldate, axis=1)
+125         issdte = row.get("ISSDTE")
+126         bldate = row.get("BLDATE")
+127         if pd.isna(issdte) or pd.isna(bldate):
+128             return bldate
+129         merged["DAYS"] = (rept_date_value - merged["BLDATE"]).dt.days
+130         old_arr = merged.get("OLDNOTEDAYARR", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+131         noteno = merged.get("NOTENO", pd.Series(index=merged.index, dtype="float64"))
+132         arr_mask = (old_arr > 0) & (noteno >= 98000) & (noteno <= 98999)
+133         merged.loc[arr_mask & (merged["DAYS"] < 0), "DAYS"] = 0
+134         merged.loc[arr_mask, "DAYS"] = merged.loc[arr_mask, "DAYS"] + old_arr[arr_mask]
+135         intamt = merged.get("INTAMT", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+136         intearn2 = merged.get("INTEARN2", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+137         merged["TERMCHG"] = 0
+138         merged.loc[intamt > 0.1, "TERMCHG"] = intamt[intamt > 0.1] + intearn2[intamt > 0.1]
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py:227: FutureWarning: Setting an item of incompatible dtype is deprecated and will raise an error in a future version of pandas. Value '[  796.01  1017.65 59717.56 ... 14893.69 10773.    5745.6 ]' has dtype incompatible with int64, please explicitly cast to a compatible dtype first.
+  merged.loc[intamt > 0.1, "TERMCHG"] = intamt[intamt > 0.1] + intearn2[intamt > 0.1]
+139         if "NOTENO" not in merged.columns:
+140             ~merged["BORSTAT"].fillna("").isin(["F", "I", "R", "Y", "W", "Z", "A"])
+141             & merged["NOTENO"].isin([98010, 98011, 99010, 99011])
+142         stat_mask = (
+143         merged.loc[stat_mask, "BORSTAT"] = "S"
+144         from_nplobal6 = merged["_merge"].isin(["both", "left_only"])
+145         no_loan_mask = from_nplobal6 & (merged["_merge"] == "left_only")
+146         if "LOANSTAT" not in merged.columns:
+147         merged.loc[no_loan_mask, "LOANSTAT"] = pd.NA
+148         merged.loc[no_loan_mask, "DAYS"] = 0
+149         merged.loc[no_loan_mask, "BORSTAT"] = ""
+150         merged.loc[from_nplobal6 & (merged["DAYS"] <= 0), "LOANSTAT"] = 1
+151         ] = "A"
+152         merged.loc[
+153             from_nplobal6
+154             & (merged["LOANSTAT"] == 1)
+155             & (merged["BORSTAT"].fillna("") == ""),
+156             "BORSTAT",
+157         user5 = merged.get("USER5", pd.Series(index=merged.index, dtype="object")).fillna("")
+158             (merged["DAYS"] > 89)
+159             | (~merged["BORSTAT"].fillna("").isin(["", "A", "C", "S", "T"]))
+160             | (user5 == "N")
+161         other_condition = (
+162         loan_rows = from_nplobal6 | (~from_nplobal6 & other_condition)
+163         ploan_rows = ~from_nplobal6 & ~other_condition
+164             ~from_nplobal6
+165             & other_condition
+166             & (merged["BORSTAT"].fillna("") == "Y")
+167             & (merged["DAYS"] <= 182)
+168         y_to_ploan = (
+169         loan_rows = loan_rows & ~y_to_ploan
+170         ploan_rows = ploan_rows | y_to_ploan
+171         keep_cols = [
+172         keep_cols = [c for c in keep_cols if c in merged.columns]
+173         sas = saspy.SASsession()
+Using SAS Config named: default
+SAS Connection established. Subprocess id is 807875
 
-Total time elapsed : 00:00:00
-Memory used: 1.94 MB
-Program end : 2026/07/13 11:00:59
+174         sas.saslib("OUT", path=str(args.output_dir))
+
+21   
+22   libname OUT    'host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF'  ;
+NOTE: Libref OUT was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: /sas/python/virt_edw/host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF
+23   
+175         write_sas7bdat(sas, reptdate, "reptdate")
+176         df = df.copy()
+177         df.columns = [c.upper() for c in df.columns]
+178         sas.df2sd(df, table=table_name.lower(), libref=libref)
+179         write_sas7bdat(sas, wiis_out, "wiis")
+/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py:1848: RuntimeWarning: Column 'EARLY_SETTLE_FEE_CHARGE_FLG_LNNOTE' in DataFrame is too long for SAS. Rename to 32 bytes or less
+  warnings.warn("Column '{}' in DataFrame is too long for SAS. Rename to 32 bytes or less".format(colname),
+/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py:1848: RuntimeWarning: Column 'AUTO_REPRICE_DIFF_INSTL_AMT_LNNOTE' in DataFrame is too long for SAS. Rename to 32 bytes or less
+  warnings.warn("Column '{}' in DataFrame is too long for SAS. Rename to 32 bytes or less".format(colname),
+/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py:1848: RuntimeWarning: Column 'AKPK_RA_MTH_INT_WAIVER_AMT_LNNOTE' in DataFrame is too long for SAS. Rename to 32 bytes or less
+  warnings.warn("Column '{}' in DataFrame is too long for SAS. Rename to 32 bytes or less".format(colname),
+/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py:1848: RuntimeWarning: Column 'AKPK_RA_CUMM_INT_WAIVER_AMT_LNNOTE' in DataFrame is too long for SAS. Rename to 32 bytes or less
+  warnings.warn("Column '{}' in DataFrame is too long for SAS. Rename to 32 bytes or less".format(colname),
+/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py:1848: RuntimeWarning: Column 'CLIMATE_PRIN_TAXONOMY_CLASS_LNNOTE' in DataFrame is too long for SAS. Rename to 32 bytes or less
+  warnings.warn("Column '{}' in DataFrame is too long for SAS. Rename to 32 bytes or less".format(colname),
+/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py:1848: RuntimeWarning: Column 'CLIMATE_TRANSITION_GP4_FLG_LNNOTE' in DataFrame is too long for SAS. Rename to 32 bytes or less
+  warnings.warn("Column '{}' in DataFrame is too long for SAS. Rename to 32 bytes or less".format(colname),
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py", line 310, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py", line 292, in main
+    write_sas7bdat(sas, wiis_out, "wiis")
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py", line 23, in write_sas7bdat
+    sas.df2sd(df, table=table_name.lower(), libref=libref)
+  File "/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasbase.py", line 1564, in df2sd
+    return self.dataframe2sasdata(df, table, libref, results, keep_outer_quotes, embedded_newlines, LF, CR, colsep, colrep,
+  File "/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasbase.py", line 1684, in dataframe2sasdata
+    rc = self._io.dataframe2sasdata(df, table, libref, keep_outer_quotes, embedded_newlines, LF, CR, colsep, colrep,
+  File "/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py", line 1901, in dataframe2sasdata
+    raise SASDFNamesToLongError(Exception)
+saspy.sasexceptions.SASDFNamesToLongError: Column name(s) in DataFrame are too long for SAS. Rename to 32 bytes (in SAS Session encoding) or less.
+
+SAS Connection terminated. Subprocess id was 807875
+
+Total time elapsed : 00:08:22
+Memory used: 16273.65 MB
+Program end : 2026/07/13 11:30:11
 Traceback (most recent call last):
   File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py", line 72, in <module>
     main()
@@ -116,327 +313,9 @@ Traceback (most recent call last):
     subprocess.run(cmd, check=True)
   File "/usr/lib64/python3.9/subprocess.py", line 528, in run
     raise CalledProcessError(retcode, process.args,
-subprocess.CalledProcessError: Command '['/sas/python/virt_edw/bin/python', 'Data_Warehouse/MIS/XMIS/EIFMNP02.py', '--reptdate-value', '20260712', '--lnnote', 'host_pq/mis/input/NPL_HP/pibb_lnnote.sas7bdat', '--wiis', 'host_pq/mis/input/NPL_HP/wiis.sas7bdat', '--waq', 'host_pq/mis/input/NPL_HP/waq.sas7bdat', '--wsp2', 'host_pq/mis/input/NPL_HP/wsp2.sas7bdat', '--nplobal', 'host_pq/mis/input/NPL_HP/nplobal.sas7bdat', '--output-dir', 'host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF']' returned non-zero exit status 2.
+subprocess.CalledProcessError: Command '['/sas/python/virt_edw/bin/python', 'Data_Warehouse/MIS/XMIS/EIFMNP02.py', '--reptdate-value', '20260712', '--lnnote', 'host_pq/mis/input/NPL_HP/pibb_lnnote.sas7bdat', '--wiis', 'host_pq/mis/input/NPL_HP/wiis.sas7bdat', '--waq', 'host_pq/mis/input/NPL_HP/waq.sas7bdat', '--wsp2', 'host_pq/mis/input/NPL_HP/wsp2.sas7bdat', '--nplobal', 'host_pq/mis/input/NPL_HP/nplobal.sas7bdat', '--output-dir', 'host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF']' returned non-zero exit status 1.
 
-Total time elapsed : 00:00:05
-Memory used: 0.79 MB
-Program end : 2026/07/13 11:01:00
+Total time elapsed : 00:09:15
+Memory used: -115.36 MB
+Program end : 2026/07/13 11:30:59
 (virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
-
-
-
-
-
-
-
-
-
-
-#!/usr/bin/env python3
-from __future__ import annotations
-
-import argparse
-from pathlib import Path
-
-import pandas as pd
-import pyreadstat
-import saspy
-
-
-def read_sas(path: Path) -> pd.DataFrame:
-    df, _ = pyreadstat.read_sas7bdat(str(path))
-    df.columns = [c.upper() for c in df.columns]
-    return df
-
-
-def write_sas7bdat(sas: saspy.SASsession, df: pd.DataFrame, table_name: str, libref: str = "OUT") -> None:
-    df = df.copy()
-    df.columns = [c.upper() for c in df.columns]
-    sas.df2sd(df, table=table_name.lower(), libref=libref)
-
-
-def next_bldate(row: pd.Series) -> pd.Timestamp:
-    issdte = row.get("ISSDTE")
-    bldate = row.get("BLDATE")
-
-    if pd.isna(issdte) or pd.isna(bldate):
-        return bldate
-
-    issdte = pd.to_datetime(issdte)
-    bldate = pd.to_datetime(bldate)
-
-    dd = issdte.day
-    mm = bldate.month + 1
-    yy = bldate.year
-
-    if mm > 12:
-        mm = 1
-        yy += 1
-
-    last_day = pd.Timestamp(year=yy, month=mm, day=1) + pd.offsets.MonthEnd(0)
-    dd = min(dd, last_day.day)
-
-    return pd.Timestamp(year=yy, month=mm, day=dd)
-
-
-def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
-    loan_types = [128, 130, 380, 381, 700, 705, 131, 132, 720, 725]
-
-    df = lnnote[
-        (lnnote["REVERSED"].fillna("") != "Y")
-        & lnnote["NOTENO"].notna()
-        & (lnnote["PAIDIND"].fillna("") != "P")
-        & lnnote["NTBRCH"].notna()
-        & lnnote["LOANTYPE"].isin(loan_types)
-    ].copy()
-
-    return df.sort_values(["ACCTNO", "NOTENO"])
-
-
-def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
-    lnnote_types = [128, 130, 700, 705, 983, 993, 996, 380, 381, 131, 132, 720, 725]
-
-    df = lnnote[
-        (lnnote["REVERSED"].fillna("") != "Y")
-        & lnnote["NOTENO"].notna()
-        & lnnote["NTBRCH"].notna()
-        & lnnote["LOANTYPE"].isin(lnnote_types)
-    ].copy()
-
-    df = df.drop(columns=["NFEEAMT10", "NFEEAMT11", "NFEEAMT12"], errors="ignore")
-    df = df.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
-    df = df.drop_duplicates(subset=["ACCTNO"], keep="first")
-
-    loanno_types = [128, 130, 380, 381, 700, 705, 983, 993, 996, 131, 132, 720, 725]
-
-    loanno = lnnote[
-        (lnnote["REVERSED"].fillna("") != "Y")
-        & lnnote["NOTENO"].notna()
-        & (lnnote["PAIDIND"].fillna("") != "P")
-        & lnnote["NTBRCH"].notna()
-        & lnnote["LOANTYPE"].isin(loanno_types)
-    ][["ACCTNO", "NOTENO"]].copy()
-
-    loanno = loanno.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
-    loanno = loanno.drop_duplicates(subset=["ACCTNO"], keep="first")
-
-    df = df.drop(columns=["NOTENO"], errors="ignore")
-    df = df.merge(loanno, on="ACCTNO", how="left")
-
-    return df.sort_values("ACCTNO")
-
-
-def merge_note_into(base: pd.DataFrame, lnnote: pd.DataFrame) -> pd.DataFrame:
-    return base.sort_values("ACCTNO").merge(
-        lnnote,
-        on="ACCTNO",
-        how="left",
-        suffixes=("", "_LNNOTE"),
-    )
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="EIFMNP02 pure Python conversion")
-    parser.add_argument("--reptdate-value", required=True)
-    parser.add_argument("--lnnote", type=Path, required=True)
-    parser.add_argument("--wiis", type=Path, required=True)
-    parser.add_argument("--waq", type=Path, required=True)
-    parser.add_argument("--wsp2", type=Path, required=True)
-    parser.add_argument("--nplobal", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
-
-    args = parser.parse_args()
-
-    for path in [args.lnnote, args.wiis, args.waq, args.wsp2, args.nplobal]:
-        if not path.exists():
-            raise FileNotFoundError(f"Missing input file: {path}")
-
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-
-    rept_date_value = pd.to_datetime(args.reptdate_value, format="%Y%m%d")
-    reptmon = rept_date_value.strftime("%m")
-
-    lnnote_raw = read_sas(args.lnnote)
-    wiis = read_sas(args.wiis)
-    waq = read_sas(args.waq)
-    wsp2 = read_sas(args.wsp2)
-    nplobal = read_sas(args.nplobal)
-
-    reptdate = pd.DataFrame({"REPTDATE": [rept_date_value]})
-
-    loan = prepare_loan(lnnote_raw)
-    lnnote = prepare_lnnote(lnnote_raw)
-
-    wiis_out = merge_note_into(wiis, lnnote)
-    waq_out = merge_note_into(waq, lnnote)
-    wsp2_out = merge_note_into(wsp2, lnnote)
-
-    nplobal_keep = [
-        "ACCTNO", "NOTENO", "NTBRCH", "NAME", "LOANTYPE", "LOANSTAT",
-        "IISP", "OIP", "SPP1", "SPP2", "CURBALP", "NETBALP", "EXIST", "UHCP",
-    ]
-    nplobal_base = nplobal[[c for c in nplobal_keep if c in nplobal.columns]].copy()
-
-    wiis_acct = wiis[["ACCTNO"]].drop_duplicates().copy()
-    wiis_acct["IN_WIIS"] = True
-
-    nplobal6_base = nplobal_base.merge(wiis_acct, on="ACCTNO", how="outer")
-    nplobal6_base["IN_WIIS"] = nplobal6_base["IN_WIIS"].fillna(False)
-
-    nplobal6 = nplobal6_base.merge(
-        lnnote,
-        on="ACCTNO",
-        how="left",
-        suffixes=("", "_LNNOTE"),
-    )
-
-    nplobal6.loc[nplobal6["IN_WIIS"], "BORSTAT"] = "W"
-    nplobal6 = nplobal6.drop(columns=["IN_WIIS"], errors="ignore")
-
-    merged = nplobal6.merge(
-        loan.drop(columns=["LOANSTAT"], errors="ignore"),
-        on="ACCTNO",
-        how="outer",
-        suffixes=("", "_LOAN"),
-        indicator=True,
-    )
-
-    merged["REPTDATE"] = rept_date_value
-
-    if "BORSTAT" not in merged.columns:
-        merged["BORSTAT"] = ""
-
-    merged = merged[merged["BORSTAT"].fillna("") != "Z"].copy()
-
-    if "ISSUEDT" in merged.columns:
-        issue_str = (
-            merged["ISSUEDT"]
-            .fillna(0)
-            .astype("int64")
-            .astype(str)
-            .str.zfill(11)
-            .str[:8]
-        )
-        merged["ISSDTE"] = pd.to_datetime(issue_str, format="%m%d%Y", errors="coerce")
-
-    if "CENSUS" in merged.columns:
-        merged["CENSUS7"] = merged["CENSUS"].map(
-            lambda x: f"{x:8.2f}"[6:7] if pd.notna(x) else ""
-        )
-
-    if "ACCTNO" in merged.columns:
-        merged.loc[merged["ACCTNO"] == 8095419311, "BLDATE"] = pd.Timestamp("1997-01-21")
-
-    if "BLDATE" in merged.columns:
-        merged["BLDATE"] = pd.to_datetime(merged["BLDATE"], errors="coerce")
-    else:
-        merged["BLDATE"] = pd.NaT
-
-    biltot = merged.get("BILTOT", pd.Series(index=merged.index, dtype="float64")).fillna(0)
-    bilpay = merged.get("BILPAY", pd.Series(index=merged.index, dtype="float64")).fillna(0)
-    safe_bilpay = bilpay.replace(0, pd.NA)
-
-    nxt_mask = (
-        merged["BLDATE"].notna()
-        & (bilpay > 0)
-        & ((biltot / safe_bilpay) <= 0.01)
-    )
-    merged.loc[nxt_mask, "BLDATE"] = merged.loc[nxt_mask].apply(next_bldate, axis=1)
-
-    merged["DAYS"] = (rept_date_value - merged["BLDATE"]).dt.days
-
-    old_arr = merged.get("OLDNOTEDAYARR", pd.Series(index=merged.index, dtype="float64")).fillna(0)
-    noteno = merged.get("NOTENO", pd.Series(index=merged.index, dtype="float64"))
-
-    arr_mask = (old_arr > 0) & (noteno >= 98000) & (noteno <= 98999)
-    merged.loc[arr_mask & (merged["DAYS"] < 0), "DAYS"] = 0
-    merged.loc[arr_mask, "DAYS"] = merged.loc[arr_mask, "DAYS"] + old_arr[arr_mask]
-
-    intamt = merged.get("INTAMT", pd.Series(index=merged.index, dtype="float64")).fillna(0)
-    intearn2 = merged.get("INTEARN2", pd.Series(index=merged.index, dtype="float64")).fillna(0)
-
-    merged["TERMCHG"] = 0
-    merged.loc[intamt > 0.1, "TERMCHG"] = intamt[intamt > 0.1] + intearn2[intamt > 0.1]
-
-    if "NOTENO" not in merged.columns:
-        merged["NOTENO"] = pd.NA
-
-    stat_mask = (
-        ~merged["BORSTAT"].fillna("").isin(["F", "I", "R", "Y", "W", "Z", "A"])
-        & merged["NOTENO"].isin([98010, 98011, 99010, 99011])
-    )
-    merged.loc[stat_mask, "BORSTAT"] = "S"
-
-    from_nplobal6 = merged["_merge"].isin(["both", "left_only"])
-    no_loan_mask = from_nplobal6 & (merged["_merge"] == "left_only")
-
-    if "LOANSTAT" not in merged.columns:
-        merged["LOANSTAT"] = pd.NA
-
-    merged.loc[no_loan_mask, "LOANSTAT"] = pd.NA
-    merged.loc[no_loan_mask, "DAYS"] = 0
-    merged.loc[no_loan_mask, "BORSTAT"] = ""
-
-    merged.loc[from_nplobal6 & (merged["DAYS"] <= 0), "LOANSTAT"] = 1
-    merged.loc[
-        from_nplobal6
-        & (merged["LOANSTAT"] == 1)
-        & (merged["BORSTAT"].fillna("") == ""),
-        "BORSTAT",
-    ] = "A"
-
-    user5 = merged.get("USER5", pd.Series(index=merged.index, dtype="object")).fillna("")
-
-    other_condition = (
-        (merged["DAYS"] > 89)
-        | (~merged["BORSTAT"].fillna("").isin(["", "A", "C", "S", "T"]))
-        | (user5 == "N")
-    )
-
-    loan_rows = from_nplobal6 | (~from_nplobal6 & other_condition)
-    ploan_rows = ~from_nplobal6 & ~other_condition
-
-    y_to_ploan = (
-        ~from_nplobal6
-        & other_condition
-        & (merged["BORSTAT"].fillna("") == "Y")
-        & (merged["DAYS"] <= 182)
-    )
-
-    loan_rows = loan_rows & ~y_to_ploan
-    ploan_rows = ploan_rows | y_to_ploan
-
-    keep_cols = [
-        "LOANTYPE", "NTBRCH", "ACCTNO", "NOTENO", "NAME", "BORSTAT", "LOANSTAT",
-        "NETPROC", "ORGBAL", "CURBAL", "NOTETERM", "ISSDTE", "BLDATE", "BILPAY",
-        "INTRATE", "APPVALUE", "MARKETVL", "DAYS", "TERMCHG", "IISP", "OIP",
-        "SPP1", "SPP2", "CURBALP", "NETBALP", "USER5", "FEEAMT", "FEEAMT3",
-        "FEEAMT4", "EXIST", "FEEYTD", "FEEPDYTD", "UHCP", "CENSUS7", "VINNO",
-        "FEETOT2", "FEEAMT8", "PENDBRH", "COSTCTR", "EARNTERM", "FEEAMTA",
-        "FEEAMT5", "OLDNOTEDAYARR", "ACCRUAL",
-    ]
-    keep_cols = [c for c in keep_cols if c in merged.columns]
-
-    sas = saspy.SASsession()
-    sas.saslib("OUT", path=str(args.output_dir))
-
-    write_sas7bdat(sas, reptdate, "reptdate")
-    write_sas7bdat(sas, wiis_out, "wiis")
-    write_sas7bdat(sas, waq_out, "waq")
-    write_sas7bdat(sas, wsp2_out, "wsp2")
-    write_sas7bdat(sas, merged.loc[loan_rows, keep_cols], f"loan{reptmon}")
-    write_sas7bdat(sas, merged.loc[ploan_rows, keep_cols], f"ploan{reptmon}")
-
-    sas.endsas()
-
-    print(f"REPTDATE : {args.reptdate_value}")
-    print(f"Created  : {args.output_dir / 'reptdate.sas7bdat'}")
-    print(f"Created  : {args.output_dir / 'wiis.sas7bdat'}")
-    print(f"Created  : {args.output_dir / 'waq.sas7bdat'}")
-    print(f"Created  : {args.output_dir / 'wsp2.sas7bdat'}")
-    print(f"Created  : {args.output_dir / f'loan{reptmon}.sas7bdat'}")
-    print(f"Created  : {args.output_dir / f'ploan{reptmon}.sas7bdat'}")
-
-
-if __name__ == "__main__":
-    main()
