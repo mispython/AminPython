@@ -1,20 +1,294 @@
-LIBNAME OLD '/host_pq/mis/compare/original';
-LIBNAME NEW '/host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF';
+source /sas/python/virt_edw/bin/activate
+/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py
+[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py
+**********************************************************
+* Job:      EIIWOF03_PAS                                 *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Monday, July 13, 2026, 11:21:34 AM           *
+**********************************************************
+Program start : 2026/07/13 11:40:00
 
-PROC COMPARE BASE=OLD.REPTDATE COMPARE=NEW.REPTDATE;
-RUN;
+1       from __future__ import annotations
+2       import argparse
+3       import subprocess
+4       import sys
+5       from datetime import date, timedelta
+6       from pathlib import Path
+7       DEFAULT_INPUT_DIR = Path("host_pq/mis/input/NPL_HP")
+8       DEFAULT_PROGRAM = Path("Data_Warehouse/MIS/XMIS/EIFMNP02.py")
+9       DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "pibb_lnnote.sas7bdat"
+10      DEFAULT_WIIS = DEFAULT_INPUT_DIR / "wiis.sas7bdat"
+11      DEFAULT_WAQ = DEFAULT_INPUT_DIR / "waq.sas7bdat"
+12      DEFAULT_WSP2 = DEFAULT_INPUT_DIR / "wsp2.sas7bdat"
+13      DEFAULT_NPLOBAL = DEFAULT_INPUT_DIR / "nplobal.sas7bdat"
+14      DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "PIBB_SASDATA_WOFF"
+15      def default_reptdate_value() -> str:
+16      def main() -> None:
+17      if __name__ == "__main__":
+18          main()
+19          parser = argparse.ArgumentParser(description="EIIWOF03 - PIBB wrapper job")
+20          parser.add_argument("--reptdate-value", default=default_reptdate_value())
+21          return (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+22          parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
+23          parser.add_argument("--wiis", type=Path, default=DEFAULT_WIIS)
+24          parser.add_argument("--waq", type=Path, default=DEFAULT_WAQ)
+25          parser.add_argument("--wsp2", type=Path, default=DEFAULT_WSP2)
+26          parser.add_argument("--nplobal", type=Path, default=DEFAULT_NPLOBAL)
+27          parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+28          parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
+29          args = parser.parse_args()
+30          for path in [args.lnnote, args.wiis, args.waq, args.wsp2, args.nplobal, args.program]:
+31              if not path.exists():
+32          args.output_dir.mkdir(parents=True, exist_ok=True)
+33              sys.executable,
+34              str(args.program),
+35              "--reptdate-value", args.reptdate_value,
+36              "--lnnote", str(args.lnnote),
+37              "--wiis", str(args.wiis),
+38              "--waq", str(args.waq),
+39              "--wsp2", str(args.wsp2),
+40              "--nplobal", str(args.nplobal),
+41              "--output-dir", str(args.output_dir),
+42          cmd = [
+43          print("EIIWOF03 - PIBB")
+EIIWOF03 - PIBB
+44          print(f"REPTDATE : {args.reptdate_value}")
+REPTDATE : 20260712
+45          print(f"LNNOTE   : {args.lnnote}")
+LNNOTE   : host_pq/mis/input/NPL_HP/pibb_lnnote.sas7bdat
+46          print(f"WIIS     : {args.wiis}")
+WIIS     : host_pq/mis/input/NPL_HP/wiis.sas7bdat
+47          print(f"WAQ      : {args.waq}")
+WAQ      : host_pq/mis/input/NPL_HP/waq.sas7bdat
+48          print(f"WSP2     : {args.wsp2}")
+WSP2     : host_pq/mis/input/NPL_HP/wsp2.sas7bdat
+49          print(f"NPLOBAL  : {args.nplobal}")
+NPLOBAL  : host_pq/mis/input/NPL_HP/nplobal.sas7bdat
+50          print(f"OUTPUT   : {args.output_dir}")
+OUTPUT   : host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF
+51          print(f"PROGRAM  : {args.program}")
+PROGRAM  : Data_Warehouse/MIS/XMIS/EIFMNP02.py
+52          subprocess.run(cmd, check=True)
+**********************************************************
+* Job:      EIFMNP02                                     *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Monday, July 13, 2026, 11:39:50 AM           *
+**********************************************************
+Program start : 2026/07/13 11:40:05
 
-PROC COMPARE BASE=OLD.WIIS COMPARE=NEW.WIIS;
-RUN;
+1       from __future__ import annotations
+2       import argparse
+3       from pathlib import Path
+4       import pandas as pd
+5       import pyreadstat
+6       import saspy
+7       def read_sas(path: Path) -> pd.DataFrame:
+8       def write_sas7bdat(
+9       def next_bldate(row: pd.Series) -> pd.Timestamp:
+10      def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
+11      def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
+12      def sas_like_merge_left(base: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+13      def main() -> None:
+14      if __name__ == "__main__":
+15          main()
+16          parser = argparse.ArgumentParser(description="EIFMNP02 pure Python conversion")
+17          parser.add_argument("--reptdate-value", required=True)
+18          parser.add_argument("--lnnote", type=Path, required=True)
+19          parser.add_argument("--wiis", type=Path, required=True)
+20          parser.add_argument("--waq", type=Path, required=True)
+21          parser.add_argument("--wsp2", type=Path, required=True)
+22          parser.add_argument("--nplobal", type=Path, required=True)
+23          parser.add_argument("--output-dir", type=Path, required=True)
+24          args = parser.parse_args()
+25          for path in [args.lnnote, args.wiis, args.waq, args.wsp2, args.nplobal]:
+26              if not path.exists():
+27          args.output_dir.mkdir(parents=True, exist_ok=True)
+28          rept_date_value = pd.to_datetime(args.reptdate_value, format="%Y%m%d")
+29          reptmon = rept_date_value.strftime("%m")
+30          lnnote_raw = read_sas(args.lnnote)
+31          df, _ = pyreadstat.read_sas7bdat(str(path))
+32          df.columns = [c.upper() for c in df.columns]
+33          return df
+34          wiis = read_sas(args.wiis)
+35          waq = read_sas(args.waq)
+36          wsp2 = read_sas(args.wsp2)
+37          nplobal = read_sas(args.nplobal)
+38          reptdate = pd.DataFrame({"REPTDATE": [rept_date_value]})
+39          loan = prepare_loan(lnnote_raw)
+40          loan_types = [128, 130, 380, 381, 700, 705, 131, 132, 720, 725]
+41          df = lnnote[
+42              (lnnote["REVERSED"].fillna("") != "Y")
+43              & lnnote["NOTENO"].notna()
+44              & (lnnote["PAIDIND"].fillna("") != "P")
+45              & lnnote["NTBRCH"].notna()
+46              & lnnote["LOANTYPE"].isin(loan_types)
+47          return df.sort_values(["ACCTNO", "NOTENO"])
+48          lnnote = prepare_lnnote(lnnote_raw)
+49          lnnote_types = [128, 130, 700, 705, 983, 993, 996, 380, 381, 131, 132, 720, 725]
+50          df = lnnote[
+51              (lnnote["REVERSED"].fillna("") != "Y")
+52              & lnnote["NOTENO"].notna()
+53              & lnnote["NTBRCH"].notna()
+54              & lnnote["LOANTYPE"].isin(lnnote_types)
+55          df = df.drop(columns=["NFEEAMT10", "NFEEAMT11", "NFEEAMT12"], errors="ignore")
+56          df = df.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
+57          df = df.drop_duplicates(subset=["ACCTNO"], keep="first")
+58          loanno_types = [128, 130, 380, 381, 700, 705, 983, 993, 996, 131, 132, 720, 725]
+59          loanno = lnnote[
+60              (lnnote["REVERSED"].fillna("") != "Y")
+61              & lnnote["NOTENO"].notna()
+62              & (lnnote["PAIDIND"].fillna("") != "P")
+63              & lnnote["NTBRCH"].notna()
+64              & lnnote["LOANTYPE"].isin(loanno_types)
+65          ][["ACCTNO", "NOTENO"]].copy()
+66          loanno = loanno.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False])
+67          loanno = loanno.drop_duplicates(subset=["ACCTNO"], keep="first")
+68          df = df.drop(columns=["NOTENO"], errors="ignore")
+69          df = df.merge(loanno, on="ACCTNO", how="left")
+70          return df.sort_values("ACCTNO")
+71          wiis_out = sas_like_merge_left(wiis, lnnote)
+72          base = base.sort_values("ACCTNO").copy()
+73          right = right.sort_values("ACCTNO").copy()
+74          overlap = [c for c in right.columns if c in base.columns and c != "ACCTNO"]
+75          base = base.drop(columns=overlap, errors="ignore")
+76          return base.merge(right, on="ACCTNO", how="left")
+77          waq_out = sas_like_merge_left(waq, lnnote)
+78          wsp2_out = sas_like_merge_left(wsp2, lnnote)
+79          nplobal_keep = [
+80          nplobal_base = nplobal[[c for c in nplobal_keep if c in nplobal.columns]].copy()
+81          wiis_acct = wiis[["ACCTNO"]].drop_duplicates().copy()
+82          wiis_acct["IN_WIIS"] = True
+83          nplobal6_base = nplobal_base.merge(wiis_acct, on="ACCTNO", how="outer")
+84          nplobal6_base["IN_WIIS"] = nplobal6_base["IN_WIIS"].fillna(False)
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py:165: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  nplobal6_base["IN_WIIS"] = nplobal6_base["IN_WIIS"].fillna(False)
+85          nplobal6 = sas_like_merge_left(nplobal6_base, lnnote)
+86          nplobal6.loc[nplobal6["IN_WIIS"], "BORSTAT"] = "W"
+87          nplobal6 = nplobal6.drop(columns=["IN_WIIS"], errors="ignore")
+88          loan_for_merge = loan.drop(columns=["LOANSTAT"], errors="ignore")
+89          overlap = [c for c in loan_for_merge.columns if c in nplobal6.columns and c != "ACCTNO"]
+90          nplobal6_no_overlap = nplobal6.drop(columns=overlap, errors="ignore")
+91          merged = nplobal6_no_overlap.merge(
+92              loan_for_merge,
+93              on="ACCTNO",
+94              how="outer",
+95              indicator=True,
+96          merged["REPTDATE"] = rept_date_value
+97          if "BORSTAT" not in merged.columns:
+98          merged = merged[merged["BORSTAT"].fillna("") != "Z"].copy()
+99          if "ISSUEDT" in merged.columns:
+100                 merged["ISSUEDT"]
+101                 .fillna(0)
+102                 .astype("int64")
+103                 .astype(str)
+104                 .str.zfill(11)
+105                 .str[:8]
+106             issue_str = (
+107             merged["ISSDTE"] = pd.to_datetime(issue_str, format="%m%d%Y", errors="coerce")
+108         if "CENSUS" in merged.columns:
+109             merged["CENSUS7"] = merged["CENSUS"].map(
+110                 lambda x: f"{x:8.2f}"[6:7] if pd.notna(x) else ""
+111         if "BLDATE" in merged.columns:
+112             merged["BLDATE"] = pd.to_datetime(merged["BLDATE"], errors="coerce")
+113         if "ACCTNO" in merged.columns:
+114             merged.loc[merged["ACCTNO"] == 8095419311, "BLDATE"] = pd.Timestamp("1997-01-21")
+115         biltot = merged.get("BILTOT", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+116         bilpay = merged.get("BILPAY", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+117         safe_bilpay = bilpay.replace(0, pd.NA)
+118             merged["BLDATE"].notna()
+119             & (bilpay > 0)
+120             & ((biltot / safe_bilpay) <= 0.01)
+121         nxt_mask = (
+122         merged.loc[nxt_mask, "BLDATE"] = merged.loc[nxt_mask].apply(next_bldate, axis=1)
+123         issdte = row.get("ISSDTE")
+124         bldate = row.get("BLDATE")
+125         if pd.isna(issdte) or pd.isna(bldate):
+126             return bldate
+127         merged["DAYS"] = (rept_date_value - merged["BLDATE"]).dt.days
+128         old_arr = merged.get("OLDNOTEDAYARR", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+129         noteno = merged.get("NOTENO", pd.Series(index=merged.index, dtype="float64"))
+130         arr_mask = (old_arr > 0) & (noteno >= 98000) & (noteno <= 98999)
+131         merged.loc[arr_mask & (merged["DAYS"] < 0), "DAYS"] = 0
+132         merged.loc[arr_mask, "DAYS"] = merged.loc[arr_mask, "DAYS"] + old_arr[arr_mask]
+133         intamt = merged.get("INTAMT", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+134         intearn2 = merged.get("INTEARN2", pd.Series(index=merged.index, dtype="float64")).fillna(0)
+135         merged["TERMCHG"] = 0.0
+136         merged.loc[intamt > 0.1, "TERMCHG"] = intamt[intamt > 0.1] + intearn2[intamt > 0.1]
+137         if "NOTENO" not in merged.columns:
+138             ~merged["BORSTAT"].fillna("").isin(["F", "I", "R", "Y", "W", "Z", "A"])
+139             & merged["NOTENO"].isin([98010, 98011, 99010, 99011])
+140         stat_mask = (
+141         merged.loc[stat_mask, "BORSTAT"] = "S"
+142         from_nplobal6 = merged["_merge"].isin(["both", "left_only"])
+143         no_loan_mask = from_nplobal6 & (merged["_merge"] == "left_only")
+144         if "LOANSTAT" not in merged.columns:
+145         merged.loc[no_loan_mask, "LOANSTAT"] = pd.NA
+146         merged.loc[no_loan_mask, "DAYS"] = 0
+147         merged.loc[no_loan_mask, "BORSTAT"] = ""
+148         merged.loc[from_nplobal6 & (merged["DAYS"] <= 0), "LOANSTAT"] = 1
+149         ] = "A"
+150         merged.loc[
+151             from_nplobal6
+152             & (merged["LOANSTAT"] == 1)
+153             & (merged["BORSTAT"].fillna("") == ""),
+154             "BORSTAT",
+155         user5 = merged.get("USER5", pd.Series(index=merged.index, dtype="object")).fillna("")
+156             (merged["DAYS"] > 89)
+157             | (~merged["BORSTAT"].fillna("").isin(["", "A", "C", "S", "T"]))
+158             | (user5 == "N")
+159         other_condition = (
+160         loan_rows = from_nplobal6 | (~from_nplobal6 & other_condition)
+161         ploan_rows = ~from_nplobal6 & ~other_condition
+162             ~from_nplobal6
+163             & other_condition
+164             & (merged["BORSTAT"].fillna("") == "Y")
+165             & (merged["DAYS"] <= 182)
+166         y_to_ploan = (
+167         loan_rows = loan_rows & ~y_to_ploan
+168         ploan_rows = ploan_rows | y_to_ploan
+169         keep_cols = [
+170         keep_cols = [c for c in keep_cols if c in merged.columns]
+171         sas = saspy.SASsession()
+Using SAS Config named: default
+SAS Connection established. Subprocess id is 809823
 
-PROC COMPARE BASE=OLD.WAQ COMPARE=NEW.WAQ;
-RUN;
+172         sas.saslib("OUT", path=str(args.output_dir))
 
-PROC COMPARE BASE=OLD.WSP2 COMPARE=NEW.WSP2;
-RUN;
-
-PROC COMPARE BASE=OLD.LOAN07 COMPARE=NEW.LOAN07;
-RUN;
-
-PROC COMPARE BASE=OLD.PLOAN07 COMPARE=NEW.PLOAN07;
-RUN;
+21   
+22   libname OUT    'host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF'  ;
+NOTE: Libref OUT was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: /sas/python/virt_edw/host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF
+23   
+173         write_sas7bdat(sas, reptdate, "reptdate")
+174         df = df.copy()
+175         df.columns = [c.upper() for c in df.columns]
+176         sas.df2sd(df, table=table_name.lower(), libref=libref)
+177         write_sas7bdat(sas, wiis_out, "wiis")
+178         write_sas7bdat(sas, waq_out, "waq")
+179         write_sas7bdat(sas, wsp2_out, "wsp2")
+180         write_sas7bdat(sas, merged.loc[loan_rows, keep_cols], f"loan{reptmon}")
+/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py:1842: UserWarning: Note that Indexes are not transferred over as columns. Only actual columns are transferred
+  warnings.warn("Note that Indexes are not transferred over as columns. Only actual columns are transferred")
+181         write_sas7bdat(sas, merged.loc[ploan_rows, keep_cols], f"ploan{reptmon}")
+/sas/python/virt_edw/lib/python3.9/site-packages/saspy/sasiostdio.py:1842: UserWarning: Note that Indexes are not transferred over as columns. Only actual columns are transferred
+  warnings.warn("Note that Indexes are not transferred over as columns. Only actual columns are transferred")
+182         sas.endsas()
+SAS Connection terminated. Subprocess id was 809823
+183         print(f"REPTDATE : {args.reptdate_value}")
+REPTDATE : 20260712
+184         print(f"Created  : {args.output_dir / 'reptdate.sas7bdat'}")
+Created  : host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF/reptdate.sas7bdat
+185         print(f"Created  : {args.output_dir / 'wiis.sas7bdat'}")
+Created  : host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF/wiis.sas7bdat
+186         print(f"Created  : {args.output_dir / 'waq.sas7bdat'}")
+Created  : host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF/waq.sas7bdat
+187         print(f"Created  : {args.output_dir / 'wsp2.sas7bdat'}")
+Created  : host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF/wsp2.sas7bdat
+188         print(f"Created  : {args.output_dir / f'loan{reptmon}.sas7bdat'}")
+Created  : host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF/loan07.sas7bdat
+189         print(f"Created  : {args.output_dir / f'ploan{reptmon}.sas7bdat'}")
+Created  : host_pq/mis/input/NPL_HP/PIBB_SASDATA_WOFF/ploan07.sas7bdat
