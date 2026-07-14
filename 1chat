@@ -1,10 +1,5 @@
 
 
-WOF03 COMPARE REPORT 
-
-PROC COMPARE OLD.ploan07 VS NEW.ploan07 
-
-
 The CONTENTS Procedure
 
 
@@ -1778,11 +1773,6 @@ YTDEARNS Num 8
 
 
 
-WOF03 COMPARE REPORT 
-
-PROC COMPARE OLD.ploan07 VS NEW.ploan07 
-
-
 The CONTENTS Procedure
 
 
@@ -3544,11 +3534,6 @@ YTDEARNS Num 8
 
 
 
-WOF03 COMPARE REPORT 
-
-PROC COMPARE OLD.ploan07 VS NEW.ploan07 
-
-
 The CONTENTS Procedure
 
 
@@ -5304,11 +5289,6 @@ YTDEARNS Num 8
 
 
 
-WOF03 COMPARE REPORT 
-
-PROC COMPARE OLD.ploan07 VS NEW.ploan07 
-
-
 The CONTENTS Procedure
 
 
@@ -5577,11 +5557,6 @@ USER5 Char 1
 VINNO Char 20 
 
 
-
-
-WOF03 COMPARE REPORT 
-
-PROC COMPARE OLD.ploan07 VS NEW.ploan07 
 
 
 The CONTENTS Procedure
