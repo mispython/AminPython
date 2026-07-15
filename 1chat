@@ -1,31 +1,32 @@
-libname old '/dwh/test';
-libname new '/dwh/compare';
-
-proc contents data=old.wiis out=old_vars(keep=name type length format varnum) noprint;
-run;
-
-proc contents data=new.wiis out=new_vars(keep=name type length format varnum) noprint;
-run;
-
-proc sort data=old_vars; by name; run;
-proc sort data=new_vars; by name; run;
-
-data missing_in_new;
-    merge old_vars(in=a rename=(type=old_type length=old_length format=old_format varnum=old_varnum))
-          new_vars(in=b rename=(type=new_type length=new_length format=new_format varnum=new_varnum));
-    by name;
-
-    if a and not b;
-run;
-
 filename rpt '/dwh/compare/wiis_missing_7_variables.txt';
 
 proc printto print=rpt new;
 run;
 
-proc print data=missing_in_new noobs;
-    title "7 variables in OLD.WIIS but missing in NEW.WIIS";
+libname old '/dwh/test';
+libname new '/dwh/compare';
+
+title "OLD library members";
+proc datasets lib=old memtype=data;
 run;
+quit;
+
+title "NEW library members";
+proc datasets lib=new memtype=data;
+run;
+quit;
+
+title "OLD.WIIS contents";
+proc datasets lib=old nolist;
+    contents data=wiis varnum;
+run;
+quit;
+
+title "NEW.WIIS contents";
+proc datasets lib=new nolist;
+    contents data=wiis varnum;
+run;
+quit;
 
 proc printto;
 run;
