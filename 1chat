@@ -1,583 +1,109 @@
-#!/usr/bin/env python3
-from __future__ import annotations
-
-import argparse
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
-import pyreadstat
-
-
-@dataclass
-class VarSpec:
-    name: str
-    typ: str
-    length: int
-
-
-LOAN_TYPES_LOAN = {128, 130, 380, 381, 700, 705, 131, 132, 720, 725}
-LOAN_TYPES_LNNOTE = {128, 130, 700, 705, 983, 993, 996, 380, 381, 131, 132, 720, 725}
-
-
-LOAN_PLOAN_SCHEMA = [
-    VarSpec("LOANTYPE", "num", 4),
-    VarSpec("NTBRCH", "num", 4),
-    VarSpec("NOTETERM", "num", 4),
-    VarSpec("ISSDTE", "num", 4),
-    VarSpec("BLDATE", "num", 4),
-    VarSpec("DAYS", "num", 4),
-    VarSpec("LOANSTAT", "num", 3),
-    VarSpec("ACCTNO", "num", 8),
-    VarSpec("NOTENO", "num", 8),
-    VarSpec("SPP1", "num", 8),
-    VarSpec("SPP2", "num", 8),
-    VarSpec("NETBALP", "num", 8),
-    VarSpec("CURBALP", "num", 8),
-    VarSpec("NAME", "char", 24),
-    VarSpec("IISP", "num", 8),
-    VarSpec("UHCP", "num", 8),
-    VarSpec("OIP", "num", 8),
-    VarSpec("EXIST", "char", 1),
-    VarSpec("PENDBRH", "num", 8),
-    VarSpec("CURBAL", "num", 8),
-    VarSpec("APPVALUE", "num", 8),
-    VarSpec("COSTCTR", "num", 8),
-    VarSpec("ORGBAL", "num", 8),
-    VarSpec("NETPROC", "num", 8),
-    VarSpec("INTRATE", "num", 8),
-    VarSpec("ACCRUAL", "num", 8),
-    VarSpec("BORSTAT", "char", 1),
-    VarSpec("MARKETVL", "num", 8),
-    VarSpec("EARNTERM", "num", 8),
-    VarSpec("FEETOT2", "num", 8),
-    VarSpec("FEEAMT3", "num", 8),
-    VarSpec("BILPAY", "num", 8),
-    VarSpec("FEEAMT4", "num", 8),
-    VarSpec("VINNO", "char", 20),
-    VarSpec("FEEYTD", "num", 8),
-    VarSpec("FEEPDYTD", "num", 8),
-    VarSpec("FEEAMT8", "num", 8),
-    VarSpec("USER5", "char", 1),
-    VarSpec("FEEAMTA", "num", 8),
-    VarSpec("FEEAMT", "num", 8),
-    VarSpec("FEEAMT5", "num", 8),
-    VarSpec("OLDNOTEDAYARR", "num", 8),
-    VarSpec("CENSUS7", "char", 8),
-    VarSpec("TERMCHG", "num", 8),
-]
-
-
-def clean_colname(name: str) -> str:
-    return str(name).strip().upper()
-
-
-def parse_reptdate(value: str) -> datetime:
-    return datetime.strptime(value, "%Y%m%d")
-
-
-def sas_date(dt: datetime) -> int:
-    return (pd.Timestamp(dt.date()) - pd.Timestamp("1960-01-01")).days
-
-
-def read_sas(path: Path) -> tuple[pd.DataFrame, list[VarSpec]]:
-    df, meta = pyreadstat.read_sas7bdat(
-        str(path),
-        disable_datetime_conversion=True,
-    )
-
-    df.columns = [clean_colname(c) for c in df.columns]
-
-    schema = []
-    storage_width = getattr(meta, "variable_storage_width", {}) or {}
-    readstat_types = getattr(meta, "readstat_variable_types", {}) or {}
-
-    for col in df.columns:
-        typ0 = readstat_types.get(col) or readstat_types.get(col.lower())
-
-        if typ0 == "string" or df[col].dtype == object:
-            typ = "char"
-            length = storage_width.get(col) or storage_width.get(col.lower()) or 1
-            length = int(length)
-        else:
-            typ = "num"
-            length = 8
-
-        schema.append(VarSpec(col, typ, length))
-
-    return df, schema
-
-
-def is_not_missing(s: pd.Series) -> pd.Series:
-    if s.dtype == object:
-        return s.notna() & (s.astype(str).str.strip() != "")
-    return s.notna()
-
-
-def num_series(df: pd.DataFrame, col: str, default=np.nan) -> pd.Series:
-    col = clean_colname(col)
-    if col not in df.columns:
-        return pd.Series(default, index=df.index)
-    return pd.to_numeric(df[col], errors="coerce")
-
-
-def char_series(df: pd.DataFrame, col: str, default="") -> pd.Series:
-    col = clean_colname(col)
-    if col not in df.columns:
-        return pd.Series(default, index=df.index, dtype=object)
-    return df[col].fillna("").astype(str).str.strip()
-
-
-def round_tiny_numeric_noise(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-
-    for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            df[col] = df[col].round(10)
-
-    return df
-
-
-def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
-    df = lnnote.copy()
-
-    mask = (
-        (char_series(df, "REVERSED") != "Y")
-        & is_not_missing(num_series(df, "NOTENO"))
-        & (char_series(df, "PAIDIND") != "P")
-        & is_not_missing(num_series(df, "NTBRCH"))
-        & num_series(df, "LOANTYPE").isin(LOAN_TYPES_LOAN)
-    )
-
-    df = df.loc[mask].copy()
-    df = df.sort_values(["ACCTNO", "NOTENO"], kind="mergesort")
-    return df.reset_index(drop=True)
-
-
-def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
-    df = lnnote.copy()
-
-    mask = (
-        (char_series(df, "REVERSED") != "Y")
-        & is_not_missing(num_series(df, "NOTENO"))
-        & is_not_missing(num_series(df, "NTBRCH"))
-        & num_series(df, "LOANTYPE").isin(LOAN_TYPES_LNNOTE)
-    )
-
-    df = df.loc[mask].copy()
-
-    # SAS only drops these 3. Other LNNOTE vars must remain.
-    df = df.drop(columns=["NFEEAMT10", "NFEEAMT11", "NFEEAMT12"], errors="ignore")
-
-    df = df.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False], kind="mergesort")
-    df = df.drop_duplicates(subset=["ACCTNO"], keep="first").reset_index(drop=True)
-
-    loan_mask = (
-        (char_series(lnnote, "REVERSED") != "Y")
-        & is_not_missing(num_series(lnnote, "NOTENO"))
-        & (char_series(lnnote, "PAIDIND") != "P")
-        & is_not_missing(num_series(lnnote, "NTBRCH"))
-        & num_series(lnnote, "LOANTYPE").isin(LOAN_TYPES_LNNOTE)
-    )
-
-    loanno = lnnote.loc[loan_mask, ["ACCTNO", "NOTENO"]].copy()
-    loanno = loanno.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False], kind="mergesort")
-    loanno = loanno.drop_duplicates(subset=["ACCTNO"], keep="first")
-
-    out = df.merge(loanno, on="ACCTNO", how="left", suffixes=("", "_LOANNO"))
-
-    if "NOTENO_LOANNO" in out.columns:
-        out["NOTENO"] = out["NOTENO_LOANNO"].where(out["NOTENO_LOANNO"].notna(), out["NOTENO"])
-        out = out.drop(columns=["NOTENO_LOANNO"])
-
-    return out.reset_index(drop=True)
-
-
-def sas_merge_keep_left_rows(base: pd.DataFrame, right: pd.DataFrame, by: str = "ACCTNO") -> pd.DataFrame:
-    by = clean_colname(by)
-
-    base = base.copy()
-    right = right.copy()
-
-    base.columns = [clean_colname(c) for c in base.columns]
-    right.columns = [clean_colname(c) for c in right.columns]
-
-    base = base.sort_values(by, kind="mergesort").reset_index(drop=True)
-    right = right.sort_values(by, kind="mergesort").drop_duplicates(subset=[by], keep="first").reset_index(drop=True)
-
-    right["_RIGHT_MATCH_"] = 1
-
-    merged = base.merge(right, on=by, how="left", suffixes=("_BASE", ""))
-    matched = merged["_RIGHT_MATCH_"].eq(1)
-    merged = merged.drop(columns=["_RIGHT_MATCH_"])
-
-    overlap = [c for c in base.columns if c in right.columns and c != by]
-
-    for col in overlap:
-        base_col = f"{col}_BASE"
-        if base_col in merged.columns:
-            merged[col] = merged[col].where(matched, merged[base_col])
-            merged = merged.drop(columns=[base_col])
-
-    return merged.reset_index(drop=True)
-
-
-def schema_with_added_columns(base_schema: list[VarSpec], df: pd.DataFrame) -> list[VarSpec]:
-    existing = {s.name for s in base_schema}
-    schema = list(base_schema)
-
-    for col in df.columns:
-        col = clean_colname(col)
-        if col in existing:
-            continue
-
-        if df[col].dtype == object:
-            length = int(df[col].fillna("").astype(str).str.len().max() or 1)
-            schema.append(VarSpec(col, "char", max(length, 1)))
-        else:
-            schema.append(VarSpec(col, "num", 8))
-
-        existing.add(col)
-
-    return schema
-
-
-def mmddyyyy_to_sas_date(value) -> float:
-    if pd.isna(value):
-        return np.nan
-
-    try:
-        s = str(int(float(value))).zfill(11)
-    except Exception:
-        s = str(value).strip().zfill(11)
-
-    raw = s[:8]
-
-    try:
-        dt = datetime.strptime(raw, "%m%d%Y")
-        return sas_date(dt)
-    except Exception:
-        return np.nan
-
-
-def next_bldate(row) -> float:
-    bl = row.get("BLDATE", np.nan)
-    iss = row.get("ISSDTE", np.nan)
-
-    if pd.isna(bl) or pd.isna(iss):
-        return bl
-
-    try:
-        bl_dt = pd.Timestamp("1960-01-01") + pd.to_timedelta(int(bl), unit="D")
-        iss_dt = pd.Timestamp("1960-01-01") + pd.to_timedelta(int(iss), unit="D")
-    except Exception:
-        return bl
-
-    dd = iss_dt.day
-    mm = bl_dt.month + 1
-    yy = bl_dt.year
-
-    if mm > 12:
-        mm = 1
-        yy += 1
-
-    last_day = pd.Timestamp(year=yy, month=mm, day=1) + pd.offsets.MonthEnd(0)
-    dd = min(dd, last_day.day)
-
-    return sas_date(datetime(yy, mm, dd))
-
-
-def build_nplobal6(nplobal: pd.DataFrame, lnnote: pd.DataFrame, wiis: pd.DataFrame) -> pd.DataFrame:
-    keep_cols = [
-        "ACCTNO", "NOTENO", "NTBRCH", "NAME", "LOANTYPE", "LOANSTAT",
-        "IISP", "OIP", "SPP1", "SPP2", "CURBALP", "NETBALP", "EXIST", "UHCP",
-    ]
-
-    nplobal_keep = nplobal[[c for c in keep_cols if c in nplobal.columns]].copy()
-    nplobal_keep["_A_"] = 1
-
-    lnnote2 = lnnote.copy()
-    lnnote2["_LNNOTE_"] = 1
-
-    wiis_keys = wiis[["ACCTNO"]].drop_duplicates().copy()
-    wiis_keys["_B_"] = 1
-
-    merged = nplobal_keep.merge(lnnote2, on="ACCTNO", how="outer", suffixes=("_NPL", ""))
-    merged = merged.merge(wiis_keys, on="ACCTNO", how="outer")
-
-    merged["_A_"] = merged["_A_"].fillna(0)
-    merged["_B_"] = merged["_B_"].fillna(0)
-
-    for col in list(merged.columns):
-        if col.endswith("_NPL"):
-            base = col[:-4]
-            if base in merged.columns:
-                merged[base] = merged[base].where(merged[base].notna(), merged[col])
-                merged = merged.drop(columns=[col])
-            else:
-                merged = merged.rename(columns={col: base})
-
-    if "BORSTAT" not in merged.columns:
-        merged["BORSTAT"] = ""
-
-    merged.loc[merged["_B_"].eq(1), "BORSTAT"] = "W"
-    merged = merged[(merged["_A_"].eq(1)) | (merged["_B_"].eq(1))].copy()
-
-    merged = merged.drop(columns=["_A_", "_B_", "_LNNOTE_"], errors="ignore")
-    return merged.reset_index(drop=True)
-
-
-def build_loan_ploan(
-    nplobal6: pd.DataFrame,
-    loan: pd.DataFrame,
-    reptdate_dt: datetime,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    reptdate_num = sas_date(reptdate_dt)
-
-    left = nplobal6.copy()
-    right = loan.drop(columns=["LOANSTAT"], errors="ignore").copy()
-
-    left["_AA_"] = 1
-    right["_BB_"] = 1
-
-    merged = left.merge(right, on="ACCTNO", how="outer", suffixes=("_NPL", ""))
-
-    merged["_AA_"] = merged["_AA_"].fillna(0)
-    merged["_BB_"] = merged["_BB_"].fillna(0)
-
-    for col in list(merged.columns):
-        if col.endswith("_NPL"):
-            base = col[:-4]
-            if base in merged.columns:
-                merged[base] = merged[base].where(merged["_BB_"].eq(1), merged[col])
-                merged = merged.drop(columns=[col])
-            else:
-                merged = merged.rename(columns={col: base})
-
-    if "BORSTAT" not in merged.columns:
-        merged["BORSTAT"] = ""
-
-    merged = merged[char_series(merged, "BORSTAT") != "Z"].copy()
-
-    merged["ISSDTE"] = merged.get("ISSUEDT", np.nan).apply(mmddyyyy_to_sas_date)
-
-    if "CENSUS" in merged.columns:
-        merged["CENSUS7"] = merged["CENSUS"].apply(
-            lambda x: str(x).strip()[6:7] if pd.notna(x) and len(str(x).strip()) >= 7 else ""
-        )
-    else:
-        merged["CENSUS7"] = ""
-
-    merged.loc[num_series(merged, "ACCTNO").eq(8095419311), "BLDATE"] = sas_date(datetime(1997, 1, 21))
-
-    if "BILTOT" not in merged.columns:
-        merged["BILTOT"] = np.nan
-
-    merged.loc[merged["BILTOT"].isna(), "BILTOT"] = 0
-
-    has_bldate = num_series(merged, "BLDATE").gt(0)
-
-    need_next = (
-        has_bldate
-        & num_series(merged, "BILPAY").gt(0)
-        & ((num_series(merged, "BILTOT") / num_series(merged, "BILPAY")) <= 0.01)
-    )
-
-    if need_next.any():
-        merged.loc[need_next, "BLDATE"] = merged.loc[need_next].apply(next_bldate, axis=1)
-
-    merged["DAYS"] = np.nan
-    merged.loc[has_bldate, "DAYS"] = reptdate_num - num_series(merged.loc[has_bldate], "BLDATE")
-
-    old_arr = num_series(merged, "OLDNOTEDAYARR").fillna(0)
-    noteno = num_series(merged, "NOTENO")
-    adj = old_arr.gt(0) & noteno.between(98000, 98999)
-
-    merged.loc[adj & num_series(merged, "DAYS").lt(0), "DAYS"] = 0
-    merged.loc[adj, "DAYS"] = num_series(merged.loc[adj], "DAYS").fillna(0) + old_arr.loc[adj]
-
-    intamt = num_series(merged, "INTAMT").fillna(0)
-    intearn2 = num_series(merged, "INTEARN2").fillna(0)
-    merged["TERMCHG"] = np.where(intamt.gt(0.1), intamt + intearn2, 0)
-
-    borstat = char_series(merged, "BORSTAT")
-    special_note = num_series(merged, "NOTENO").isin([98010, 98011, 99010, 99011])
-    merged.loc[(~borstat.isin(["F", "I", "R", "Y", "W", "Z", "A"])) & special_note, "BORSTAT"] = "S"
-
-    loan_rows = []
-    ploan_rows = []
-
-    for _, row in merged.iterrows():
-        aa = row.get("_AA_", 0) == 1
-        bb = row.get("_BB_", 0) == 1
-
-        out = row.copy()
-
-        if aa:
-            if not bb:
-                out["LOANSTAT"] = np.nan
-                out["DAYS"] = 0
-                out["BORSTAT"] = ""
-            elif pd.notna(out.get("DAYS")) and out.get("DAYS") <= 0:
-                out["LOANSTAT"] = 1
-
-            if out.get("LOANSTAT") == 1 and str(out.get("BORSTAT", "")).strip() == "":
-                out["BORSTAT"] = "A"
-
-            loan_rows.append(out)
-        else:
-            days = out.get("DAYS", np.nan)
-            bstat = str(out.get("BORSTAT", "")).strip()
-            user5 = str(out.get("USER5", "")).strip()
-
-            if (
-                (pd.notna(days) and days > 89)
-                or bstat not in ["", "A", "C", "S", "T"]
-                or user5 == "N"
-            ):
-                if bstat == "Y" and pd.notna(days) and days <= 182:
-                    ploan_rows.append(out)
-                else:
-                    loan_rows.append(out)
-            else:
-                ploan_rows.append(out)
-
-    loan_out = pd.DataFrame(loan_rows)
-    ploan_out = pd.DataFrame(ploan_rows)
-
-    loan_out = enforce_schema(loan_out, LOAN_PLOAN_SCHEMA)
-    ploan_out = enforce_schema(ploan_out, LOAN_PLOAN_SCHEMA)
-
-    return loan_out, ploan_out
-
-
-def enforce_schema(df: pd.DataFrame, schema: list[VarSpec]) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = [clean_colname(c) for c in df.columns]
-
-    for spec in schema:
-        if spec.name not in df.columns:
-            if spec.typ == "char":
-                df[spec.name] = ""
-            else:
-                df[spec.name] = np.nan
-
-    out = df[[spec.name for spec in schema]].copy()
-
-    for spec in schema:
-        if spec.typ == "char":
-            out[spec.name] = out[spec.name].fillna("").astype(str).str.slice(0, spec.length)
-        else:
-            out[spec.name] = pd.to_numeric(out[spec.name], errors="coerce")
-
-    return out
-
-
-def write_sas7bdat_with_saspy(
-    df: pd.DataFrame,
-    output_dir: Path,
-    table: str,
-    schema: list[VarSpec],
-) -> None:
-    import saspy
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    df = enforce_schema(df, schema)
-    df = round_tiny_numeric_noise(df)
-
-    sas = saspy.SASsession()
-    sas.saslib("OUT", path=str(output_dir))
-
-    temp_table = f"_{table}_tmp"
-
-    sas.df2sd(df, table=temp_table, libref="OUT")
-
-    length_stmt = "length " + " ".join(
-        f"{s.name} ${s.length}" if s.typ == "char" else f"{s.name} {s.length}"
-        for s in schema
-    ) + ";"
-
-    retain_stmt = "retain " + " ".join(s.name for s in schema) + ";"
-
-    code = f"""
-data OUT.{table};
-    {length_stmt}
-    {retain_stmt}
-    set OUT.{temp_table};
-run;
-
-proc datasets lib=OUT nolist;
-    delete {temp_table};
-quit;
-"""
-    sas.submit(code)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="EIFMNP02 converted Python job")
-
-    parser.add_argument("--reptdate-value", required=True)
-    parser.add_argument("--lnnote", type=Path, required=True)
-    parser.add_argument("--wiis", type=Path, required=True)
-    parser.add_argument("--waq", type=Path, required=True)
-    parser.add_argument("--wsp2", type=Path, required=True)
-    parser.add_argument("--nplobal", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
-
-    args = parser.parse_args()
-
-    reptdate_dt = parse_reptdate(args.reptdate_value)
-    reptmon = f"{reptdate_dt.month:02d}"
-
-    lnnote_raw, _ = read_sas(args.lnnote)
-    wiis_raw, wiis_schema = read_sas(args.wiis)
-    waq_raw, waq_schema = read_sas(args.waq)
-    wsp2_raw, wsp2_schema = read_sas(args.wsp2)
-    nplobal_raw, _ = read_sas(args.nplobal)
-
-    loan = prepare_loan(lnnote_raw)
-    lnnote = prepare_lnnote(lnnote_raw)
-
-    wiis_out = sas_merge_keep_left_rows(wiis_raw, lnnote, by="ACCTNO")
-    waq_out = sas_merge_keep_left_rows(waq_raw, lnnote, by="ACCTNO")
-    wsp2_out = sas_merge_keep_left_rows(wsp2_raw, lnnote, by="ACCTNO")
-
-    wiis_schema = schema_with_added_columns(wiis_schema, wiis_out)
-    waq_schema = schema_with_added_columns(waq_schema, waq_out)
-    wsp2_schema = schema_with_added_columns(wsp2_schema, wsp2_out)
-
-    wiis_out = round_tiny_numeric_noise(wiis_out)
-    waq_out = round_tiny_numeric_noise(waq_out)
-    wsp2_out = round_tiny_numeric_noise(wsp2_out)
-
-    nplobal6 = build_nplobal6(nplobal_raw, lnnote, wiis_out)
-    loan_out, ploan_out = build_loan_ploan(nplobal6, loan, reptdate_dt)
-
-    loan_out = round_tiny_numeric_noise(loan_out)
-    ploan_out = round_tiny_numeric_noise(ploan_out)
-
-    reptdate_df = pd.DataFrame({"REPTDATE": [sas_date(reptdate_dt)]})
-    reptdate_schema = [VarSpec("REPTDATE", "num", 8)]
-
-    write_sas7bdat_with_saspy(reptdate_df, args.output_dir, "reptdate", reptdate_schema)
-    write_sas7bdat_with_saspy(wiis_out, args.output_dir, "wiis", wiis_schema)
-    write_sas7bdat_with_saspy(waq_out, args.output_dir, "waq", waq_schema)
-    write_sas7bdat_with_saspy(wsp2_out, args.output_dir, "wsp2", wsp2_schema)
-    write_sas7bdat_with_saspy(loan_out, args.output_dir, f"loan{reptmon}", LOAN_PLOAN_SCHEMA)
-    write_sas7bdat_with_saspy(ploan_out, args.output_dir, f"ploan{reptmon}", LOAN_PLOAN_SCHEMA)
-
-    print("EIFMNP02 completed")
-    print(f"REPTDATE : {args.reptdate_value}")
-    print(f"OUTPUT   : {args.output_dir}")
-    print(f"WIIS     : {len(wiis_out)} rows, {len(wiis_out.columns)} columns")
-    print(f"WAQ      : {len(waq_out)} rows, {len(waq_out.columns)} columns")
-    print(f"WSP2     : {len(wsp2_out)} rows, {len(wsp2_out.columns)} columns")
-    print(f"LOAN{reptmon}  : {len(loan_out)} rows")
-    print(f"PLOAN{reptmon} : {len(ploan_out)} rows")
-
-
-if __name__ == "__main__":
-    main()
+source /sas/python/virt_edw/bin/activate
+[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ ^C
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP02.py
+**********************************************************
+* Job:      EIFMNP02                                     *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Thursday, July 16, 2026, 10:52:36 AM         *
+**********************************************************
+Program start : 2026/07/16 10:52:46
+
+1       from __future__ import annotations
+2       import argparse
+3       from dataclasses import dataclass
+4       from datetime import datetime
+5       from pathlib import Path
+6       import numpy as np
+7       import pandas as pd
+8       import pyreadstat
+9       @dataclass
+10      class VarSpec:
+11          name: str
+12          typ: str
+13          length: int
+14      LOAN_TYPES_LOAN = {128, 130, 380, 381, 700, 705, 131, 132, 720, 725}
+15      LOAN_TYPES_LNNOTE = {128, 130, 700, 705, 983, 993, 996, 380, 381, 131, 132, 720, 725}
+16          VarSpec("LOANTYPE", "num", 4),
+17          VarSpec("NTBRCH", "num", 4),
+18          VarSpec("NOTETERM", "num", 4),
+19          VarSpec("ISSDTE", "num", 4),
+20          VarSpec("BLDATE", "num", 4),
+21          VarSpec("DAYS", "num", 4),
+22          VarSpec("LOANSTAT", "num", 3),
+23          VarSpec("ACCTNO", "num", 8),
+24          VarSpec("NOTENO", "num", 8),
+25          VarSpec("SPP1", "num", 8),
+26          VarSpec("SPP2", "num", 8),
+27          VarSpec("NETBALP", "num", 8),
+28          VarSpec("CURBALP", "num", 8),
+29          VarSpec("NAME", "char", 24),
+30          VarSpec("IISP", "num", 8),
+31          VarSpec("UHCP", "num", 8),
+32          VarSpec("OIP", "num", 8),
+33          VarSpec("EXIST", "char", 1),
+34          VarSpec("PENDBRH", "num", 8),
+35          VarSpec("CURBAL", "num", 8),
+36          VarSpec("APPVALUE", "num", 8),
+37          VarSpec("COSTCTR", "num", 8),
+38          VarSpec("ORGBAL", "num", 8),
+39          VarSpec("NETPROC", "num", 8),
+40          VarSpec("INTRATE", "num", 8),
+41          VarSpec("ACCRUAL", "num", 8),
+42          VarSpec("BORSTAT", "char", 1),
+43          VarSpec("MARKETVL", "num", 8),
+44          VarSpec("EARNTERM", "num", 8),
+45          VarSpec("FEETOT2", "num", 8),
+46          VarSpec("FEEAMT3", "num", 8),
+47          VarSpec("BILPAY", "num", 8),
+48          VarSpec("FEEAMT4", "num", 8),
+49          VarSpec("VINNO", "char", 20),
+50          VarSpec("FEEYTD", "num", 8),
+51          VarSpec("FEEPDYTD", "num", 8),
+52          VarSpec("FEEAMT8", "num", 8),
+53          VarSpec("USER5", "char", 1),
+54          VarSpec("FEEAMTA", "num", 8),
+55          VarSpec("FEEAMT", "num", 8),
+56          VarSpec("FEEAMT5", "num", 8),
+57          VarSpec("OLDNOTEDAYARR", "num", 8),
+58          VarSpec("CENSUS7", "char", 8),
+59          VarSpec("TERMCHG", "num", 8),
+60      LOAN_PLOAN_SCHEMA = [
+61      def clean_colname(name: str) -> str:
+62      def parse_reptdate(value: str) -> datetime:
+63      def sas_date(dt: datetime) -> int:
+64      def read_sas(path: Path) -> tuple[pd.DataFrame, list[VarSpec]]:
+65      def is_not_missing(s: pd.Series) -> pd.Series:
+66      def num_series(df: pd.DataFrame, col: str, default=np.nan) -> pd.Series:
+67      def char_series(df: pd.DataFrame, col: str, default="") -> pd.Series:
+68      def round_tiny_numeric_noise(df: pd.DataFrame) -> pd.DataFrame:
+69      def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
+70      def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
+71      def sas_merge_keep_left_rows(base: pd.DataFrame, right: pd.DataFrame, by: str = "ACCTNO") -> pd.DataFrame:
+72      def schema_with_added_columns(base_schema: list[VarSpec], df: pd.DataFrame) -> list[VarSpec]:
+73      def mmddyyyy_to_sas_date(value) -> float:
+74      def next_bldate(row) -> float:
+75      def build_nplobal6(nplobal: pd.DataFrame, lnnote: pd.DataFrame, wiis: pd.DataFrame) -> pd.DataFrame:
+76      def build_loan_ploan(
+77      def enforce_schema(df: pd.DataFrame, schema: list[VarSpec]) -> pd.DataFrame:
+78      def write_sas7bdat_with_saspy(
+79      def main() -> None:
+80      if __name__ == "__main__":
+81          main()
+82          parser = argparse.ArgumentParser(description="EIFMNP02 converted Python job")
+83          parser.add_argument("--reptdate-value", required=True)
+84          parser.add_argument("--lnnote", type=Path, required=True)
+85          parser.add_argument("--wiis", type=Path, required=True)
+86          parser.add_argument("--waq", type=Path, required=True)
+87          parser.add_argument("--wsp2", type=Path, required=True)
+88          parser.add_argument("--nplobal", type=Path, required=True)
+89          parser.add_argument("--output-dir", type=Path, required=True)
+90          args = parser.parse_args()
+usage: EIFMNP02.py [-h] --reptdate-value REPTDATE_VALUE --lnnote LNNOTE --wiis WIIS --waq WAQ --wsp2 WSP2 --nplobal NPLOBAL --output-dir OUTPUT_DIR
+EIFMNP02.py: error: the following arguments are required: --reptdate-value, --lnnote, --wiis, --waq, --wsp2, --nplobal, --output-dir
+
+Total time elapsed : 00:00:00
+Memory used: 2.92 MB
+Program end : 2026/07/16 10:52:46
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
