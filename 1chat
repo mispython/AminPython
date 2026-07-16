@@ -1,54 +1,43 @@
-source /sas/python/virt_edw/bin/activate
-[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py
-**********************************************************
-* Job:      EIIWOF03_PAS                                 *
-* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
-*                                                        *
-* Modified: Thursday, July 16, 2026, 10:23:57 AM         *
-**********************************************************
-Program start : 2026/07/16 10:24:05
+                                     __________________________________________________________                                     
 
-1       from __future__ import annotations
-2       import argparse
-3       import subprocess
-4       import sys
-5       from datetime import date, timedelta
-6       from pathlib import Path
-7       DEFAULT_INPUT_DIR = Path("/host_pq/mis/input/NPL_HP")
-8       DEFAULT_PROGRAM = Path("/Data_Warehouse/MIS/XMIS/EIFMNP02.py")
-9       DEFAULT_LNNOTE = DEFAULT_INPUT_DIR / "pibb_lnnote.sas7bdat"
-10      DEFAULT_WIIS = DEFAULT_INPUT_DIR / "wiis.sas7bdat"
-11      DEFAULT_WAQ = DEFAULT_INPUT_DIR / "waq.sas7bdat"
-12      DEFAULT_WSP2 = DEFAULT_INPUT_DIR / "wsp2.sas7bdat"
-13      DEFAULT_NPLOBAL = DEFAULT_INPUT_DIR / "nplobal.sas7bdat"
-14      DEFAULT_OUTPUT_DIR = DEFAULT_INPUT_DIR / "PIBB_SASDATA_WOFF"
-15      def default_reptdate_value() -> str:
-16      def main() -> None:
-17      if __name__ == "__main__":
-18          main()
-19          parser = argparse.ArgumentParser(description="EIIWOF03 - PIBB wrapper job")
-20          parser.add_argument("--reptdate-value", default=default_reptdate_value())
-21          return (date.today() - timedelta(days=1)).strftime("%Y%m%d")
-22          parser.add_argument("--lnnote", type=Path, default=DEFAULT_LNNOTE)
-23          parser.add_argument("--wiis", type=Path, default=DEFAULT_WIIS)
-24          parser.add_argument("--waq", type=Path, default=DEFAULT_WAQ)
-25          parser.add_argument("--wsp2", type=Path, default=DEFAULT_WSP2)
-26          parser.add_argument("--nplobal", type=Path, default=DEFAULT_NPLOBAL)
-27          parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-28          parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
-29          args = parser.parse_args()
-30          for path in [args.lnnote, args.wiis, args.waq, args.wsp2, args.nplobal, args.program]:
-31              if not path.exists():
-32                  raise FileNotFoundError(f"Missing file: {path}")
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py", line 72, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIIWOF03_PAS.py", line 42, in main
-    raise FileNotFoundError(f"Missing file: {path}")
-FileNotFoundError: Missing file: /host_pq/mis/input/NPL_HP/pibb_lnnote.sas7bdat
 
-Total time elapsed : 00:00:00
-Memory used: 0.65 MB
-Program end : 2026/07/16 10:24:05
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
+                                                       The COMPARE Procedure                                                        
+                                                Comparison of OLD.WIIS with NEW.WIIS                                                
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                               Value Comparison Results for Variables                                               
+                                                                                                                                    
+                                     __________________________________________________________                                     
+                                                ||       Base    Compare                                                            
+                                            Obs ||     FEEDUE     FEEDUE      Diff.     % Diff                                      
+                                      ________  ||  _________  _________  _________  _________                                      
+                                                ||                                                                                  
+                                             1  ||       2715       2715  4.547E-13  1.675E-14                                      
+                                             3  ||       1925       1925  2.274E-13  1.181E-14                                      
+                                             6  ||       7598       7598  9.095E-13  1.197E-14                                      
+                                             8  ||       6816       6816  9.095E-13  1.334E-14                                      
+                                            10  ||       1837       1837  2.274E-13  1.238E-14                                      
+                                            16  ||       2308       2308  4.547E-13   1.97E-14                                      
+                                            18  ||       2098       2098  4.547E-13  2.168E-14                                      
+                                            19  ||   183.0800   183.0800  2.842E-14  1.552E-14                                      
+                                            21  ||   252.4900   252.4900  2.842E-14  1.126E-14                                      
+                                            22  ||       3471       3471  4.547E-13   1.31E-14                                      
+                                            23  ||       1156       1156  2.274E-13  1.966E-14                                      
+                                            25  ||   149.2700   149.2700  2.842E-14  1.904E-14                                      
+                                            26  ||   187.5900   187.5900  2.842E-14  1.515E-14                                      
+                                            27  ||   169.7400   169.7400  2.842E-14  1.674E-14                                      
+                                            29  ||   985.7000   985.7000  1.137E-13  1.153E-14                                      
+                                            31  ||       3362       3362  4.547E-13  1.352E-14                                      
+                                            35  ||       4831       4831  9.095E-13  1.883E-14                                      
+                                            38  ||   220.3700   220.3700  2.842E-14   1.29E-14                                      
+                                            40  ||   962.9700   962.9700  1.137E-13  1.181E-14                                      
+                                            44  ||       6553       6553  9.095E-13  1.388E-14                                      
+                                            45  ||       1812       1812  2.274E-13  1.255E-14                                      
+                                            47  ||       4895       4895  9.095E-13  1.858E-14                                      
+                                            50  ||   218.6800   218.6800  2.842E-14    1.3E-14                                      
+                                            51  ||       1697       1697  2.274E-13   1.34E-14                                      
+                                            54  ||   968.0900   968.0900  1.137E-13  1.174E-14                                      
+                                            56  ||   304.9800   304.9800  5.684E-14  1.864E-14                                      
+                                                                                                                                    
+NOTE: The MAXPRINT=(50,500) printing limit has been reached. No more values will be printed.                                        
+                                     __________________________________________________________                      
