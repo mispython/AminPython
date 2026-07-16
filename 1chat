@@ -1,4643 +1,600 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pyreadstat
+
+
+@dataclass
+class VarSpec:
+    name: str
+    typ: str
+    length: int
+
+
+LOAN_PLOAN_KEEP = [
+    "LOANTYPE", "NTBRCH", "ACCTNO", "NOTENO", "NAME", "BORSTAT", "LOANSTAT",
+    "NETPROC", "ORGBAL", "CURBAL", "NOTETERM", "ISSDTE", "BLDATE", "BILPAY",
+    "INTRATE", "APPVALUE", "MARKETVL", "DAYS", "TERMCHG", "IISP", "OIP",
+    "SPP1", "SPP2", "CURBALP", "NETBALP", "USER5", "FEEAMT", "FEEAMT3",
+    "FEEAMT4", "EXIST", "FEEYTD", "FEEPDYTD", "UHCP", "CENSUS7", "VINNO",
+    "FEETOT2", "FEEAMT8", "PENDBRH", "COSTCTR", "EARNTERM", "FEEAMTA",
+    "FEEAMT5", "OLDNOTEDAYARR", "ACCRUAL",
+]
+
+
+LOAN_PLOAN_SCHEMA = [
+    VarSpec("LOANTYPE", "num", 4),
+    VarSpec("NTBRCH", "num", 4),
+    VarSpec("NOTETERM", "num", 4),
+    VarSpec("ISSDTE", "num", 4),
+    VarSpec("BLDATE", "num", 4),
+    VarSpec("DAYS", "num", 4),
+    VarSpec("LOANSTAT", "num", 3),
+    VarSpec("ACCTNO", "num", 8),
+    VarSpec("NOTENO", "num", 8),
+    VarSpec("SPP1", "num", 8),
+    VarSpec("SPP2", "num", 8),
+    VarSpec("NETBALP", "num", 8),
+    VarSpec("CURBALP", "num", 8),
+    VarSpec("NAME", "char", 24),
+    VarSpec("IISP", "num", 8),
+    VarSpec("UHCP", "num", 8),
+    VarSpec("OIP", "num", 8),
+    VarSpec("EXIST", "char", 1),
+    VarSpec("PENDBRH", "num", 8),
+    VarSpec("CURBAL", "num", 8),
+    VarSpec("APPVALUE", "num", 8),
+    VarSpec("COSTCTR", "num", 8),
+    VarSpec("ORGBAL", "num", 8),
+    VarSpec("NETPROC", "num", 8),
+    VarSpec("INTRATE", "num", 8),
+    VarSpec("ACCRUAL", "num", 8),
+    VarSpec("BORSTAT", "char", 1),
+    VarSpec("MARKETVL", "num", 8),
+    VarSpec("EARNTERM", "num", 8),
+    VarSpec("FEETOT2", "num", 8),
+    VarSpec("FEEAMT3", "num", 8),
+    VarSpec("BILPAY", "num", 8),
+    VarSpec("FEEAMT4", "num", 8),
+    VarSpec("VINNO", "char", 20),
+    VarSpec("FEEYTD", "num", 8),
+    VarSpec("FEEPDYTD", "num", 8),
+    VarSpec("FEEAMT8", "num", 8),
+    VarSpec("USER5", "char", 1),
+    VarSpec("FEEAMTA", "num", 8),
+    VarSpec("FEEAMT", "num", 8),
+    VarSpec("FEEAMT5", "num", 8),
+    VarSpec("OLDNOTEDAYARR", "num", 8),
+    VarSpec("CENSUS7", "char", 8),
+    VarSpec("TERMCHG", "num", 8),
+]
+
+
+LOAN_TYPES_LOAN = {128, 130, 380, 381, 700, 705, 131, 132, 720, 725}
+LOAN_TYPES_LNNOTE = {128, 130, 700, 705, 983, 993, 996, 380, 381, 131, 132, 720, 725}
+
+
+def clean_colname(name: str) -> str:
+    return str(name).strip().upper()
+
+
+def read_sas(path: Path) -> tuple[pd.DataFrame, list[VarSpec]]:
+    df, meta = pyreadstat.read_sas7bdat(
+        str(path),
+        disable_datetime_conversion=True,
+    )
+
+    df.columns = [clean_colname(c) for c in df.columns]
+
+    schema: list[VarSpec] = []
+    for name in df.columns:
+        original = name
+        if hasattr(meta, "readstat_variable_types"):
+            typ0 = meta.readstat_variable_types.get(original) or meta.readstat_variable_types.get(original.upper())
+        else:
+            typ0 = None
 
-OLD library members 
+        if typ0 == "string" or df[name].dtype == object:
+            typ = "char"
+            length = int(getattr(meta, "variable_storage_width", {}).get(original, 1) or 1)
+        else:
+            typ = "num"
+            length = 8
 
+        schema.append(VarSpec(name, typ, length))
 
+    return df, schema
 
 
+def parse_reptdate(value: str) -> datetime:
+    return datetime.strptime(value, "%Y%m%d")
 
 
+def sas_date(dt: datetime) -> int:
+    return (pd.Timestamp(dt.date()) - pd.Timestamp("1960-01-01")).days
 
-Directory
 
+def is_not_missing(s: pd.Series) -> pd.Series:
+    if s.dtype == object:
+        return s.notna() & (s.astype(str).str.strip() != "")
+    return s.notna()
 
 
-Libref
-OLD 
+def num_series(df: pd.DataFrame, col: str, default=np.nan) -> pd.Series:
+    if col not in df.columns:
+        return pd.Series(default, index=df.index)
+    return pd.to_numeric(df[col], errors="coerce")
 
-Engine
-V9 
 
-Physical Name
-/dwh/test 
+def char_series(df: pd.DataFrame, col: str, default="") -> pd.Series:
+    if col not in df.columns:
+        return pd.Series(default, index=df.index, dtype=object)
+    return df[col].fillna("").astype(str).str.strip()
 
-Filename
-/dwh/test 
 
-Inode Number
-807184316 
+def prepare_loan(lnnote: pd.DataFrame) -> pd.DataFrame:
+    df = lnnote.copy()
 
-Access Permission
-rwxr-xr-x 
+    mask = (
+        (char_series(df, "REVERSED") != "Y")
+        & is_not_missing(num_series(df, "NOTENO"))
+        & (char_series(df, "PAIDIND") != "P")
+        & is_not_missing(num_series(df, "NTBRCH"))
+        & num_series(df, "LOANTYPE").isin(LOAN_TYPES_LOAN)
+    )
 
-Owner Name
-sasdemo_edw_dev 
+    df = df.loc[mask].copy()
+    df = df.sort_values(["ACCTNO", "NOTENO"], kind="mergesort")
+    return df.reset_index(drop=True)
 
-File Size
-12KB 
 
-File Size (bytes)
-12288 
+def prepare_lnnote(lnnote: pd.DataFrame) -> pd.DataFrame:
+    df = lnnote.copy()
 
+    mask = (
+        (char_series(df, "REVERSED") != "Y")
+        & is_not_missing(num_series(df, "NOTENO"))
+        & is_not_missing(num_series(df, "NTBRCH"))
+        & num_series(df, "LOANTYPE").isin(LOAN_TYPES_LNNOTE)
+    )
 
+    df = df.loc[mask].copy()
 
+    # SAS: OUT=LNNOTE(DROP=NFEEAMT10 NFEEAMT11 NFEEAMT12)
+    # Important: do not select limited columns. Keep all LNNOTE vars.
+    df = df.drop(columns=["NFEEAMT10", "NFEEAMT11", "NFEEAMT12"], errors="ignore")
 
+    df = df.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False], kind="mergesort")
+    df = df.drop_duplicates(subset=["ACCTNO"], keep="first").reset_index(drop=True)
 
+    # LOANNO latest active NOTENO
+    loan_mask = (
+        (char_series(lnnote, "REVERSED") != "Y")
+        & is_not_missing(num_series(lnnote, "NOTENO"))
+        & (char_series(lnnote, "PAIDIND") != "P")
+        & is_not_missing(num_series(lnnote, "NTBRCH"))
+        & num_series(lnnote, "LOANTYPE").isin(LOAN_TYPES_LNNOTE)
+    )
 
+    loanno = lnnote.loc[loan_mask, ["ACCTNO", "NOTENO"]].copy()
+    loanno = loanno.sort_values(["ACCTNO", "NOTENO"], ascending=[True, False], kind="mergesort")
+    loanno = loanno.drop_duplicates(subset=["ACCTNO"], keep="first")
 
+    # SAS MERGE LNNOTE(IN=A) LOANNO; BY ACCTNO; IF A;
+    # LOANNO NOTENO overwrites only if LOANNO exists.
+    out = df.merge(loanno, on="ACCTNO", how="left", suffixes=("", "_LOANNO"))
+    if "NOTENO_LOANNO" in out.columns:
+        out["NOTENO"] = out["NOTENO_LOANNO"].where(out["NOTENO_LOANNO"].notna(), out["NOTENO"])
+        out = out.drop(columns=["NOTENO_LOANNO"])
 
+    return out.reset_index(drop=True)
 
 
+def sas_merge_keep_left_rows(base: pd.DataFrame, right: pd.DataFrame, by: str = "ACCTNO") -> pd.DataFrame:
+    """
+    Mimic SAS:
+        DATA base;
+          MERGE base(IN=A) right;
+          BY ACCTNO;
+          IF A;
+        RUN;
 
-#
+    Rules:
+    - keep all base rows only
+    - add right-only variables
+    - for overlapping variables, right overwrites base only when right match exists
+    - if no right match, keep original base value
+    """
+    by = by.upper()
 
-Name
+    base = base.copy()
+    right = right.copy()
 
-Member Type
+    base.columns = [clean_colname(c) for c in base.columns]
+    right.columns = [clean_colname(c) for c in right.columns]
 
-File Size
+    base = base.sort_values(by, kind="mergesort").reset_index(drop=True)
+    right = right.sort_values(by, kind="mergesort").drop_duplicates(subset=[by], keep="first").reset_index(drop=True)
 
-Last Modified
+    right["_RIGHT_MATCH_"] = 1
 
+    merged = base.merge(right, on=by, how="left", suffixes=("_BASE", ""))
 
+    matched = merged["_RIGHT_MATCH_"].eq(1)
+    merged = merged.drop(columns=["_RIGHT_MATCH_"])
 
-1
-AQ DATA 27MB 07/13/2026 15:42:50 
+    overlap = [c for c in base.columns if c in right.columns and c != by]
 
-2
-CAP_HPHCODE DATA 90MB 07/13/2026 15:42:52 
+    for col in overlap:
+        base_col = f"{col}_BASE"
+        if base_col in merged.columns:
+            merged[col] = merged[col].where(matched, merged[base_col])
+            merged = merged.drop(columns=[base_col])
 
-3
-ICAP0119 DATA 80MB 07/13/2026 15:45:44 
+    return merged.reset_index(drop=True)
 
-4
-ICAP0120 DATA 81MB 07/13/2026 15:45:46 
 
-5
-ICAP0121 DATA 85MB 07/13/2026 15:45:48 
+def build_nplobal6(nplobal: pd.DataFrame, lnnote: pd.DataFrame, wiis: pd.DataFrame) -> pd.DataFrame:
+    keep_cols = [
+        "ACCTNO", "NOTENO", "NTBRCH", "NAME", "LOANTYPE", "LOANSTAT",
+        "IISP", "OIP", "SPP1", "SPP2", "CURBALP", "NETBALP",
+        "EXIST", "UHCP",
+    ]
 
-6
-ICAP0122 DATA 91MB 07/13/2026 15:45:49 
+    nplobal_keep = nplobal[[c for c in keep_cols if c in nplobal.columns]].copy()
 
-7
-ICAP0123 DATA 96MB 07/13/2026 15:45:50 
+    merged = sas_merge_keep_left_rows(nplobal_keep, lnnote, by="ACCTNO")
 
-8
-ICAP0124 DATA 104MB 07/13/2026 15:45:51 
+    wiis_keys = wiis[["ACCTNO"]].drop_duplicates().copy()
+    wiis_keys["_IN_WIIS_"] = 1
 
-9
-ICAP0125 DATA 116MB 07/13/2026 15:45:53 
+    merged = merged.merge(wiis_keys, on="ACCTNO", how="outer")
+    merged["_IN_WIIS_"] = merged["_IN_WIIS_"].fillna(0)
 
-10
-ICAP0126 DATA 129MB 07/13/2026 15:45:54 
+    merged["BORSTAT"] = merged.get("BORSTAT", "")
+    merged.loc[merged["_IN_WIIS_"].eq(1), "BORSTAT"] = "W"
 
-11
-ICAP0219 DATA 80MB 07/13/2026 15:45:55 
+    merged = merged.drop(columns=["_IN_WIIS_"], errors="ignore")
 
-12
-ICAP0220 DATA 81MB 07/13/2026 15:45:56 
+    return merged.reset_index(drop=True)
 
-13
-ICAP0221 DATA 86MB 07/13/2026 15:45:57 
 
-14
-ICAP0222 DATA 91MB 07/13/2026 15:45:58 
+def mmddyyyy_to_sas_date(value) -> float:
+    if pd.isna(value):
+        return np.nan
 
-15
-ICAP0223 DATA 96MB 07/13/2026 15:46:00 
+    try:
+        s = str(int(float(value))).zfill(11)
+    except Exception:
+        s = str(value).strip().zfill(11)
 
-16
-ICAP0224 DATA 104MB 07/13/2026 15:46:01 
+    raw = s[:8]
 
-17
-ICAP0225 DATA 117MB 07/13/2026 15:46:02 
+    try:
+        dt = datetime.strptime(raw, "%m%d%Y")
+        return sas_date(dt)
+    except Exception:
+        return np.nan
 
-18
-ICAP0226 DATA 129MB 07/13/2026 15:46:04 
 
-19
-ICAP0319 DATA 79MB 07/13/2026 15:46:05 
+def next_bldate(row) -> float:
+    bl = row.get("BLDATE", np.nan)
+    iss = row.get("ISSDTE", np.nan)
 
-20
-ICAP0320 DATA 81MB 07/13/2026 15:46:06 
+    if pd.isna(bl) or pd.isna(iss):
+        return bl
 
-21
-ICAP0321 DATA 86MB 07/13/2026 15:46:07 
+    try:
+        bl_dt = pd.Timestamp("1960-01-01") + pd.to_timedelta(int(bl), unit="D")
+        iss_dt = pd.Timestamp("1960-01-01") + pd.to_timedelta(int(iss), unit="D")
+    except Exception:
+        return bl
 
-22
-ICAP0322 DATA 91MB 07/13/2026 15:46:08 
+    dd = iss_dt.day
+    mm = bl_dt.month + 1
+    yy = bl_dt.year
 
-23
-ICAP0323 DATA 97MB 07/13/2026 15:46:09 
+    if mm > 12:
+        mm = 1
+        yy += 1
 
-24
-ICAP0324 DATA 105MB 07/13/2026 15:46:11 
+    last_day = pd.Timestamp(year=yy, month=mm, day=1) + pd.offsets.MonthEnd(0)
+    dd = min(dd, last_day.day)
 
-25
-ICAP0325 DATA 119MB 07/13/2026 15:46:12 
+    return sas_date(datetime(yy, mm, dd))
 
-26
-ICAP0419 DATA 79MB 07/13/2026 15:46:13 
 
-27
-ICAP0420 DATA 81MB 07/13/2026 15:46:14 
+def build_loan_ploan(
+    nplobal6: pd.DataFrame,
+    loan: pd.DataFrame,
+    reptdate_dt: datetime,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    reptdate_num = sas_date(reptdate_dt)
 
-28
-ICAP0421 DATA 87MB 07/13/2026 15:46:15 
+    loan_for_merge = loan.drop(columns=["LOANSTAT"], errors="ignore").copy()
 
-29
-ICAP0422 DATA 91MB 07/13/2026 15:46:17 
+    # Mimic DATA ... MERGE NPLOBAL6(IN=AA) LOAN(IN=BB DROP=LOANSTAT); BY ACCTNO;
+    nplobal6["_AA_"] = 1
+    loan_for_merge["_BB_"] = 1
 
-30
-ICAP0423 DATA 98MB 07/13/2026 15:46:18 
+    merged = nplobal6.merge(
+        loan_for_merge,
+        on="ACCTNO",
+        how="outer",
+        suffixes=("_NPL", ""),
+    )
 
-31
-ICAP0424 DATA 106MB 07/13/2026 15:46:19 
+    merged["_AA_"] = merged["_AA_"].fillna(0)
+    merged["_BB_"] = merged["_BB_"].fillna(0)
 
-32
-ICAP0425 DATA 120MB 07/13/2026 15:46:21 
+    # For overlapping columns, loan side should overwrite when loan exists.
+    for col in list(merged.columns):
+        if col.endswith("_NPL"):
+            base = col[:-4]
+            if base in merged.columns:
+                merged[base] = merged[base].where(merged["_BB_"].eq(1), merged[col])
+                merged = merged.drop(columns=[col])
+            else:
+                merged = merged.rename(columns={col: base})
 
-33
-ICAP0519 DATA 80MB 07/13/2026 15:46:22 
+    if "BORSTAT" not in merged.columns:
+        merged["BORSTAT"] = ""
 
-34
-ICAP0520 DATA 81MB 07/13/2026 15:46:23 
+    merged = merged[char_series(merged, "BORSTAT") != "Z"].copy()
 
-35
-ICAP0521 DATA 88MB 07/13/2026 15:46:24 
+    merged["ISSDTE"] = merged.get("ISSUEDT", np.nan).apply(mmddyyyy_to_sas_date)
 
-36
-ICAP0522 DATA 93MB 07/13/2026 15:46:25 
+    if "CENSUS" in merged.columns:
+        merged["CENSUS7"] = merged["CENSUS"].apply(
+            lambda x: str(x).strip()[6:7] if pd.notna(x) and len(str(x).strip()) >= 7 else ""
+        )
+    else:
+        merged["CENSUS7"] = ""
 
-37
-ICAP0523 DATA 98MB 07/13/2026 15:46:27 
+    # special case
+    if "ACCTNO" in merged.columns:
+        merged.loc[num_series(merged, "ACCTNO").eq(8095419311), "BLDATE"] = sas_date(datetime(1997, 1, 21))
 
-38
-ICAP0524 DATA 107MB 07/13/2026 15:46:28 
+    merged["DAYS"] = np.nan
+    has_bldate = num_series(merged, "BLDATE").gt(0)
 
-39
-ICAP0525 DATA 121MB 07/13/2026 15:46:30 
+    # SAS:
+    # IF BLDATE > 0 THEN DO;
+    #   IF BILPAY > 0 THEN DO;
+    #     IF BILTOT=. THEN BILTOT=0;
+    #     IF BILTOT / BILPAY <= 0.01 THEN %NXTBLDT;
+    #   END;
+    #   DAYS = REPTDATE - BLDATE;
+    # END;
+    if "BILTOT" not in merged.columns:
+        merged["BILTOT"] = np.nan
 
-40
-ICAP0619 DATA 80MB 07/13/2026 15:46:31 
+    merged.loc[merged["BILTOT"].isna(), "BILTOT"] = 0
 
-41
-ICAP0620 DATA 81MB 07/13/2026 15:46:32 
+    need_next = (
+        has_bldate
+        & num_series(merged, "BILPAY").gt(0)
+        & ((num_series(merged, "BILTOT") / num_series(merged, "BILPAY")) <= 0.01)
+    )
 
-42
-ICAP0621 DATA 88MB 07/13/2026 15:46:33 
+    if need_next.any():
+        merged.loc[need_next, "BLDATE"] = merged.loc[need_next].apply(next_bldate, axis=1)
 
-43
-ICAP0622 DATA 94MB 07/13/2026 15:46:34 
+    merged.loc[has_bldate, "DAYS"] = reptdate_num - num_series(merged.loc[has_bldate], "BLDATE")
 
-44
-ICAP0623 DATA 99MB 07/13/2026 15:46:36 
+    old_arr = num_series(merged, "OLDNOTEDAYARR").fillna(0)
+    noteno = num_series(merged, "NOTENO")
+    adj = old_arr.gt(0) & noteno.between(98000, 98999)
 
-45
-ICAP0624 DATA 108MB 07/13/2026 15:46:37 
+    merged.loc[adj & num_series(merged, "DAYS").lt(0), "DAYS"] = 0
+    merged.loc[adj, "DAYS"] = num_series(merged.loc[adj], "DAYS").fillna(0) + old_arr.loc[adj]
 
-46
-ICAP0625 DATA 122MB 07/13/2026 15:46:39 
+    intamt = num_series(merged, "INTAMT").fillna(0)
+    intearn2 = num_series(merged, "INTEARN2").fillna(0)
+    merged["TERMCHG"] = np.where(intamt.gt(0.1), intamt + intearn2, 0)
 
-47
-ICAP0719 DATA 81MB 07/13/2026 15:46:40 
+    borstat = char_series(merged, "BORSTAT")
+    special_note = num_series(merged, "NOTENO").isin([98010, 98011, 99010, 99011])
+    merged.loc[(~borstat.isin(["F", "I", "R", "Y", "W", "Z", "A"])) & special_note, "BORSTAT"] = "S"
 
-48
-ICAP0720 DATA 82MB 07/13/2026 15:46:41 
+    loan_rows = []
+    ploan_rows = []
 
-49
-ICAP0721 DATA 88MB 07/13/2026 15:46:42 
+    for _, row in merged.iterrows():
+        aa = row.get("_AA_", 0) == 1
+        bb = row.get("_BB_", 0) == 1
 
-50
-ICAP0722 DATA 94MB 07/13/2026 15:46:43 
+        out = row.copy()
 
-51
-ICAP0723 DATA 100MB 07/13/2026 15:46:45 
+        if aa:
+            if not bb:
+                out["LOANSTAT"] = np.nan
+                out["DAYS"] = 0
+                out["BORSTAT"] = ""
+            elif pd.notna(out.get("DAYS")) and out.get("DAYS") <= 0:
+                out["LOANSTAT"] = 1
 
-52
-ICAP0724 DATA 109MB 07/13/2026 15:46:46 
+            if out.get("LOANSTAT") == 1 and str(out.get("BORSTAT", "")).strip() == "":
+                out["BORSTAT"] = "A"
 
-53
-ICAP0725 DATA 123MB 07/13/2026 15:46:48 
+            loan_rows.append(out)
+        else:
+            days = out.get("DAYS", np.nan)
+            bstat = str(out.get("BORSTAT", "")).strip()
+            user5 = str(out.get("USER5", "")).strip()
 
-54
-ICAP0819 DATA 81MB 07/13/2026 15:46:49 
+            if (
+                (pd.notna(days) and days > 89)
+                or bstat not in ["", "A", "C", "S", "T"]
+                or user5 == "N"
+            ):
+                if bstat == "Y" and pd.notna(days) and days <= 182:
+                    ploan_rows.append(out)
+                else:
+                    loan_rows.append(out)
+            else:
+                ploan_rows.append(out)
 
-55
-ICAP0820 DATA 82MB 07/13/2026 15:46:50 
+    loan_out = pd.DataFrame(loan_rows)
+    ploan_out = pd.DataFrame(ploan_rows)
 
-56
-ICAP0821 DATA 88MB 07/13/2026 15:46:51 
+    loan_out = enforce_schema(loan_out, LOAN_PLOAN_SCHEMA)
+    ploan_out = enforce_schema(ploan_out, LOAN_PLOAN_SCHEMA)
 
-57
-ICAP0822 DATA 95MB 07/13/2026 15:46:52 
+    return loan_out, ploan_out
 
-58
-ICAP0823 DATA 100MB 07/13/2026 15:46:54 
 
-59
-ICAP0824 DATA 111MB 07/13/2026 15:46:55 
+def enforce_schema(df: pd.DataFrame, schema: list[VarSpec]) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [clean_colname(c) for c in df.columns]
 
-60
-ICAP0825 DATA 124MB 07/13/2026 15:46:57 
+    for spec in schema:
+        if spec.name not in df.columns:
+            if spec.typ == "char":
+                df[spec.name] = ""
+            else:
+                df[spec.name] = np.nan
 
-61
-ICAP0920 DATA 83MB 07/13/2026 15:46:58 
+    out = df[[spec.name for spec in schema]].copy()
 
-62
-ICAP0921 DATA 89MB 07/13/2026 15:46:59 
+    for spec in schema:
+        if spec.typ == "char":
+            out[spec.name] = out[spec.name].fillna("").astype(str).str.slice(0, spec.length)
+        else:
+            out[spec.name] = pd.to_numeric(out[spec.name], errors="coerce")
 
-63
-ICAP0922 DATA 95MB 07/13/2026 15:47:01 
+    return out
 
-64
-ICAP0923 DATA 101MB 07/13/2026 15:47:02 
 
-65
-ICAP0924 DATA 111MB 07/13/2026 15:47:03 
+def schema_names(schema: list[VarSpec]) -> set[str]:
+    return {s.name for s in schema}
 
-66
-ICAP0925 DATA 125MB 07/13/2026 15:47:05 
 
-67
-ICAP1 DATA 128KB 07/13/2026 15:47:05 
+def merge_schema_with_new_columns(
+    base_schema: list[VarSpec],
+    df: pd.DataFrame,
+) -> list[VarSpec]:
+    """
+    Keep original schema order, but include any new LNNOTE vars appended at end.
+    This protects WIIS/WAQ/WSP2 when LNNOTE carries extra vars.
+    """
+    existing = schema_names(base_schema)
+    schema = list(base_schema)
 
-68
-ICAP1020 DATA 84MB 07/13/2026 15:47:06 
+    for col in df.columns:
+        col = clean_colname(col)
+        if col not in existing:
+            if df[col].dtype == object:
+                length = max(1, int(df[col].fillna("").astype(str).str.len().max() or 1))
+                schema.append(VarSpec(col, "char", length))
+            else:
+                schema.append(VarSpec(col, "num", 8))
+            existing.add(col)
 
-69
-ICAP1021 DATA 89MB 07/13/2026 15:47:07 
+    return schema
 
-70
-ICAP1022 DATA 95MB 07/13/2026 15:47:09 
 
-71
-ICAP1023 DATA 102MB 07/13/2026 15:47:10 
+def write_sas7bdat_with_saspy(df: pd.DataFrame, output_dir: Path, table: str, schema: list[VarSpec]) -> None:
+    import saspy
 
-72
-ICAP1024 DATA 113MB 07/13/2026 15:47:12 
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-73
-ICAP1025 DATA 126MB 07/13/2026 15:47:15 
+    df = enforce_schema(df, schema)
 
-74
-ICAP1120 DATA 85MB 07/13/2026 15:47:18 
+    sas = saspy.SASsession()
+    sas.saslib("OUT", path=str(output_dir))
 
-75
-ICAP1121 DATA 90MB 07/13/2026 15:47:20 
+    temp_table = f"_{table}_tmp"
 
-76
-ICAP1122 DATA 96MB 07/13/2026 15:47:23 
+    sas.df2sd(df, table=temp_table, libref="OUT")
 
-77
-ICAP1123 DATA 102MB 07/13/2026 15:47:25 
+    length_parts = []
+    for spec in schema:
+        if spec.typ == "char":
+            length_parts.append(f"{spec.name} ${spec.length}")
+        else:
+            length_parts.append(f"{spec.name} {spec.length}")
 
-78
-ICAP1124 DATA 114MB 07/13/2026 15:47:28 
+    length_stmt = "length " + " ".join(length_parts) + ";"
+    retain_stmt = "retain " + " ".join(spec.name for spec in schema) + ";"
 
-79
-ICAP1125 DATA 127MB 07/13/2026 15:47:31 
+    code = f"""
+data OUT.{table};
+    {length_stmt}
+    {retain_stmt}
+    set OUT.{temp_table};
+run;
 
-80
-ICAP1219 DATA 81MB 07/13/2026 15:47:33 
+proc datasets lib=OUT nolist;
+    delete {temp_table};
+quit;
+"""
+    sas.submit(code)
 
-81
-ICAP1220 DATA 85MB 07/13/2026 15:47:35 
 
-82
-ICAP1221 DATA 90MB 07/13/2026 15:47:37 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="EIFMNP02 converted Python job")
 
-83
-ICAP1222 DATA 96MB 07/13/2026 15:47:41 
+    parser.add_argument("--reptdate-value", required=True, help="YYYYMMDD, normally today - 1")
+    parser.add_argument("--lnnote", type=Path, required=True)
+    parser.add_argument("--wiis", type=Path, required=True)
+    parser.add_argument("--waq", type=Path, required=True)
+    parser.add_argument("--wsp2", type=Path, required=True)
+    parser.add_argument("--nplobal", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, required=True)
 
-84
-ICAP1223 DATA 103MB 07/13/2026 15:47:44 
+    args = parser.parse_args()
 
-85
-ICAP1224 DATA 115MB 07/13/2026 15:47:47 
+    reptdate_dt = parse_reptdate(args.reptdate_value)
+    reptmon = f"{reptdate_dt.month:02d}"
 
-86
-ICAP1225 DATA 128MB 07/13/2026 15:47:51 
+    lnnote_raw, _ = read_sas(args.lnnote)
+    wiis_raw, wiis_schema = read_sas(args.wiis)
+    waq_raw, waq_schema = read_sas(args.waq)
+    wsp2_raw, wsp2_schema = read_sas(args.wsp2)
+    nplobal_raw, _ = read_sas(args.nplobal)
 
-87
-ICAP1OLD DATA 128KB 07/13/2026 15:47:05 
+    loan = prepare_loan(lnnote_raw)
+    lnnote = prepare_lnnote(lnnote_raw)
 
-88
-ICAP1_STAFF DATA 128KB 07/13/2026 15:47:05 
+    wiis_out = sas_merge_keep_left_rows(wiis_raw, lnnote, by="ACCTNO")
+    waq_out = sas_merge_keep_left_rows(waq_raw, lnnote, by="ACCTNO")
+    wsp2_out = sas_merge_keep_left_rows(wsp2_raw, lnnote, by="ACCTNO")
 
-89
-ICAPOLD0119 DATA 113MB 07/13/2026 15:42:54 
+    # Important: add LNNOTE-added vars into output schema.
+    wiis_schema = merge_schema_with_new_columns(wiis_schema, wiis_out)
+    waq_schema = merge_schema_with_new_columns(waq_schema, waq_out)
+    wsp2_schema = merge_schema_with_new_columns(wsp2_schema, wsp2_out)
 
-90
-ICAPOLD0120 DATA 117MB 07/13/2026 15:42:56 
+    nplobal6 = build_nplobal6(nplobal_raw, lnnote, wiis_out)
+    loan_out, ploan_out = build_loan_ploan(nplobal6, loan, reptdate_dt)
 
-91
-ICAPOLD0121 DATA 126MB 07/13/2026 15:42:57 
+    reptdate_df = pd.DataFrame({"REPTDATE": [sas_date(reptdate_dt)]})
+    reptdate_schema = [VarSpec("REPTDATE", "num", 8)]
 
-92
-ICAPOLD0122 DATA 135MB 07/13/2026 15:42:59 
+    write_sas7bdat_with_saspy(reptdate_df, args.output_dir, "reptdate", reptdate_schema)
+    write_sas7bdat_with_saspy(wiis_out, args.output_dir, "wiis", wiis_schema)
+    write_sas7bdat_with_saspy(waq_out, args.output_dir, "waq", waq_schema)
+    write_sas7bdat_with_saspy(wsp2_out, args.output_dir, "wsp2", wsp2_schema)
+    write_sas7bdat_with_saspy(loan_out, args.output_dir, f"loan{reptmon}", LOAN_PLOAN_SCHEMA)
+    write_sas7bdat_with_saspy(ploan_out, args.output_dir, f"ploan{reptmon}", LOAN_PLOAN_SCHEMA)
 
-93
-ICAPOLD0123 DATA 145MB 07/13/2026 15:43:01 
+    print("EIFMNP02 completed")
+    print(f"REPTDATE : {args.reptdate_value}")
+    print(f"OUTPUT   : {args.output_dir}")
+    print(f"WIIS     : {len(wiis_out)} rows, {len(wiis_out.columns)} columns")
+    print(f"WAQ      : {len(waq_out)} rows, {len(waq_out.columns)} columns")
+    print(f"WSP2     : {len(wsp2_out)} rows, {len(wsp2_out.columns)} columns")
+    print(f"LOAN{reptmon}  : {len(loan_out)} rows")
+    print(f"PLOAN{reptmon} : {len(ploan_out)} rows")
 
-94
-ICAPOLD0124 DATA 157MB 07/13/2026 15:43:03 
 
-95
-ICAPOLD0125 DATA 174MB 07/13/2026 15:43:05 
-
-96
-ICAPOLD0126 DATA 191MB 07/13/2026 15:43:08 
-
-97
-ICAPOLD0219 DATA 113MB 07/13/2026 15:43:10 
-
-98
-ICAPOLD0220 DATA 117MB 07/13/2026 15:43:12 
-
-99
-ICAPOLD0221 DATA 127MB 07/13/2026 15:43:13 
-
-100
-ICAPOLD0222 DATA 136MB 07/13/2026 15:43:16 
-
-101
-ICAPOLD0223 DATA 145MB 07/13/2026 15:43:18 
-
-102
-ICAPOLD0224 DATA 158MB 07/13/2026 15:43:20 
-
-103
-ICAPOLD0225 DATA 175MB 07/13/2026 15:43:22 
-
-104
-ICAPOLD0226 DATA 192MB 07/13/2026 15:43:25 
-
-105
-ICAPOLD0319 DATA 113MB 07/13/2026 15:43:27 
-
-106
-ICAPOLD0320 DATA 118MB 07/13/2026 15:43:28 
-
-107
-ICAPOLD0321 DATA 128MB 07/13/2026 15:43:30 
-
-108
-ICAPOLD0322 DATA 137MB 07/13/2026 15:43:32 
-
-109
-ICAPOLD0323 DATA 146MB 07/13/2026 15:43:34 
-
-110
-ICAPOLD0324 DATA 159MB 07/13/2026 15:43:36 
-
-111
-ICAPOLD0325 DATA 177MB 07/13/2026 15:43:39 
-
-112
-ICAPOLD0419 DATA 113MB 07/13/2026 15:43:40 
-
-113
-ICAPOLD0420 DATA 118MB 07/13/2026 15:43:42 
-
-114
-ICAPOLD0421 DATA 129MB 07/13/2026 15:43:44 
-
-115
-ICAPOLD0422 DATA 138MB 07/13/2026 15:43:46 
-
-116
-ICAPOLD0423 DATA 147MB 07/13/2026 15:43:48 
-
-117
-ICAPOLD0424 DATA 160MB 07/13/2026 15:43:50 
-
-118
-ICAPOLD0425 DATA 179MB 07/13/2026 15:43:53 
-
-119
-ICAPOLD0519 DATA 114MB 07/13/2026 15:43:54 
-
-120
-ICAPOLD0520 DATA 118MB 07/13/2026 15:43:56 
-
-121
-ICAPOLD0521 DATA 130MB 07/13/2026 15:43:58 
-
-122
-ICAPOLD0522 DATA 138MB 07/13/2026 15:44:00 
-
-123
-ICAPOLD0523 DATA 148MB 07/13/2026 15:44:02 
-
-124
-ICAPOLD0524 DATA 162MB 07/13/2026 15:44:04 
-
-125
-ICAPOLD0525 DATA 180MB 07/13/2026 15:44:06 
-
-126
-ICAPOLD0619 DATA 114MB 07/13/2026 15:44:08 
-
-127
-ICAPOLD0620 DATA 118MB 07/13/2026 15:44:10 
-
-128
-ICAPOLD0621 DATA 130MB 07/13/2026 15:44:11 
-
-129
-ICAPOLD0622 DATA 139MB 07/13/2026 15:44:13 
-
-130
-ICAPOLD0623 DATA 149MB 07/13/2026 15:44:15 
-
-131
-ICAPOLD0624 DATA 163MB 07/13/2026 15:44:18 
-
-132
-ICAPOLD0625 DATA 182MB 07/13/2026 15:44:20 
-
-133
-ICAPOLD0719 DATA 115MB 07/13/2026 15:44:22 
-
-134
-ICAPOLD0720 DATA 119MB 07/13/2026 15:44:23 
-
-135
-ICAPOLD0721 DATA 130MB 07/13/2026 15:44:25 
-
-136
-ICAPOLD0722 DATA 140MB 07/13/2026 15:44:27 
-
-137
-ICAPOLD0723 DATA 150MB 07/13/2026 15:44:29 
-
-138
-ICAPOLD0724 DATA 164MB 07/13/2026 15:44:32 
-
-139
-ICAPOLD0725 DATA 183MB 07/13/2026 15:44:34 
-
-140
-ICAPOLD0819 DATA 115MB 07/13/2026 15:44:36 
-
-141
-ICAPOLD0820 DATA 120MB 07/13/2026 15:44:37 
-
-142
-ICAPOLD0821 DATA 131MB 07/13/2026 15:44:39 
-
-143
-ICAPOLD0822 DATA 141MB 07/13/2026 15:44:41 
-
-144
-ICAPOLD0823 DATA 151MB 07/13/2026 15:44:43 
-
-145
-ICAPOLD0824 DATA 166MB 07/13/2026 15:44:46 
-
-146
-ICAPOLD0825 DATA 184MB 07/13/2026 15:44:48 
-
-147
-ICAPOLD0920 DATA 121MB 07/13/2026 15:44:50 
-
-148
-ICAPOLD0921 DATA 131MB 07/13/2026 15:44:52 
-
-149
-ICAPOLD0922 DATA 142MB 07/13/2026 15:44:54 
-
-150
-ICAPOLD0923 DATA 152MB 07/13/2026 15:44:56 
-
-151
-ICAPOLD0924 DATA 167MB 07/13/2026 15:44:58 
-
-152
-ICAPOLD0925 DATA 186MB 07/13/2026 15:45:01 
-
-153
-ICAPOLD1020 DATA 122MB 07/13/2026 15:45:03 
-
-154
-ICAPOLD1021 DATA 132MB 07/13/2026 15:45:05 
-
-155
-ICAPOLD1022 DATA 142MB 07/13/2026 15:45:07 
-
-156
-ICAPOLD1023 DATA 153MB 07/13/2026 15:45:09 
-
-157
-ICAPOLD1024 DATA 169MB 07/13/2026 15:45:11 
-
-158
-ICAPOLD1025 DATA 187MB 07/13/2026 15:45:14 
-
-159
-ICAPOLD1120 DATA 123MB 07/13/2026 15:45:16 
-
-160
-ICAPOLD1121 DATA 133MB 07/13/2026 15:45:18 
-
-161
-ICAPOLD1122 DATA 143MB 07/13/2026 15:45:20 
-
-162
-ICAPOLD1123 DATA 154MB 07/13/2026 15:45:22 
-
-163
-ICAPOLD1124 DATA 170MB 07/13/2026 15:45:24 
-
-164
-ICAPOLD1125 DATA 189MB 07/13/2026 15:45:27 
-
-165
-ICAPOLD1219 DATA 116MB 07/13/2026 15:45:29 
-
-166
-ICAPOLD1220 DATA 125MB 07/13/2026 15:45:31 
-
-167
-ICAPOLD1221 DATA 134MB 07/13/2026 15:45:33 
-
-168
-ICAPOLD1222 DATA 144MB 07/13/2026 15:45:35 
-
-169
-ICAPOLD1223 DATA 155MB 07/13/2026 15:45:37 
-
-170
-ICAPOLD1224 DATA 172MB 07/13/2026 15:45:39 
-
-171
-ICAPOLD1225 DATA 190MB 07/13/2026 15:45:42 
-
-172
-ICAP_STAFF0119 DATA 192KB 07/13/2026 15:42:52 
-
-173
-ICAP_STAFF0120 DATA 192KB 07/13/2026 15:42:52 
-
-174
-ICAP_STAFF0121 DATA 192KB 07/13/2026 15:42:52 
-
-175
-ICAP_STAFF0122 DATA 192KB 07/13/2026 15:42:52 
-
-176
-ICAP_STAFF0123 DATA 192KB 07/13/2026 15:42:52 
-
-177
-ICAP_STAFF0124 DATA 192KB 07/13/2026 15:42:52 
-
-178
-ICAP_STAFF0125 DATA 192KB 07/13/2026 15:42:52 
-
-179
-ICAP_STAFF0126 DATA 192KB 07/13/2026 15:42:52 
-
-180
-ICAP_STAFF0219 DATA 192KB 07/13/2026 15:42:52 
-
-181
-ICAP_STAFF0220 DATA 192KB 07/13/2026 15:42:52 
-
-182
-ICAP_STAFF0221 DATA 192KB 07/13/2026 15:42:52 
-
-183
-ICAP_STAFF0222 DATA 192KB 07/13/2026 15:42:52 
-
-184
-ICAP_STAFF0223 DATA 192KB 07/13/2026 15:42:52 
-
-185
-ICAP_STAFF0224 DATA 192KB 07/13/2026 15:42:52 
-
-186
-ICAP_STAFF0225 DATA 192KB 07/13/2026 15:42:52 
-
-187
-ICAP_STAFF0226 DATA 192KB 07/13/2026 15:42:52 
-
-188
-ICAP_STAFF0319 DATA 192KB 07/13/2026 15:42:52 
-
-189
-ICAP_STAFF0320 DATA 192KB 07/13/2026 15:42:52 
-
-190
-ICAP_STAFF0321 DATA 192KB 07/13/2026 15:42:52 
-
-191
-ICAP_STAFF0322 DATA 192KB 07/13/2026 15:42:52 
-
-192
-ICAP_STAFF0323 DATA 192KB 07/13/2026 15:42:52 
-
-193
-ICAP_STAFF0324 DATA 192KB 07/13/2026 15:42:52 
-
-194
-ICAP_STAFF0325 DATA 192KB 07/13/2026 15:42:52 
-
-195
-ICAP_STAFF0419 DATA 192KB 07/13/2026 15:42:52 
-
-196
-ICAP_STAFF0420 DATA 192KB 07/13/2026 15:42:52 
-
-197
-ICAP_STAFF0421 DATA 192KB 07/13/2026 15:42:52 
-
-198
-ICAP_STAFF0422 DATA 192KB 07/13/2026 15:42:52 
-
-199
-ICAP_STAFF0423 DATA 192KB 07/13/2026 15:42:52 
-
-200
-ICAP_STAFF0424 DATA 192KB 07/13/2026 15:42:52 
-
-201
-ICAP_STAFF0425 DATA 192KB 07/13/2026 15:42:52 
-
-202
-ICAP_STAFF0519 DATA 192KB 07/13/2026 15:42:52 
-
-203
-ICAP_STAFF0520 DATA 192KB 07/13/2026 15:42:52 
-
-204
-ICAP_STAFF0521 DATA 192KB 07/13/2026 15:42:52 
-
-205
-ICAP_STAFF0522 DATA 192KB 07/13/2026 15:42:52 
-
-206
-ICAP_STAFF0523 DATA 192KB 07/13/2026 15:42:52 
-
-207
-ICAP_STAFF0524 DATA 192KB 07/13/2026 15:42:52 
-
-208
-ICAP_STAFF0525 DATA 192KB 07/13/2026 15:42:52 
-
-209
-ICAP_STAFF0619 DATA 192KB 07/13/2026 15:42:52 
-
-210
-ICAP_STAFF0620 DATA 192KB 07/13/2026 15:42:52 
-
-211
-ICAP_STAFF0621 DATA 192KB 07/13/2026 15:42:52 
-
-212
-ICAP_STAFF0622 DATA 192KB 07/13/2026 15:42:52 
-
-213
-ICAP_STAFF0623 DATA 192KB 07/13/2026 15:42:52 
-
-214
-ICAP_STAFF0624 DATA 192KB 07/13/2026 15:42:52 
-
-215
-ICAP_STAFF0625 DATA 192KB 07/13/2026 15:42:52 
-
-216
-ICAP_STAFF0719 DATA 192KB 07/13/2026 15:42:52 
-
-217
-ICAP_STAFF0720 DATA 192KB 07/13/2026 15:42:52 
-
-218
-ICAP_STAFF0721 DATA 192KB 07/13/2026 15:42:52 
-
-219
-ICAP_STAFF0722 DATA 192KB 07/13/2026 15:42:52 
-
-220
-ICAP_STAFF0723 DATA 192KB 07/13/2026 15:42:52 
-
-221
-ICAP_STAFF0724 DATA 192KB 07/13/2026 15:42:52 
-
-222
-ICAP_STAFF0725 DATA 192KB 07/13/2026 15:42:52 
-
-223
-ICAP_STAFF0819 DATA 192KB 07/13/2026 15:42:52 
-
-224
-ICAP_STAFF0820 DATA 192KB 07/13/2026 15:42:52 
-
-225
-ICAP_STAFF0821 DATA 192KB 07/13/2026 15:42:52 
-
-226
-ICAP_STAFF0822 DATA 192KB 07/13/2026 15:42:52 
-
-227
-ICAP_STAFF0823 DATA 192KB 07/13/2026 15:42:52 
-
-228
-ICAP_STAFF0824 DATA 192KB 07/13/2026 15:42:52 
-
-229
-ICAP_STAFF0825 DATA 192KB 07/13/2026 15:42:52 
-
-230
-ICAP_STAFF0920 DATA 192KB 07/13/2026 15:42:52 
-
-231
-ICAP_STAFF0921 DATA 192KB 07/13/2026 15:42:53 
-
-232
-ICAP_STAFF0922 DATA 192KB 07/13/2026 15:42:53 
-
-233
-ICAP_STAFF0923 DATA 192KB 07/13/2026 15:42:53 
-
-234
-ICAP_STAFF0924 DATA 192KB 07/13/2026 15:42:53 
-
-235
-ICAP_STAFF0925 DATA 192KB 07/13/2026 15:42:53 
-
-236
-ICAP_STAFF1020 DATA 192KB 07/13/2026 15:42:53 
-
-237
-ICAP_STAFF1021 DATA 192KB 07/13/2026 15:42:53 
-
-238
-ICAP_STAFF1022 DATA 192KB 07/13/2026 15:42:53 
-
-239
-ICAP_STAFF1023 DATA 192KB 07/13/2026 15:42:53 
-
-240
-ICAP_STAFF1024 DATA 192KB 07/13/2026 15:42:53 
-
-241
-ICAP_STAFF1025 DATA 192KB 07/13/2026 15:42:53 
-
-242
-ICAP_STAFF1120 DATA 192KB 07/13/2026 15:42:53 
-
-243
-ICAP_STAFF1121 DATA 192KB 07/13/2026 15:42:53 
-
-244
-ICAP_STAFF1122 DATA 192KB 07/13/2026 15:42:53 
-
-245
-ICAP_STAFF1123 DATA 192KB 07/13/2026 15:42:53 
-
-246
-ICAP_STAFF1124 DATA 192KB 07/13/2026 15:42:53 
-
-247
-ICAP_STAFF1125 DATA 192KB 07/13/2026 15:42:53 
-
-248
-ICAP_STAFF1219 DATA 192KB 07/13/2026 15:42:53 
-
-249
-ICAP_STAFF1220 DATA 192KB 07/13/2026 15:42:53 
-
-250
-ICAP_STAFF1221 DATA 192KB 07/13/2026 15:42:53 
-
-251
-ICAP_STAFF1222 DATA 192KB 07/13/2026 15:42:53 
-
-252
-ICAP_STAFF1223 DATA 192KB 07/13/2026 15:42:53 
-
-253
-ICAP_STAFF1224 DATA 192KB 07/13/2026 15:42:53 
-
-254
-ICAP_STAFF1225 DATA 192KB 07/13/2026 15:42:53 
-
-255
-IIS DATA 37MB 07/13/2026 15:47:52 
-
-256
-IIS01 DATA 36MB 07/13/2026 15:47:52 
-
-257
-IIS02 DATA 37MB 07/13/2026 15:47:53 
-
-258
-IIS03 DATA 37MB 07/13/2026 15:47:53 
-
-259
-IIS04 DATA 37MB 07/13/2026 15:47:54 
-
-260
-IIS05 DATA 37MB 07/13/2026 15:47:54 
-
-261
-IIS06 DATA 37MB 07/13/2026 15:47:54 
-
-262
-IIS07 DATA 37MB 07/13/2026 15:47:55 
-
-263
-IIS08 DATA 37MB 07/13/2026 15:47:55 
-
-264
-IIS09 DATA 37MB 07/13/2026 15:47:56 
-
-265
-IIS10 DATA 37MB 07/13/2026 15:47:56 
-
-266
-IIS11 DATA 37MB 07/13/2026 15:47:57 
-
-267
-IIS12 DATA 37MB 07/13/2026 15:47:57 
-
-268
-ISUMBAL DATA 192KB 07/13/2026 15:47:57 
-
-269
-ISUMBALOLD DATA 128KB 07/13/2026 15:47:57 
-
-270
-ISUMBAL_STAFF DATA 192KB 07/13/2026 15:47:57 
-
-271
-LIST DATA 384KB 07/13/2026 15:47:57 
-
-272
-LOAN01 DATA 44MB 07/13/2026 15:47:58 
-
-273
-LOAN02 DATA 44MB 07/13/2026 15:47:58 
-
-274
-LOAN03 DATA 44MB 07/13/2026 15:47:59 
-
-275
-LOAN04 DATA 43MB 07/13/2026 15:48:00 
-
-276
-LOAN05 DATA 43MB 07/13/2026 15:48:00 
-
-277
-LOAN06 DATA 43MB 07/13/2026 15:48:01 
-
-278
-LOAN07 DATA 44MB 07/13/2026 15:48:02 
-
-279
-LOAN08 DATA 43MB 07/13/2026 15:48:02 
-
-280
-LOAN09 DATA 43MB 07/13/2026 15:48:03 
-
-281
-LOAN10 DATA 43MB 07/13/2026 15:48:04 
-
-282
-LOAN11 DATA 43MB 07/13/2026 15:48:04 
-
-283
-LOAN12 DATA 43MB 07/13/2026 15:48:05 
-
-284
-NPLOBAL DATA 16MB 07/13/2026 15:48:05 
-
-285
-PLOAN01 DATA 115MB 07/13/2026 15:48:07 
-
-286
-PLOAN02 DATA 116MB 07/13/2026 15:48:09 
-
-287
-PLOAN03 DATA 117MB 07/13/2026 15:48:10 
-
-288
-PLOAN04 DATA 103MB 07/13/2026 15:48:11 
-
-289
-PLOAN05 DATA 105MB 07/13/2026 15:48:12 
-
-290
-PLOAN06 DATA 106MB 07/13/2026 15:48:12 
-
-291
-PLOAN07 DATA 119MB 07/13/2026 15:48:13 
-
-292
-PLOAN08 DATA 109MB 07/13/2026 15:48:14 
-
-293
-PLOAN09 DATA 110MB 07/13/2026 15:48:15 
-
-294
-PLOAN10 DATA 92MB 07/13/2026 15:48:15 
-
-295
-PLOAN11 DATA 113MB 07/13/2026 15:48:16 
-
-296
-PLOAN12 DATA 114MB 07/13/2026 15:48:17 
-
-297
-REPTDATE DATA 128KB 07/13/2026 15:48:17 
-
-298
-SP1 DATA 3MB 07/13/2026 15:48:17 
-
-299
-SP1OPEN DATA 512KB 07/13/2026 15:48:17 
-
-300
-SP2 DATA 35MB 07/13/2026 15:48:17 
-
-301
-SP201 DATA 34MB 07/13/2026 15:48:18 
-
-302
-SP202 DATA 35MB 07/13/2026 15:48:18 
-
-303
-SP203 DATA 35MB 07/13/2026 15:48:18 
-
-304
-SP204 DATA 35MB 07/13/2026 15:48:18 
-
-305
-SP205 DATA 35MB 07/13/2026 15:48:18 
-
-306
-SP206 DATA 35MB 07/13/2026 15:48:19 
-
-307
-SP207 DATA 35MB 07/13/2026 15:48:19 
-
-308
-SP208 DATA 35MB 07/13/2026 15:48:19 
-
-309
-SP209 DATA 35MB 07/13/2026 15:48:19 
-
-310
-SP210 DATA 35MB 07/13/2026 15:48:20 
-
-311
-SP211 DATA 35MB 07/13/2026 15:48:20 
-
-312
-SP212 DATA 35MB 07/13/2026 15:48:20 
-
-313
-SP2OPEN DATA 512KB 07/13/2026 15:48:17 
-
-314
-TAQ DATA 128KB 07/13/2026 15:48:20 
-
-315
-TIIS DATA 128KB 07/13/2026 15:48:20 
-
-316
-TSP2 DATA 128KB 07/13/2026 15:48:20 
-
-317
-WAQ DATA 1MB 07/13/2026 15:48:20 
-
-318
-WIIS DATA 1MB 07/13/2026 15:48:20 
-
-319
-WMIS DATA 3MB 07/13/2026 15:48:20 
-
-320
-WOFFHP DATA 128KB 07/13/2026 15:48:20 
-
-321
-WOFFTOT DATA 2MB 07/13/2026 15:48:20 
-
-322
-WOFFTXT DATA 384KB 07/13/2026 15:48:20 
-
-323
-WSP2 DATA 1MB 07/13/2026 15:48:20 
-
-
-
-
-NEW library members 
-
-
-
-
-
-
-
-Directory
-
-
-
-Libref
-NEW 
-
-Engine
-V9 
-
-Physical Name
-/dwh/compare 
-
-Filename
-/dwh/compare 
-
-Inode Number
-538772268 
-
-Access Permission
-rwxr-xr-x 
-
-Owner Name
-sasdemo_edw_dev 
-
-File Size
-4KB 
-
-File Size (bytes)
-4096 
-
-
-
-
-
-
-
-
-
-
-
-#
-
-Name
-
-Member Type
-
-File Size
-
-Last Modified
-
-
-
-1
-LOAN07 DATA 115MB 07/14/2026 15:27:15 
-
-2
-PLOAN07 DATA 48MB 07/14/2026 15:27:13 
-
-3
-REPTDATE DATA 128KB 07/14/2026 15:27:14 
-
-4
-WAQ DATA 1MB 07/14/2026 15:27:14 
-
-5
-WIIS DATA 1MB 07/14/2026 15:27:14 
-
-6
-WOFFHP DATA 128KB 07/14/2026 15:27:14 
-
-7
-WSP2 DATA 1MB 07/14/2026 15:27:13 
-
-
-
-
-OLD.WIIS contents 
-
-
-The DATASETS Procedure
-
-
-
-
-
-
-
-
-
-
-Data Set Name
-OLD.WIIS 
-Observations
-261 
-
-Member Type
-DATA 
-Variables
-544 
-
-Engine
-V9 
-Indexes
-0 
-
-Created
-07/13/2026 15:48:21 
-Observation Length
-3680 
-
-Last Modified
-07/13/2026 15:48:21 
-Deleted Observations
-0 
-
-Protection
-  
-Compressed
-NO 
-
-Data Set Type
-  
-Sorted
-NO 
-
-Label
-  
- 
-  
-
-Data Representation
-SOLARIS_X86_64, LINUX_X86_64, ALPHA_TRU64, LINUX_IA64 
- 
-  
-
-Encoding
-latin1 Western (ISO) 
- 
-  
-
-
-
-
-
-
-
-Engine/Host Dependent Information
-
-
-
-Data Set Page Size
-65536 
-
-Number of Data Set Pages
-17 
-
-First Data Page
-2 
-
-Max Obs per Page
-17 
-
-Obs in First Data Page
-16 
-
-Number of Data Set Repairs
-0 
-
-Filename
-/dwh/test/wiis.sas7bdat 
-
-Release Created
-9.0401M9 
-
-Host Created
-Linux 
-
-Inode Number
-807267870 
-
-Access Permission
-rw-r--r-- 
-
-Owner Name
-sasdemo_edw_dev 
-
-File Size
-1MB 
-
-File Size (bytes)
-1179648 
-
-
-
-
-
-
-
-
-
-
-
-Variables in Creation Order
-
-
-#
-
-Variable
-
-Type
-
-Len
-
-Format
-
-
-
-1
-ACCTNO Num 8   
-
-2
-WSUSPEND Num 8   
-
-3
-WRECOVER Num 8   
-
-4
-WRECC Num 8   
-
-5
-WOISUSP Num 8   
-
-6
-WOIRECV Num 8   
-
-7
-WOIRECC Num 8   
-
-8
-NAME Char 24   
-
-9
-TAXNO Char 11   
-
-10
-ORGTYPE Char 1   
-
-11
-GUAREND Char 20   
-
-12
-BANKNO Num 8   
-
-13
-APPCODE Char 1   
-
-14
-ACCBRCH Num 8   
-
-15
-CUSTCODE Num 8   
-
-16
-PURPOSE Char 1   
-
-17
-FOREIGN Char 6   
-
-18
-BKRPTIND Char 1   
-
-19
-NOTENO Num 8   
-
-20
-REVERSED Char 1   
-
-21
-LOANTYPE Num 8   
-
-22
-NTBRCH Num 8   
-
-23
-PENDBRH Num 8   
-
-24
-ISSUEDT Num 8   
-
-25
-NOTEMAT Num 8   
-
-26
-LASTTRAN Num 8   
-
-27
-LSTTRNCD Num 8   
-
-28
-CURBAL Num 8   
-
-29
-INTAMT Num 8   
-
-30
-PRINBNP Num 8   
-
-31
-APPVALUE Num 8   
-
-32
-NOTETERM Num 8   
-
-33
-COLLDESC Char 70   
-
-34
-FLAG3 Char 1   
-
-35
-SYNDIND Char 1   
-
-36
-DLIVRYDT Num 8   
-
-37
-COMMNO Num 8   
-
-38
-CORPCODE Char 1   
-
-39
-COSTCTR Num 8   
-
-40
-PCOSTCTR Num 8   
-
-41
-SECTOR Char 4   
-
-42
-CENSUS Num 8   
-
-43
-BILLTYPE Char 1   
-
-44
-GRANTDT Num 8   
-
-45
-PAIDIND Char 1   
-
-46
-ORGBAL Num 8   
-
-47
-NETPROC Num 8   
-
-48
-FEEDUE Num 8   
-
-49
-INTRATE Num 8   
-
-50
-SPREAD Num 8   
-
-51
-NTINT Char 1   
-
-52
-INTMAINT Num 8   
-
-53
-REBATE Num 8   
-
-54
-INTEARN Num 8   
-
-55
-ACCRUAL Num 8   
-
-56
-RISKRATE Char 4   
-
-57
-SECURE Char 1   
-
-58
-LIABCODE Char 2   
-
-59
-FLAG1 Char 1   
-
-60
-MORTGIND Char 1   
-
-61
-REFINANC Char 1   
-
-62
-SBA Char 1   
-
-63
-LOANSTAT Num 8   
-
-64
-NONACCR Char 1   
-
-65
-DEALERNO Num 8   
-
-66
-MATUREDT Num 8   
-
-67
-BORSTAT Char 1   
-
-68
-MARKETVL Num 8   
-
-69
-COLLMAKE Char 6   
-
-70
-EARNTERM Num 8   
-
-71
-USURYIDX Num 8   
-
-72
-STATE Char 6   
-
-73
-OCCUPANT Char 1   
-
-74
-INTEARN2 Num 8   
-
-75
-INTEARN3 Num 8   
-
-76
-INTEARN4 Num 8   
-
-77
-PAYAMT Num 8   
-
-78
-PAYFREQ Char 1   
-
-79
-FEETOTAL Num 8   
-
-80
-FEETOT2 Num 8   
-
-81
-FEEAMT Num 8   
-
-82
-FEEAMT2 Num 8   
-
-83
-FEEAMT3 Num 8   
-
-84
-BILDUE Num 8   
-
-85
-BILTOT Num 8   
-
-86
-BILPAY Num 8   
-
-87
-BILPRIN Num 8   
-
-88
-HSTOTAMT Num 8   
-
-89
-PAYTYPE Char 1   
-
-90
-HSTOTPAY Num 8   
-
-91
-DISPYIND Num 8   
-
-92
-FEEAMT4 Num 8   
-
-93
-REBIND Char 1   
-
-94
-APPRDATE Num 8   
-
-95
-POSTNTRN Char 1   
-
-96
-LSTTRNAM Num 8   
-
-97
-INTBNP Num 8   
-
-98
-NTAPR Num 8   
-
-99
-ORIGRATE Num 8   
-
-100
-VINNO Char 20   
-
-101
-RESTIND Char 1   
-
-102
-PAIDTODT Num 8   
-
-103
-USER2 Char 1   
-
-104
-USER3 Char 1   
-
-105
-USER4 Char 1   
-
-106
-POSTCODE Num 8   
-
-107
-FEEYTD Num 8   
-
-108
-FEEPDYTD Num 8   
-
-109
-RSRVTERM Num 8   
-
-110
-BILPDYTD Num 8   
-
-111
-INTPDYTD Num 8   
-
-112
-PAYNUM Num 8   
-
-113
-ACCRUYTD Num 8   
-
-114
-ACCRUEOP Num 8   
-
-115
-BIRTHDT Num 8   
-
-116
-OSTDAMT Num 8   
-
-117
-PRINPAID Num 8   
-
-118
-INTPAID Num 8   
-
-119
-NTINDEX Num 8   
-
-120
-MTDINT Num 8   
-
-121
-COLLYEAR Num 8   
-
-122
-ADJUST Num 8   
-
-123
-ECSRRSRV Num 8   
-
-124
-FEEASYTD Num 8   
-
-125
-PRINYTD Num 8   
-
-126
-HTOTAMT1 Num 8   
-
-127
-HTOTPAY1 Num 8   
-
-128
-DISBIND1 Char 1   
-
-129
-APPLDATE Num 8   
-
-130
-PZIPCODE Num 8   
-
-131
-NFEEAMT5 Num 8   
-
-132
-NFEEAMT6 Num 8   
-
-133
-NFEEAMT7 Num 8   
-
-134
-BILLCNT Num 8   
-
-135
-HTOTAMT2 Num 8   
-
-136
-HTOTPAY2 Num 8   
-
-137
-TMLATE15 Num 8   
-
-138
-TMLATE30 Num 8   
-
-139
-TMLATE60 Num 8   
-
-140
-TMLATE90 Num 8   
-
-141
-ACCTYIND Num 8   
-
-142
-TOTPDEOP Num 8   
-
-143
-CRISPURP Char 4   
-
-144
-SCORE1 Char 4   
-
-145
-SCORE2 Char 4   
-
-146
-HSTPRIN Num 8   
-
-147
-HSTINT Num 8   
-
-148
-NFEEAMT8 Num 8   
-
-149
-MINIFEE Num 8   
-
-150
-NFEEAMT9 Num 8   
-
-151
-FEASSYTD Num 8   
-
-152
-FEEAMT10 Num 8   
-
-153
-FEEAMT11 Num 8   
-
-154
-FEEAMT12 Num 8   
-
-155
-FEEEARN1 Num 8   
-
-156
-FEEEARN2 Num 8   
-
-157
-RSRVREBI Char 1   
-
-158
-FEEAMT5 Num 8   
-
-159
-BONUSANO Num 8   
-
-160
-DELQCD Char 2   
-
-161
-BLDATE Num 8   
-
-162
-BALANCE Num 8   
-
-163
-WDATE Num 8   
-
-164
-WDOWNIND Char 1   
-
-165
-WIISPW Num 8   
-
-166
-WOIW Num 8   
-
-167
-IISPW Num 8   
-
-168
-OIW Num 8   
-
-169
-FLAG5 Char 1   
-
-170
-ACCOSTCT Num 8   
-
-171
-INTINYTD Num 8   
-
-172
-PREVBRNO Num 8   
-
-173
-USER1 Char 1   
-
-174
-ACCTPBRH Num 8   
-
-175
-PAIDOFF Char 2   
-
-176
-NOOFPAY Num 8   
-
-177
-NDHISSDT Num 8   
-
-178
-NDPAYIND Char 1   
-
-179
-ROPAYIND Char 1   
-
-180
-FEEYTDX Num 8   
-
-181
-FEPDYTDX Num 8   
-
-182
-FEEAMT8 Num 8   
-
-183
-FEEAMT9 Num 8   
-
-184
-FEEAMT13 Num 8   
-
-185
-FEEAMT14 Num 8   
-
-186
-FEEAMT15 Num 8   
-
-187
-FEEAMT16 Num 8   
-
-188
-TERMIDAT Num 8   
-
-189
-FEEPLAN Char 2   
-
-190
-FEERATE Num 8   
-
-191
-WORDTYP Char 1   
-
-192
-HISPTDT Num 8   
-
-193
-STAFFNO Num 8   
-
-194
-PAYEFFDT Num 8   
-
-195
-APPORMT Num 8   
-
-196
-FEEAMTA Num 8   
-
-197
-FEEAMTB Num 8   
-
-198
-NFEEAM10 Num 8   
-
-199
-NFEEAM11 Num 8   
-
-200
-NFEEAM12 Num 8   
-
-201
-NDHEXPDT Num 8   
-
-202
-POFFICER Num 8   
-
-203
-COSTFUND Num 8   
-
-204
-WBRANCH Char 3   
-
-205
-WNAME Char 24   
-
-206
-NPLCRR Char 4   
-
-207
-MANFEE Num 8   
-
-208
-FISSPURP Num 8   
-
-209
-BRANCH Char 7   
-
-210
-CUSTCDX Num 8   
-
-211
-WISSPW Num 8   
-
-212
-VINNO1 Char 20   
-
-213
-CUSTCDR Num 8   
-
-214
-STATUSDT Num 8   
-
-215
-MODELDES Char 6   
-
-216
-INTBUYPD Num 8   
-
-217
-INTPYTD1 Num 8   
-
-218
-YTDEARNS Num 8   
-
-219
-INTRATE2 Num 8   
-
-220
-RATELMT2 Num 8   
-
-221
-PRMOFFHP Num 8   
-
-222
-DLVDATE Num 8   
-
-223
-ESCRACCT Num 8   
-
-224
-POINTAMT Num 8   
-
-225
-CEILINGO Num 8   
-
-226
-CEILINGU Num 8   
-
-227
-FEEAMTC Num 8   
-
-228
-BILDUE1 Num 8   
-
-229
-RESTBALC Num 8   
-
-230
-RESCHEIND Char 1   
-
-231
-FEEAMTO Num 8   
-
-232
-REBATEI Num 8   
-
-233
-PAYIND Char 1   
-
-234
-RESTRUCT Char 6   
-
-235
-NXBILDT Num 8   
-
-236
-NXTBIL Num 8   
-
-237
-AANUMBR Char 20   
-
-238
-SENDNBL Char 1   
-
-239
-FRELEAS Num 8   
-
-240
-ASSMDATE Num 8   
-
-241
-CURCODE Char 3   
-
-242
-SITYPE Char 1   
-
-243
-SIACCTNO Num 8   
-
-244
-USER5 Char 1   
-
-245
-CJFEE Num 8   
-
-246
-SM_DATE Num 8   
-
-247
-SM_STATUS Char 1   
-
-248
-FORM2 Num 8   
-
-249
-FORM1 Num 8   
-
-250
-MAILCODE Char 2   
-
-251
-VARSTDTE Num 8   
-
-252
-USMARGIN Num 8   
-
-253
-USEDIT Char 1   
-
-254
-FEECOMBIND Char 1   
-
-255
-STOPDEBIT Char 1   
-
-256
-CASHPRICE Num 8   
-
-257
-REACCRUAL Char 1   
-
-258
-LATENOTICE Char 1   
-
-259
-GUARNOTICE Char 1   
-
-260
-INTBASIS Num 8   
-
-261
-MEMOACC Num 8   
-
-262
-EXCESSPAY Num 8   
-
-263
-BILLEADDAY Num 8   
-
-264
-DEATHDATE Num 8   
-
-265
-INTSTDTE Num 8   
-
-266
-AUTNACCR Char 1   
-
-267
-CURRATE Num 8   
-
-268
-USLIMIT Num 8   
-
-269
-CFINDEX Num 8   
-
-270
-WRITE_DOWN_BAL Num 8   
-
-271
-ORICODE Num 8   
-
-272
-EXRATIO Num 8   
-
-273
-SYNRATIO Num 8   
-
-274
-NUMCPNS Num 8   
-
-275
-BILDUEMIG Num 8   
-
-276
-OLDNOTELASTTRAN Num 8   
-
-277
-OLDNOTEBLDATE Num 8   
-
-278
-ISSXDTE Num 8   
-
-279
-OLDNOTEDAYARR Num 8   
-
-280
-CONTRTYPE Char 2   
-
-281
-DNBFISME Char 1   
-
-282
-NPLCRRBPA Char 1   
-
-283
-FCLOSUREDT Num 8   
-
-284
-RRCYCLE Char 3   
-
-285
-OLDUNPAID Num 8   
-
-286
-VB Char 1   
-
-287
-CPNSTDTE Num 8   
-
-288
-RSN Char 1   
-
-289
-PTMNATE Char 11   
-
-290
-CP Char 11   
-
-291
-OLDRR Char 1   
-
-292
-NXDUEDT Num 8   
-
-293
-CURRILDTE Num 8   
-
-294
-FIRSILDTE Num 8   
-
-295
-ACCTREVDT Num 8   
-
-296
-MNIAPLMT Num 8   
-
-297
-MNIAPDT Num 8   
-
-298
-ABM_HL Char 1   
-
-299
-IA_LRU Char 1   
-
-300
-MNIAPDTE Num 8   
-
-301
-MORDAYARR Num 8   
-
-302
-ASCORE_PERM Char 8   
-
-303
-ASCORE_LTST Char 8   
-
-304
-COMMNO_OLD Num 8   
-
-305
-NACOSPADT Num 8   
-
-306
-FDB Char 1   
-
-307
-DAYARR_MO Num 8   
-
-308
-FDACCTNO_ Char 17   
-
-309
-FDCERTNO Num 8   
-
-310
-FDACCTNO Num 8 10. 
-
-311
-CCRIS_INSTLAMT Num 8   
-
-312
-EARLY_SETTLE_FEE_CHARGE_FLG Char 1   
-
-313
-LOCK_IN_END_DT Num 8   
-
-314
-TIMES_RENEWED Num 8   
-
-315
-NURS_TAG Char 6   
-
-316
-NURS_COUNTER Num 8   
-
-317
-WRIOFF_DT Char 8   
-
-318
-WRIOFF_AMT Num 8   
-
-319
-CUM_WRIOFF Num 8   
-
-320
-RECOVER_COST Num 8   
-
-321
-OLDNOTEAPPVALUE Num 8   
-
-322
-OLDNOTEISSUEDT Num 8   
-
-323
-REPOSDTE Char 8   
-
-324
-VALUEDTE Char 8   
-
-325
-DISPOSED_AMT Num 8   
-
-326
-DSR Num 8   
-
-327
-REPAY_SOURCE Num 8   
-
-328
-REPAY_TYPE_CD Char 2   
-
-329
-MTD_REPAID_AMT Num 8   
-
-330
-MTD_TAWIDH_AMT Num 8   
-
-331
-MTD_GHARAMAH_AMT Num 8   
-
-332
-ASCORE_COMM Char 12   
-
-333
-SPOTRATE Num 8   
-
-334
-INDUSTRIAL_SECTOR_CD Char 8   
-
-335
-INSOLVENCY_IND Char 1   
-
-336
-PROMPT_PAY_TRACKER Char 4   
-
-337
-MAN_REV_RATE Num 8   
-
-338
-MAN_REV_DATE Char 8   
-
-339
-SYS_REV_RATE Num 8   
-
-340
-SYS_REV_DATE Char 8   
-
-341
-REFINANC_LN Num 8   
-
-342
-OLD_FI Char 9   
-
-343
-OLD_MACC_NO Char 30   
-
-344
-OLD_SUBACC_NO Char 30   
-
-345
-NUR_STARTDT Num 8   
-
-346
-NURS_TAGDT Num 8   
-
-347
-NURS_ENDDT Num 8   
-
-348
-TIA_TAG_DATE Num 8   
-
-349
-TIA_UTAG_DATE Num 8   
-
-350
-TAXEQIND Char 1   
-
-351
-MARKAMT Num 8   
-
-352
-MARKED_PAYMENT_IND Char 1   
-
-353
-STAFF_FREE_INT_IND Char 1   
-
-354
-STAFF_FREE_INT_LOAN_AMT Num 8   
-
-355
-OMNIBUS_FACILITY_IND Char 1   
-
-356
-MARKED_PAYMENT_AMT Num 8   
-
-357
-REPO_ORDER_ISSUE_DT Num 8   
-
-358
-NUM_REPO_ORDER_ISSUE Num 8   
-
-359
-COURT_ORDER_APPLY_DT Num 8   
-
-360
-COURT_ORDER_OBTAIN_DT Num 8   
-
-361
-LTST_JAN_MTH_END_DIA Num 8   
-
-362
-LTST_FEB_MTH_END_DIA Num 8   
-
-363
-LTST_MAR_MTH_END_DIA Num 8   
-
-364
-LTST_APR_MTH_END_DIA Num 8   
-
-365
-LTST_MAY_MTH_END_DIA Num 8   
-
-366
-LTST_JUN_MTH_END_DIA Num 8   
-
-367
-LTST_JUL_MTH_END_DIA Num 8   
-
-368
-LTST_AUG_MTH_END_DIA Num 8   
-
-369
-LTST_SEP_MTH_END_DIA Num 8   
-
-370
-LTST_OCT_MTH_END_DIA Num 8   
-
-371
-LTST_NOV_MTH_END_DIA Num 8   
-
-372
-LTST_DEC_MTH_END_DIA Num 8   
-
-373
-RISK_GRADE_CLASS Char 1   
-
-374
-BANK_EQUITY_RATIO Num 8   
-
-375
-LTST_MGB_SCORE Char 12   
-
-376
-LMO_TAG Char 2   
-
-377
-LMO_MAINT_DT Char 8   
-
-378
-LMO_START_DT Char 8   
-
-379
-LMO_END_DT Char 8   
-
-380
-AKPK_STATUS Char 9   
-
-381
-MO_INSTL_ARR Num 8   
-
-382
-MO_TAG Char 6   
-
-383
-MOSTDTE Num 8   
-
-384
-MOENDDTE Num 8   
-
-385
-MO_MAIN_DT Num 8   
-
-386
-REPAY_PROPOSAL_CD Char 6   
-
-387
-DIGITAL_RR_STATUS_CD Char 2   
-
-388
-DRF_DATE Char 8   
-
-389
-DIGITAL_RR_STATUS_DT Num 8   
-
-390
-TFA_NURS_TAG Char 2   
-
-391
-TFA_NURS_TAG_DT Num 8   
-
-392
-TFA_NURS_START_DT Num 8   
-
-393
-TFA_NURS_END_DT Num 8   
-
-394
-TFA_NURS_COUNTER Num 8   
-
-395
-TFA_DIG_STATUS_CD Char 3   
-
-396
-TFA_DIG_STATUS_DT Num 8   
-
-397
-TAKAFUL_AMT Num 8   
-
-398
-TAKAFUL_OPERAT Num 8   
-
-399
-TAKAFUL_COLLECT_ACCTNO Num 8   
-
-400
-REPAY_PROPOSAL_DT Num 8   
-
-401
-MANUAL_RR_TAG Char 3   
-
-402
-MANUAL_RR_DT Num 8   
-
-403
-LMOSTDATE Num 8   
-
-404
-LMOENDDATE Num 8   
-
-405
-AUTO_REPRICE_INSTL_AMT Num 8   
-
-406
-BULLET_REPAY_IND Char 1   
-
-407
-BALLOON_REPAY_IND Char 1   
-
-408
-PROP_DEVELOP_FIN_IND Char 1   
-
-409
-DIA_PAST01_MTH Char 3   
-
-410
-DIA_PAST02_MTH Char 3   
-
-411
-DIA_PAST03_MTH Char 3   
-
-412
-DIA_PAST04_MTH Char 3   
-
-413
-DIA_PAST05_MTH Char 3   
-
-414
-DIA_PAST06_MTH Char 3   
-
-415
-DIA_PAST07_MTH Char 3   
-
-416
-DIA_PAST08_MTH Char 3   
-
-417
-DIA_PAST09_MTH Char 3   
-
-418
-DIA_PAST10_MTH Char 3   
-
-419
-DIA_PAST11_MTH Char 3   
-
-420
-DIA_PAST12_MTH Char 3   
-
-421
-DIA_PAST13_MTH Char 3   
-
-422
-DIA_PAST14_MTH Char 3   
-
-423
-DIA_PAST15_MTH Char 3   
-
-424
-DIA_PAST16_MTH Char 3   
-
-425
-DIA_PAST17_MTH Char 3   
-
-426
-DIA_PAST18_MTH Char 3   
-
-427
-DIA_PAST19_MTH Char 3   
-
-428
-DIA_PAST20_MTH Char 3   
-
-429
-DIA_PAST21_MTH Char 3   
-
-430
-DIA_PAST22_MTH Char 3   
-
-431
-DIA_PAST23_MTH Char 3   
-
-432
-DIA_PAST24_MTH Char 3   
-
-433
-AUTO_EXT_TAG Char 1   
-
-434
-AUTO_EXT_TAG_DT Num 8   
-
-435
-COM_FEE_NOTICE_IND Char 1   
-
-436
-FEEDUEMS Num 8   
-
-437
-AUTO_REPRICE_DIFF_INSTL_AMT Num 8   
-
-438
-ORIG_RESTIND Char 2   
-
-439
-RESTIND_END_DT Num 8   
-
-440
-NUM_MORA Num 8   
-
-441
-AKPK_RA_TAG Char 3   
-
-442
-AKPK_RA_TAG_DT Num 8   
-
-443
-AKPK_RA_DIG_STATUS_CD Char 3   
-
-444
-AKPK_RA_DIG_STATUS_DT Num 8   
-
-445
-AKPK_RA_START_DT Num 8   
-
-446
-AKPK_RA_END_DT Num 8   
-
-447
-AKPK_RA_ORIG_SPREAD Num 8   
-
-448
-TRA_EFF_DT Num 8 Z6. 
-
-449
-AKPK_RA_DLY_INT_ACCRUAL Num 8   
-
-450
-AKPK_RA_MTD_INT_ACCRUAL Num 8   
-
-451
-AKPK_RA_MTH_INT_WAIVER_AMT Num 8   
-
-452
-AKPK_RA_CUMM_INT_WAIVER_AMT Num 8   
-
-453
-AKPK_RA_MTH_INT_CAP_AMT Num 8   
-
-454
-AKPK_RA_CUMM_INT_CAP_AMT Num 8   
-
-455
-AKPK_RA_ORIG_CEILING_RT Num 8   
-
-456
-NUM_PAY_BIL_INSTL Num 8   
-
-457
-NUM_PAY_BIL_INT Num 8   
-
-458
-MORA_BENCHMARK_AMT Num 8   
-
-459
-TRA_RR_IND Num 8   
-
-460
-TRA_RR_ACCEPT_DT Num 8   
-
-461
-SCHBIL_INSTL_DT Num 8   
-
-462
-SCHBIL_INT_DT Num 8   
-
-463
-LASTBIL_INSTL_DT Num 8   
-
-464
-LASTBIL_INT_DT Num 8   
-
-465
-NUM_RR Num 8   
-
-466
-DAYARR_MORA Num 8   
-
-467
-INFEE Num 8   
-
-468
-SPA_AMT Num 8   
-
-469
-HI_TAG Char 3   
-
-470
-HI_TAG_DT Num 8   
-
-471
-HI_DIG_STATUS_CD Char 3   
-
-472
-HI_DIG_STATUS_DT Num 8   
-
-473
-REPO_ORDER_EXPIRY_DT Num 8   
-
-474
-FLOOD_MO_TAG Char 5   
-
-475
-FLOOD_MO_DT Num 8   
-
-476
-IMPAIRED_HP_TAG Char 1   
-
-477
-REPAY_MODE Char 1   
-
-478
-RR_EREQUEST_NUM Char 42   
-
-479
-RR_TYPE Char 13   
-
-480
-RR_APPR_DATE Num 8   
-
-481
-INDEX_PRICING Char 15   
-
-482
-SCH_REPAY_TERM Num 8   
-
-483
-LEGAL_NOTICE_INSTRUCT_DT Num 8   
-
-484
-LEGAL_NOTICE_ISSUE_DT Num 8   
-
-485
-PARAS_TAG Char 7   
-
-486
-PARAS_TAG_DT Num 8   
-
-487
-JUDGE_AMT Num 8   
-
-488
-JUDGE_DT Num 8   
-
-489
-JUDGE_MAINT_DT Num 8   
-
-490
-PRE_BKRUPT_NOTICE_DT Num 8   
-
-491
-PCT_INDEX_INTRATE Num 8   
-
-492
-HP_STAGE_TRSF_IND Char 1   
-
-493
-RR_APPL_DATE Num 8   
-
-494
-CUMM_PAID_BILL_AMT Num 8   
-
-495
-CUMM_PAID_BILL_PCT Num 8   
-
-496
-CLIMATE_PRIN_TAXONOMY_CLASS Char 2   
-
-497
-AKPK_MATRIX_TYPE Char 9   
-
-498
-AKPK_MATRIX_DATE Num 8   
-
-499
-DEVIATION_CD Char 2   
-
-500
-COURT_ORDER_PERPETUAL_IND Char 1   
-
-501
-FLOOD_MO_PACKAGE_CD Char 7   
-
-502
-INT_ADVICE_IND Char 1   
-
-503
-E_INVOICE_IND Char 1   
-
-504
-LEGAL_MATURITY_DT Num 8   
-
-505
-RR_IL_RECLASS_DT Num 8   
-
-506
-FDB_TAG Char 1   
-
-507
-FDB_TAG_DT Num 8   
-
-508
-FDB_SCORING_DT Num 8   
-
-509
-CLIMATE_MITIGATE_GP1_FLG Char 1   
-
-510
-CLIMATE_ADAPT_GP2_FLG Char 1   
-
-511
-CLIMATE_ENVIRONMT_GP3_FLG Char 1   
-
-512
-CLIMATE_TRANSITION_GP4_FLG Char 1   
-
-513
-CLIMATE_PROHIBIT_GP5_FLG Char 1   
-
-514
-WOS_RECEIVED_DT Num 8   
-
-515
-WOS_SETTLED_DT Num 8   
-
-516
-WOS_TAG Char 1   
-
-517
-REMAIN_TERM_MATURITY Num 8   
-
-518
-COURT_ORDER_UPDATE_DT Num 8   
-
-519
-FRAUD_TAG Char 1   
-
-520
-FRAUD_TAG_DT Num 8   
-
-521
-SOURCE_INCOME_CURRENCY_CD Char 3   
-
-522
-VEHI_MAKE_CATEGORY Char 2   
-
-523
-WRIOFF_CLOSE_FILE_TAG Char 1   
-
-524
-INT_JAN_TO_JUN_AMT Num 8   
-
-525
-INT_JUL_TO_DEC_AMT Num 8   
-
-526
-WRIOFF_CLOSE_FILE_TAG_DT Num 8   
-
-527
-RR_UNTAG_REPAY_CNT Num 8   
-
-528
-RR_UNTAG_DATE Num 8   
-
-529
-EARMARK_NOTICE_DT Num 8   
-
-530
-EARMARK_AMT Num 8   
-
-531
-MAILING_ADD_IND Char 1   
-
-532
-BILLING_ADD_IND Char 1   
-
-533
-PROP_ADD_IND Char 1   
-
-534
-FLOOR_RT_UNDER Num 8   
-
-535
-FLOOR_RT_OVER Num 8   
-
-536
-STMT_GEN_IND Char 1   
-
-537
-MULTI_CURRENCY_TAG Char 1   
-
-538
-SCHD_PAYMNT Char 1   
-
-539
-NAME_FREQ Char 20   
-
-540
-AGING_FAST_TRACKER Char 4   
-
-541
-GOODWILL_IND Char 1   
-
-542
-GOODWILL_CURR_RATE Num 8   
-
-543
-GOODWILL_CURR_AMT Num 8   
-
-544
-RRSTG1 Char 1   
-
-
-
-
-NEW.WIIS contents 
-
-
-The DATASETS Procedure
-
-
-
-
-
-
-
-
-
-
-Data Set Name
-NEW.WIIS 
-Observations
-261 
-
-Member Type
-DATA 
-Variables
-537 
-
-Engine
-V9 
-Indexes
-0 
-
-Created
-07/14/2026 14:56:47 
-Observation Length
-3640 
-
-Last Modified
-07/14/2026 14:56:47 
-Deleted Observations
-0 
-
-Protection
-  
-Compressed
-NO 
-
-Data Set Type
-  
-Sorted
-NO 
-
-Label
-  
- 
-  
-
-Data Representation
-SOLARIS_X86_64, LINUX_X86_64, ALPHA_TRU64, LINUX_IA64 
- 
-  
-
-Encoding
-latin1 Western (ISO) 
- 
-  
-
-
-
-
-
-
-
-Engine/Host Dependent Information
-
-
-
-Data Set Page Size
-131072 
-
-Number of Data Set Pages
-8 
-
-First Data Page
-1 
-
-Max Obs per Page
-35 
-
-Obs in First Data Page
-16 
-
-Number of Data Set Repairs
-0 
-
-Filename
-/dwh/compare/wiis.sas7bdat 
-
-Release Created
-9.0401M9 
-
-Host Created
-Linux 
-
-Inode Number
-538772270 
-
-Access Permission
-rw-r--r-- 
-
-Owner Name
-sasdemo_edw_dev 
-
-File Size
-1MB 
-
-File Size (bytes)
-1179648 
-
-
-
-
-
-
-
-
-
-
-Variables in Creation Order
-
-
-#
-
-Variable
-
-Type
-
-Len
-
-
-
-1
-ACCTNO Num 8 
-
-2
-WSUSPEND Num 8 
-
-3
-WRECOVER Num 8 
-
-4
-WRECC Num 8 
-
-5
-WOISUSP Num 8 
-
-6
-WOIRECV Num 8 
-
-7
-WOIRECC Num 8 
-
-8
-NAME Char 24 
-
-9
-TAXNO Char 11 
-
-10
-ORGTYPE Char 1 
-
-11
-GUAREND Char 20 
-
-12
-BANKNO Num 8 
-
-13
-APPCODE Char 1 
-
-14
-ACCBRCH Num 8 
-
-15
-CUSTCODE Num 8 
-
-16
-PURPOSE Char 1 
-
-17
-FOREIGN Char 6 
-
-18
-BKRPTIND Char 1 
-
-19
-NOTENO Num 8 
-
-20
-REVERSED Char 1 
-
-21
-LOANTYPE Num 8 
-
-22
-NTBRCH Num 8 
-
-23
-PENDBRH Num 8 
-
-24
-ISSUEDT Num 8 
-
-25
-NOTEMAT Num 8 
-
-26
-LASTTRAN Num 8 
-
-27
-LSTTRNCD Num 8 
-
-28
-CURBAL Num 8 
-
-29
-INTAMT Num 8 
-
-30
-PRINBNP Num 8 
-
-31
-APPVALUE Num 8 
-
-32
-NOTETERM Num 8 
-
-33
-COLLDESC Char 70 
-
-34
-FLAG3 Char 1 
-
-35
-SYNDIND Char 1 
-
-36
-DLIVRYDT Num 8 
-
-37
-COMMNO Num 8 
-
-38
-CORPCODE Char 1 
-
-39
-COSTCTR Num 8 
-
-40
-PCOSTCTR Num 8 
-
-41
-SECTOR Char 4 
-
-42
-CENSUS Num 8 
-
-43
-BILLTYPE Char 1 
-
-44
-GRANTDT Num 8 
-
-45
-PAIDIND Char 1 
-
-46
-ORGBAL Num 8 
-
-47
-NETPROC Num 8 
-
-48
-FEEDUE Num 8 
-
-49
-INTRATE Num 8 
-
-50
-SPREAD Num 8 
-
-51
-NTINT Char 1 
-
-52
-INTMAINT Num 8 
-
-53
-REBATE Num 8 
-
-54
-INTEARN Num 8 
-
-55
-ACCRUAL Num 8 
-
-56
-RISKRATE Char 4 
-
-57
-SECURE Char 1 
-
-58
-LIABCODE Char 2 
-
-59
-FLAG1 Char 1 
-
-60
-MORTGIND Char 1 
-
-61
-REFINANC Char 1 
-
-62
-SBA Char 1 
-
-63
-LOANSTAT Num 8 
-
-64
-NONACCR Char 1 
-
-65
-DEALERNO Num 8 
-
-66
-MATUREDT Num 8 
-
-67
-BORSTAT Char 1 
-
-68
-MARKETVL Num 8 
-
-69
-COLLMAKE Char 6 
-
-70
-EARNTERM Num 8 
-
-71
-USURYIDX Num 8 
-
-72
-STATE Char 6 
-
-73
-OCCUPANT Char 1 
-
-74
-INTEARN2 Num 8 
-
-75
-INTEARN3 Num 8 
-
-76
-INTEARN4 Num 8 
-
-77
-PAYAMT Num 8 
-
-78
-PAYFREQ Char 1 
-
-79
-FEETOTAL Num 8 
-
-80
-FEETOT2 Num 8 
-
-81
-FEEAMT Num 8 
-
-82
-FEEAMT2 Num 8 
-
-83
-FEEAMT3 Num 8 
-
-84
-BILDUE Num 8 
-
-85
-BILTOT Num 8 
-
-86
-BILPAY Num 8 
-
-87
-BILPRIN Num 8 
-
-88
-HSTOTAMT Num 8 
-
-89
-PAYTYPE Char 1 
-
-90
-HSTOTPAY Num 8 
-
-91
-DISPYIND Num 8 
-
-92
-FEEAMT4 Num 8 
-
-93
-REBIND Char 1 
-
-94
-APPRDATE Num 8 
-
-95
-POSTNTRN Char 1 
-
-96
-LSTTRNAM Num 8 
-
-97
-INTBNP Num 8 
-
-98
-NTAPR Num 8 
-
-99
-ORIGRATE Num 8 
-
-100
-VINNO Char 20 
-
-101
-RESTIND Char 1 
-
-102
-PAIDTODT Num 8 
-
-103
-USER2 Char 1 
-
-104
-USER3 Char 1 
-
-105
-USER4 Char 1 
-
-106
-POSTCODE Num 8 
-
-107
-FEEYTD Num 8 
-
-108
-FEEPDYTD Num 8 
-
-109
-RSRVTERM Num 8 
-
-110
-BILPDYTD Num 8 
-
-111
-INTPDYTD Num 8 
-
-112
-PAYNUM Num 8 
-
-113
-ACCRUYTD Num 8 
-
-114
-ACCRUEOP Num 8 
-
-115
-BIRTHDT Num 8 
-
-116
-OSTDAMT Num 8 
-
-117
-PRINPAID Num 8 
-
-118
-INTPAID Num 8 
-
-119
-NTINDEX Num 8 
-
-120
-MTDINT Num 8 
-
-121
-COLLYEAR Num 8 
-
-122
-ADJUST Num 8 
-
-123
-ECSRRSRV Num 8 
-
-124
-FEEASYTD Num 8 
-
-125
-PRINYTD Num 8 
-
-126
-HTOTAMT1 Num 8 
-
-127
-HTOTPAY1 Num 8 
-
-128
-DISBIND1 Char 1 
-
-129
-APPLDATE Num 8 
-
-130
-PZIPCODE Num 8 
-
-131
-NFEEAMT5 Num 8 
-
-132
-NFEEAMT6 Num 8 
-
-133
-NFEEAMT7 Num 8 
-
-134
-BILLCNT Num 8 
-
-135
-HTOTAMT2 Num 8 
-
-136
-HTOTPAY2 Num 8 
-
-137
-TMLATE15 Num 8 
-
-138
-TMLATE30 Num 8 
-
-139
-TMLATE60 Num 8 
-
-140
-TMLATE90 Num 8 
-
-141
-ACCTYIND Num 8 
-
-142
-TOTPDEOP Num 8 
-
-143
-CRISPURP Char 4 
-
-144
-SCORE1 Char 4 
-
-145
-SCORE2 Char 4 
-
-146
-HSTPRIN Num 8 
-
-147
-HSTINT Num 8 
-
-148
-NFEEAMT8 Num 8 
-
-149
-MINIFEE Num 8 
-
-150
-NFEEAMT9 Num 8 
-
-151
-FEASSYTD Num 8 
-
-152
-FEEAMT10 Num 8 
-
-153
-FEEAMT11 Num 8 
-
-154
-FEEAMT12 Num 8 
-
-155
-FEEEARN1 Num 8 
-
-156
-FEEEARN2 Num 8 
-
-157
-RSRVREBI Char 1 
-
-158
-FEEAMT5 Num 8 
-
-159
-BONUSANO Num 8 
-
-160
-DELQCD Char 2 
-
-161
-BLDATE Num 8 
-
-162
-BALANCE Num 8 
-
-163
-WDATE Num 8 
-
-164
-WDOWNIND Char 1 
-
-165
-WIISPW Num 8 
-
-166
-WOIW Num 8 
-
-167
-IISPW Num 8 
-
-168
-OIW Num 8 
-
-169
-FLAG5 Char 1 
-
-170
-ACCOSTCT Num 8 
-
-171
-INTINYTD Num 8 
-
-172
-PREVBRNO Num 8 
-
-173
-USER1 Char 1 
-
-174
-ACCTPBRH Num 8 
-
-175
-PAIDOFF Char 2 
-
-176
-NOOFPAY Num 8 
-
-177
-NDHISSDT Num 8 
-
-178
-NDPAYIND Char 1 
-
-179
-ROPAYIND Char 1 
-
-180
-FEEYTDX Num 8 
-
-181
-FEPDYTDX Num 8 
-
-182
-FEEAMT8 Num 8 
-
-183
-FEEAMT9 Num 8 
-
-184
-FEEAMT13 Num 8 
-
-185
-FEEAMT14 Num 8 
-
-186
-FEEAMT15 Num 8 
-
-187
-FEEAMT16 Num 8 
-
-188
-TERMIDAT Num 8 
-
-189
-FEEPLAN Char 2 
-
-190
-FEERATE Num 8 
-
-191
-WORDTYP Char 1 
-
-192
-HISPTDT Num 8 
-
-193
-STAFFNO Num 8 
-
-194
-PAYEFFDT Num 8 
-
-195
-APPORMT Num 8 
-
-196
-FEEAMTA Num 8 
-
-197
-FEEAMTB Num 8 
-
-198
-NFEEAM10 Num 8 
-
-199
-NFEEAM11 Num 8 
-
-200
-NFEEAM12 Num 8 
-
-201
-NDHEXPDT Num 8 
-
-202
-POFFICER Num 8 
-
-203
-COSTFUND Num 8 
-
-204
-WBRANCH Char 3 
-
-205
-WNAME Char 24 
-
-206
-NPLCRR Char 4 
-
-207
-MANFEE Num 8 
-
-208
-FISSPURP Num 8 
-
-209
-BRANCH Char 7 
-
-210
-CUSTCDX Num 8 
-
-211
-WISSPW Num 8 
-
-212
-VINNO1 Char 20 
-
-213
-CUSTCDR Num 8 
-
-214
-STATUSDT Num 8 
-
-215
-MODELDES Char 6 
-
-216
-INTBUYPD Num 8 
-
-217
-INTPYTD1 Num 8 
-
-218
-YTDEARNS Num 8 
-
-219
-INTRATE2 Num 8 
-
-220
-RATELMT2 Num 8 
-
-221
-PRMOFFHP Num 8 
-
-222
-DLVDATE Num 8 
-
-223
-ESCRACCT Num 8 
-
-224
-POINTAMT Num 8 
-
-225
-CEILINGO Num 8 
-
-226
-CEILINGU Num 8 
-
-227
-FEEAMTC Num 8 
-
-228
-BILDUE1 Num 8 
-
-229
-RESTBALC Num 8 
-
-230
-RESCHEIND Char 1 
-
-231
-FEEAMTO Num 8 
-
-232
-REBATEI Num 8 
-
-233
-PAYIND Char 1 
-
-234
-RESTRUCT Char 6 
-
-235
-NXBILDT Num 8 
-
-236
-NXTBIL Num 8 
-
-237
-AANUMBR Char 20 
-
-238
-SENDNBL Char 1 
-
-239
-FRELEAS Num 8 
-
-240
-ASSMDATE Num 8 
-
-241
-CURCODE Char 3 
-
-242
-SITYPE Char 1 
-
-243
-SIACCTNO Num 8 
-
-244
-USER5 Char 1 
-
-245
-CJFEE Num 8 
-
-246
-SM_DATE Num 8 
-
-247
-SM_STATUS Char 1 
-
-248
-FORM2 Num 8 
-
-249
-FORM1 Num 8 
-
-250
-MAILCODE Char 2 
-
-251
-VARSTDTE Num 8 
-
-252
-USMARGIN Num 8 
-
-253
-USEDIT Char 1 
-
-254
-FEECOMBIND Char 1 
-
-255
-STOPDEBIT Char 1 
-
-256
-CASHPRICE Num 8 
-
-257
-REACCRUAL Char 1 
-
-258
-LATENOTICE Char 1 
-
-259
-GUARNOTICE Char 1 
-
-260
-INTBASIS Num 8 
-
-261
-MEMOACC Num 8 
-
-262
-EXCESSPAY Num 8 
-
-263
-BILLEADDAY Num 8 
-
-264
-DEATHDATE Num 8 
-
-265
-INTSTDTE Num 8 
-
-266
-AUTNACCR Char 1 
-
-267
-CURRATE Num 8 
-
-268
-USLIMIT Num 8 
-
-269
-CFINDEX Num 8 
-
-270
-WRITE_DOWN_BAL Num 8 
-
-271
-ORICODE Num 8 
-
-272
-EXRATIO Num 8 
-
-273
-SYNRATIO Num 8 
-
-274
-NUMCPNS Num 8 
-
-275
-BILDUEMIG Num 8 
-
-276
-OLDNOTELASTTRAN Num 8 
-
-277
-OLDNOTEBLDATE Num 8 
-
-278
-ISSXDTE Num 8 
-
-279
-OLDNOTEDAYARR Num 8 
-
-280
-CONTRTYPE Char 2 
-
-281
-DNBFISME Char 1 
-
-282
-NPLCRRBPA Char 1 
-
-283
-FCLOSUREDT Num 8 
-
-284
-RRCYCLE Char 3 
-
-285
-OLDUNPAID Num 8 
-
-286
-VB Char 1 
-
-287
-CPNSTDTE Num 8 
-
-288
-RSN Char 1 
-
-289
-PTMNATE Char 11 
-
-290
-CP Char 11 
-
-291
-OLDRR Char 1 
-
-292
-NXDUEDT Num 8 
-
-293
-CURRILDTE Num 8 
-
-294
-FIRSILDTE Num 8 
-
-295
-ACCTREVDT Num 8 
-
-296
-MNIAPLMT Num 8 
-
-297
-MNIAPDT Num 8 
-
-298
-ABM_HL Char 1 
-
-299
-IA_LRU Char 1 
-
-300
-MNIAPDTE Num 8 
-
-301
-MORDAYARR Num 8 
-
-302
-ASCORE_PERM Char 8 
-
-303
-ASCORE_LTST Char 8 
-
-304
-COMMNO_OLD Num 8 
-
-305
-NACOSPADT Num 8 
-
-306
-FDB Char 1 
-
-307
-DAYARR_MO Num 8 
-
-308
-FDACCTNO_ Char 17 
-
-309
-FDCERTNO Num 8 
-
-310
-FDACCTNO Num 8 
-
-311
-CCRIS_INSTLAMT Num 8 
-
-312
-EARLY_SETTLE_FEE_CHARGE_FLG Char 1 
-
-313
-LOCK_IN_END_DT Num 8 
-
-314
-TIMES_RENEWED Num 8 
-
-315
-NURS_TAG Char 6 
-
-316
-NURS_COUNTER Num 8 
-
-317
-WRIOFF_DT Char 8 
-
-318
-WRIOFF_AMT Num 8 
-
-319
-CUM_WRIOFF Num 8 
-
-320
-RECOVER_COST Num 8 
-
-321
-OLDNOTEAPPVALUE Num 8 
-
-322
-OLDNOTEISSUEDT Num 8 
-
-323
-REPOSDTE Char 8 
-
-324
-VALUEDTE Char 8 
-
-325
-DISPOSED_AMT Num 8 
-
-326
-DSR Num 8 
-
-327
-REPAY_SOURCE Num 8 
-
-328
-REPAY_TYPE_CD Char 2 
-
-329
-MTD_REPAID_AMT Num 8 
-
-330
-MTD_TAWIDH_AMT Num 8 
-
-331
-MTD_GHARAMAH_AMT Num 8 
-
-332
-ASCORE_COMM Char 12 
-
-333
-SPOTRATE Num 8 
-
-334
-INDUSTRIAL_SECTOR_CD Char 8 
-
-335
-INSOLVENCY_IND Char 1 
-
-336
-PROMPT_PAY_TRACKER Char 4 
-
-337
-MAN_REV_RATE Num 8 
-
-338
-MAN_REV_DATE Char 8 
-
-339
-SYS_REV_RATE Num 8 
-
-340
-SYS_REV_DATE Char 8 
-
-341
-REFINANC_LN Num 8 
-
-342
-OLD_FI Char 9 
-
-343
-OLD_MACC_NO Char 30 
-
-344
-OLD_SUBACC_NO Char 30 
-
-345
-NUR_STARTDT Num 8 
-
-346
-NURS_TAGDT Num 8 
-
-347
-NURS_ENDDT Num 8 
-
-348
-TIA_TAG_DATE Num 8 
-
-349
-TIA_UTAG_DATE Num 8 
-
-350
-TAXEQIND Char 1 
-
-351
-MARKAMT Num 8 
-
-352
-MARKED_PAYMENT_IND Char 1 
-
-353
-STAFF_FREE_INT_IND Char 1 
-
-354
-STAFF_FREE_INT_LOAN_AMT Num 8 
-
-355
-OMNIBUS_FACILITY_IND Char 1 
-
-356
-MARKED_PAYMENT_AMT Num 8 
-
-357
-REPO_ORDER_ISSUE_DT Num 8 
-
-358
-NUM_REPO_ORDER_ISSUE Num 8 
-
-359
-COURT_ORDER_APPLY_DT Num 8 
-
-360
-COURT_ORDER_OBTAIN_DT Num 8 
-
-361
-LTST_JAN_MTH_END_DIA Num 8 
-
-362
-LTST_FEB_MTH_END_DIA Num 8 
-
-363
-LTST_MAR_MTH_END_DIA Num 8 
-
-364
-LTST_APR_MTH_END_DIA Num 8 
-
-365
-LTST_MAY_MTH_END_DIA Num 8 
-
-366
-LTST_JUN_MTH_END_DIA Num 8 
-
-367
-LTST_JUL_MTH_END_DIA Num 8 
-
-368
-LTST_AUG_MTH_END_DIA Num 8 
-
-369
-LTST_SEP_MTH_END_DIA Num 8 
-
-370
-LTST_OCT_MTH_END_DIA Num 8 
-
-371
-LTST_NOV_MTH_END_DIA Num 8 
-
-372
-LTST_DEC_MTH_END_DIA Num 8 
-
-373
-RISK_GRADE_CLASS Char 1 
-
-374
-BANK_EQUITY_RATIO Num 8 
-
-375
-LTST_MGB_SCORE Char 12 
-
-376
-LMO_TAG Char 2 
-
-377
-LMO_MAINT_DT Char 8 
-
-378
-LMO_START_DT Char 8 
-
-379
-LMO_END_DT Char 8 
-
-380
-AKPK_STATUS Char 9 
-
-381
-MO_INSTL_ARR Num 8 
-
-382
-MO_TAG Char 6 
-
-383
-MOSTDTE Num 8 
-
-384
-MOENDDTE Num 8 
-
-385
-MO_MAIN_DT Num 8 
-
-386
-REPAY_PROPOSAL_CD Char 6 
-
-387
-DIGITAL_RR_STATUS_CD Char 2 
-
-388
-DRF_DATE Char 8 
-
-389
-DIGITAL_RR_STATUS_DT Num 8 
-
-390
-TFA_NURS_TAG Char 2 
-
-391
-TFA_NURS_TAG_DT Num 8 
-
-392
-TFA_NURS_START_DT Num 8 
-
-393
-TFA_NURS_END_DT Num 8 
-
-394
-TFA_NURS_COUNTER Num 8 
-
-395
-TFA_DIG_STATUS_CD Char 3 
-
-396
-TFA_DIG_STATUS_DT Num 8 
-
-397
-TAKAFUL_AMT Num 8 
-
-398
-TAKAFUL_OPERAT Num 8 
-
-399
-TAKAFUL_COLLECT_ACCTNO Num 8 
-
-400
-REPAY_PROPOSAL_DT Num 8 
-
-401
-MANUAL_RR_TAG Char 3 
-
-402
-MANUAL_RR_DT Num 8 
-
-403
-LMOSTDATE Num 8 
-
-404
-LMOENDDATE Num 8 
-
-405
-AUTO_REPRICE_INSTL_AMT Num 8 
-
-406
-BULLET_REPAY_IND Char 1 
-
-407
-BALLOON_REPAY_IND Char 1 
-
-408
-PROP_DEVELOP_FIN_IND Char 1 
-
-409
-DIA_PAST01_MTH Char 3 
-
-410
-DIA_PAST02_MTH Char 3 
-
-411
-DIA_PAST03_MTH Char 3 
-
-412
-DIA_PAST04_MTH Char 3 
-
-413
-DIA_PAST05_MTH Char 3 
-
-414
-DIA_PAST06_MTH Char 3 
-
-415
-DIA_PAST07_MTH Char 3 
-
-416
-DIA_PAST08_MTH Char 3 
-
-417
-DIA_PAST09_MTH Char 3 
-
-418
-DIA_PAST10_MTH Char 3 
-
-419
-DIA_PAST11_MTH Char 3 
-
-420
-DIA_PAST12_MTH Char 3 
-
-421
-DIA_PAST13_MTH Char 3 
-
-422
-DIA_PAST14_MTH Char 3 
-
-423
-DIA_PAST15_MTH Char 3 
-
-424
-DIA_PAST16_MTH Char 3 
-
-425
-DIA_PAST17_MTH Char 3 
-
-426
-DIA_PAST18_MTH Char 3 
-
-427
-DIA_PAST19_MTH Char 3 
-
-428
-DIA_PAST20_MTH Char 3 
-
-429
-DIA_PAST21_MTH Char 3 
-
-430
-DIA_PAST22_MTH Char 3 
-
-431
-DIA_PAST23_MTH Char 3 
-
-432
-DIA_PAST24_MTH Char 3 
-
-433
-AUTO_EXT_TAG Char 1 
-
-434
-AUTO_EXT_TAG_DT Num 8 
-
-435
-COM_FEE_NOTICE_IND Char 1 
-
-436
-FEEDUEMS Num 8 
-
-437
-AUTO_REPRICE_DIFF_INSTL_AMT Num 8 
-
-438
-ORIG_RESTIND Char 2 
-
-439
-RESTIND_END_DT Num 8 
-
-440
-NUM_MORA Num 8 
-
-441
-AKPK_RA_TAG Char 3 
-
-442
-AKPK_RA_TAG_DT Num 8 
-
-443
-AKPK_RA_DIG_STATUS_CD Char 3 
-
-444
-AKPK_RA_DIG_STATUS_DT Num 8 
-
-445
-AKPK_RA_START_DT Num 8 
-
-446
-AKPK_RA_END_DT Num 8 
-
-447
-AKPK_RA_ORIG_SPREAD Num 8 
-
-448
-TRA_EFF_DT Num 8 
-
-449
-AKPK_RA_DLY_INT_ACCRUAL Num 8 
-
-450
-AKPK_RA_MTD_INT_ACCRUAL Num 8 
-
-451
-AKPK_RA_MTH_INT_WAIVER_AMT Num 8 
-
-452
-AKPK_RA_CUMM_INT_WAIVER_AMT Num 8 
-
-453
-AKPK_RA_MTH_INT_CAP_AMT Num 8 
-
-454
-AKPK_RA_CUMM_INT_CAP_AMT Num 8 
-
-455
-AKPK_RA_ORIG_CEILING_RT Num 8 
-
-456
-NUM_PAY_BIL_INSTL Num 8 
-
-457
-NUM_PAY_BIL_INT Num 8 
-
-458
-MORA_BENCHMARK_AMT Num 8 
-
-459
-TRA_RR_IND Num 8 
-
-460
-TRA_RR_ACCEPT_DT Num 8 
-
-461
-SCHBIL_INSTL_DT Num 8 
-
-462
-SCHBIL_INT_DT Num 8 
-
-463
-LASTBIL_INSTL_DT Num 8 
-
-464
-LASTBIL_INT_DT Num 8 
-
-465
-NUM_RR Num 8 
-
-466
-DAYARR_MORA Num 8 
-
-467
-INFEE Num 8 
-
-468
-SPA_AMT Num 8 
-
-469
-HI_TAG Char 3 
-
-470
-HI_TAG_DT Num 8 
-
-471
-HI_DIG_STATUS_CD Char 3 
-
-472
-HI_DIG_STATUS_DT Num 8 
-
-473
-REPO_ORDER_EXPIRY_DT Num 8 
-
-474
-FLOOD_MO_TAG Char 5 
-
-475
-FLOOD_MO_DT Num 8 
-
-476
-IMPAIRED_HP_TAG Char 1 
-
-477
-REPAY_MODE Char 1 
-
-478
-RR_EREQUEST_NUM Char 42 
-
-479
-RR_TYPE Char 13 
-
-480
-RR_APPR_DATE Num 8 
-
-481
-INDEX_PRICING Char 15 
-
-482
-SCH_REPAY_TERM Num 8 
-
-483
-LEGAL_NOTICE_INSTRUCT_DT Num 8 
-
-484
-LEGAL_NOTICE_ISSUE_DT Num 8 
-
-485
-PARAS_TAG Char 7 
-
-486
-PARAS_TAG_DT Num 8 
-
-487
-JUDGE_AMT Num 8 
-
-488
-JUDGE_DT Num 8 
-
-489
-JUDGE_MAINT_DT Num 8 
-
-490
-PRE_BKRUPT_NOTICE_DT Num 8 
-
-491
-PCT_INDEX_INTRATE Num 8 
-
-492
-HP_STAGE_TRSF_IND Char 1 
-
-493
-RR_APPL_DATE Num 8 
-
-494
-CUMM_PAID_BILL_AMT Num 8 
-
-495
-CUMM_PAID_BILL_PCT Num 8 
-
-496
-CLIMATE_PRIN_TAXONOMY_CLASS Char 2 
-
-497
-AKPK_MATRIX_TYPE Char 9 
-
-498
-AKPK_MATRIX_DATE Num 8 
-
-499
-DEVIATION_CD Char 2 
-
-500
-COURT_ORDER_PERPETUAL_IND Char 1 
-
-501
-FLOOD_MO_PACKAGE_CD Char 7 
-
-502
-INT_ADVICE_IND Char 1 
-
-503
-E_INVOICE_IND Char 1 
-
-504
-LEGAL_MATURITY_DT Num 8 
-
-505
-RR_IL_RECLASS_DT Num 8 
-
-506
-FDB_TAG Char 1 
-
-507
-FDB_TAG_DT Num 8 
-
-508
-FDB_SCORING_DT Num 8 
-
-509
-CLIMATE_MITIGATE_GP1_FLG Char 1 
-
-510
-CLIMATE_ADAPT_GP2_FLG Char 1 
-
-511
-CLIMATE_ENVIRONMT_GP3_FLG Char 1 
-
-512
-CLIMATE_TRANSITION_GP4_FLG Char 1 
-
-513
-CLIMATE_PROHIBIT_GP5_FLG Char 1 
-
-514
-WOS_RECEIVED_DT Num 8 
-
-515
-WOS_SETTLED_DT Num 8 
-
-516
-WOS_TAG Char 1 
-
-517
-REMAIN_TERM_MATURITY Num 8 
-
-518
-COURT_ORDER_UPDATE_DT Num 8 
-
-519
-FRAUD_TAG Char 1 
-
-520
-FRAUD_TAG_DT Num 8 
-
-521
-SOURCE_INCOME_CURRENCY_CD Char 3 
-
-522
-VEHI_MAKE_CATEGORY Char 2 
-
-523
-WRIOFF_CLOSE_FILE_TAG Char 1 
-
-524
-INT_JAN_TO_JUN_AMT Num 8 
-
-525
-INT_JUL_TO_DEC_AMT Num 8 
-
-526
-WRIOFF_CLOSE_FILE_TAG_DT Num 8 
-
-527
-RR_UNTAG_REPAY_CNT Num 8 
-
-528
-RR_UNTAG_DATE Num 8 
-
-529
-EARMARK_NOTICE_DT Num 8 
-
-530
-EARMARK_AMT Num 8 
-
-531
-MAILING_ADD_IND Char 1 
-
-532
-BILLING_ADD_IND Char 1 
-
-533
-PROP_ADD_IND Char 1 
-
-534
-FLOOR_RT_UNDER Num 8 
-
-535
-FLOOR_RT_OVER Num 8 
-
-536
-STMT_GEN_IND Char 1 
-
-537
-MULTI_CURRENCY_TAG Char 1 
+if __name__ == "__main__":
+    main()
