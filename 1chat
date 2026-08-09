@@ -1,2143 +1,921 @@
+//EIAWOF04  JOB MISEIS,EIFMNPL0,COND=(0,LT),CLASS=A,MSGCLASS=X,
+//         NOTIFY=&SYSUID
+//**********************************************************************
+//* UPDATE LATEST PROGRAM FROM EIFMNP03
+//**********************************************************************
+//LABEL    OUTPUT CLASS=A,
+//         NAME='CIK ROSEDAH',
+//         ROOM='22TH FLOOR',
+//         BUILDING='MENARA PBB',
+//         DEPT='HP CREDIT CONTROL DEPARTMENT',
+//         ADDRESS=('MENARA PUBLIC BANK',
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),
+//         DEST=S1.LOCAL
+//**********************************************************************
+//EIAWOF04 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP03),DISP=SHR
 
-libname basel    '/exdwh/mis/basel3';
-libname appl     '/dwh/dwh_m/tempsource/rwa';
-libname bt       '/dwh/btrade'; 
-FILENAME FTPFILE '/sasdata/dwh/logs';
-FILENAME PGM1 '/dwh/ftp/batch/PBBELF.txt';
-LIBNAME EGS'/eguser/egshared/egs_fd';
 
-OPTIONS YEARCUTOFF=1950 NOCENTER LINESIZE=256;
+the EIFMNP03 AS BELOW.
 
-%INC PGM1;
 
-/*************************************************************/
-/* UPDATE PROGRAM EIBMRWAX BY USEING LATEST BASEL3 DATASET   */
-/*************************************************************/
 
- DATA REPTDATE;   
-   REPTDATE=&SAS_DT_SASDLY -DAY(&SAS_DT_SASDLY );
- 
-   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR2.));
-   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.)); 
-   CALL SYMPUT('REPTYEA1',PUT(REPTDATE,YEAR4.));    
-   CALL SYMPUT('REPTMON1',PUT(MONTH(REPTDATE),Z2.));
-   CALL SYMPUT('REPTDATE',REPTDATE);
-   CALL SYMPUT('NOWK', PUT('4', $1.)); 
-RUN;  
-
-DATA BASEL3_EXPOSURE_FINAL;
-   SET basel.BASEL3_EXPOSURE_FINAL_&ryear&reptmon1; 
-   FORMAT SOURCE $32.;
-   WHERE D_BANK_ENTITY = 'PBBH' AND D_SOURCE_CATEGORY IN ('LNMART','UNDRAWN LN','UNDRAWN ULOAN','UNDRAWN MANUAL',
-   'UNDISBURSED','UNDISBURSED FS','UNDISBURSED MANUAL','UNDRAWN BILLS','IBILL OS','UNDRAWN CARD')
-   AND D_PROD_GROUP_KONGLOMERAT_BNM NOT IN ('New','NEW','new');
-   PRODUCT = SYS_PRODUCT * 1;
-   IF D_SOURCE_CATEGORY IN ('LNMART','UNDRAWN CARD') THEN SOURCE = 'E';
-   ELSE IF D_SOURCE_CATEGORY IN ('UNDRAWN LN','UNDRAWN ULOAN','UNDRAWN MANUAL') THEN SOURCE = 'ULOAN';
-   ELSE IF D_SOURCE_CATEGORY IN ('UNDISBURSED','UNDISBURSED FS','UNDISBURSED MANUAL') THEN SOURCE = 'ELDS';
-   ELSE IF D_SOURCE_CATEGORY IN ('UNDRAWN BILLS') THEN SOURCE = 'UBILL';
-   ELSE IF D_SOURCE_CATEGORY IN ('IBILL OS') THEN SOURCE = 'IBILL';
-   KEEP SOURCE D_BANK_ENTITY D_SOURCE_CATEGORY D_PROD_GROUP_KONGLOMERAT_BNM D_PRODUCT_TYPE M_RW_ASSET SYS_PRODUCT BRANCH
-        MASTACC NOTENO D_EXPOSURE_TYPE PRODUCT M_TOTAL_ON_OFF_BAL;
-RUN;
-
-PROC SORT DATA=BASEL3_EXPOSURE_FINAL; BY PRODUCT;RUN;
-PROC SORT DATA=APPL.APP1 OUT=APP1 NODUPKEY;BY PRODUCT;RUN;
-
-DATA BASEL3_EXPOSURE_FINAL;
-   MERGE BASEL3_EXPOSURE_FINAL(IN=A) APP1(IN=B);BY PRODUCT;
-   IF A;
-RUN;
-
-PROC SORT DATA=BASEL3_EXPOSURE_FINAL;BY BRANCH;RUN;
-
-DATA APP3(KEEP=BRANCH1 CCC RENAME=BRANCH1=BRANCH );
-   SET EGS.keep_undrawn_ln_ftp_app3_br;
-   BRANCH1 = BRANCH * 1;
-RUN;
-PROC SORT DATA=APP3;BY BRANCH;RUN;
-
-DATA BASEL3_EXPOSURE_FINAL;
-   MERGE BASEL3_EXPOSURE_FINAL(IN=A) APP3(IN=B);BY BRANCH;
-   FORMAT COSTCENTER $10.;
-   IF A;
-   IF BRANCH = 902 THEN DO;
-      IF D_PRODUCT_TYPE NE 'RM STAFF LOANS' THEN CCC = '8651'; 
-   END; 
-   IF CCC NE ' ' THEN COSTCENTER = CCC;
-   ELSE COSTCENTER = PUT(BRANCH, Z3.);
-RUN;
-
-DATA HP_LNA BASEL3_2;
-   SET BASEL3_EXPOSURE_FINAL;
-   IF D_SOURCE_CATEGORY NOT IN ('UNDRAWN BILLS','IBILL_OS','UNDRAWN CARD') AND 
-   D_PROD_GROUP_KONGLOMERAT_BNM IN ('HirePurchase','CommercialRetailLoans') AND
-   D_PRODUCT_TYPE IN ('HIRE PURCHASE RECEIVABLE','RM FLOOR STOCKING LOANS') THEN OUTPUT HP_LNA;
-   ELSE OUTPUT BASEL3_2;
-RUN;
-
-DATA RETL_LNA RETL_LNA_MAPOD BASEL3_3;
-   SET BASEL3_2;
-   IF D_SOURCE_CATEGORY NOT IN ('UNDRAWN CARD') AND D_PROD_GROUP_KONGLOMERAT_BNM NOT IN ('CorporateBankingLoans','HirePurchase','StaffLoans','CreditCard') THEN DO;
-      IF D_PRODUCT_TYPE IN ('BILLS') THEN DO;
-         FM_PROD = 'LTF_OT';
-	     FM_LOB = 'RETL';
-      END;
-      IF D_SOURCE_CATEGORY IN ('UNDRAWN BILLS','IBILL_OS') AND D_PRODUCT_TYPE NE 'BILLS' THEN DELETE;
-      IF D_PRODUCT_TYPE IN ('RM OVERDRAFT LOANS','RM SHARE FINANCING') THEN OUTPUT RETL_LNA_MAPOD;
-      ELSE OUTPUT RETL_LNA;
+*+--------------------------------------------------------------+
+ |  PROGRAM : EIFMNP03                                          |
+ |  DATE    : 12.03.98                                          |
+ |  MODIFY  : ESMR 2004-720, 2004-579, 2006-1048                |
+ |  REPORT  : MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH   |
+ |            ENDING                                            |
+ +--------------------------------------------------------------+;
+OPTIONS NOCENTER YEARCUTOFF=1950;
+*;
+%INC PGM(PBBLNFMT);
+%INC PGM(PBBELF);
+*;
+PROC FORMAT;
+   VALUE LNTYP 128,130,983             = 'HPD AITAB'
+               700,705,380,381,993,996,
+               720,725                 = 'HPD CONVENTIONAL'
+               200-299                 = 'HOUSING LOANS'
+               OTHER   = 'OTHERS';
+*;
+*------------------------------------------------*
+*  MACRO FOR CALCULATING NEXT BLDATE             *
+*------------------------------------------------*;
+%MACRO DCLVAR;
+   RETAIN D1-D12 31 D4 D6 D9 D11 30;
+   ARRAY LDAY D1-D12;
+%MEND DCLVAR;
+*;
+%MACRO NXTBLDT;
+   DD = DAY(ISSDTE);
+   MM = MONTH(BLDATE) + 1;
+   YY = YEAR(BLDATE);
+   IF MM > 12 THEN DO;
+      MM = 1; YY + 1;
    END;
-   ELSE OUTPUT BASEL3_3;
-RUN;
-
-DATA CORP_LNA CORP_LNA_MAPOD BASEL3_4;
-   SET BASEL3_3; 
-   IF D_SOURCE_CATEGORY NOT IN ('UNDRAWN CARD') AND D_PROD_GROUP_KONGLOMERAT_BNM = 'CorporateBankingLoans' THEN DO;
-      IF D_PRODUCT_TYPE IN ('BILLS') THEN DO;
-         FM_PROD = 'LTF_OT';
-	     FM_LOB = 'CORP';
-      END;
-      IF D_SOURCE_CATEGORY IN ('LNMART') THEN DO;
-         IF FIND(D_PRODUCT_TYPE, 'FX', 'i') > 0 THEN COSTCENTER = '8650_564';
-      END;
-      ELSE IF D_SOURCE_CATEGORY IN ('UNDISBURSED','UNDISBURSED FS','UNDISBURSED MANUAL') THEN COSTCENTER = '8651';
-      IF D_SOURCE_CATEGORY IN ('UNDRAWN BILLS','IBILL_OS') AND D_PRODUCT_TYPE NE 'BILLS' THEN DELETE;
-      IF D_PRODUCT_TYPE IN ('RM OVERDRAFT LOANS','RM SHARE FINANCING') THEN OUTPUT CORP_LNA_MAPOD;
-      ELSE OUTPUT CORP_LNA;
+   IF MM = 2 THEN
+      IF MOD(YY,4) = 0 THEN D2 = 29;
+      ELSE D2 = 28;
+   IF DD > LDAY(MM) THEN DD = LDAY(MM);
+   BLDATE = MDY(MM,DD,YY);
+%MEND NXTBLDT;
+*;
+  /*
+*------------------------------------------------*
+*  MACRO FOR CALCULATING OVERDUE INTEREST        *
+*------------------------------------------------*;
+%MACRO OVINT(I);
+   IF LOANTYPE = 705 THEN DO;
+      IF NOTETERM > 12 THEN TERM = 12;
+      ELSE TERM = NOTETERM;
+      TRATE = NOTETERM*INTRATE;
+      APR = TRATE*(300*TERM+TRATE)/
+            ((NOTETERM*TRATE)+(150*TERM*(NOTETERM+1)))*12/TERM;
+      RATE = (APR+1)/100;
    END;
-   ELSE OUTPUT BASEL3_4;
-RUN;
-
-
-DATA CARD_LNA BASEL3_5;
-   SET BASEL3_4;
-   IF D_SOURCE_CATEGORY IN ('LNMART','UNDRAWN CARD') AND D_PROD_GROUP_KONGLOMERAT_BNM = 'CreditCard' 
-   AND D_PRODUCT_TYPE = 'RM CREDIT CARD LOAN' THEN DO;
-      COSTCENTER = '7400_720';
-      FM_PROD = 'LCARDS';
-      FM_LOB = 'CARD';
-	  OUTPUT CARD_LNA;
+   ELSE RATE = 8/100;
+   BILAMT = BILPAY;
+   BILAMTL = ORGBAL-BILPAY*(NOTETERM-1);
+   OITEMP = 0; BLDTE = BLDATE;
+   DO REMMTH = REMMTH&I TO REMMTH2 BY -1;
+      IF REMMTH = 0 THEN AMT = BILAMTL;
+      ELSE AMT = BILAMT;
+      %NXTBLDT
+      OITEMP + AMT*RATE*(REPTDATE-BLDATE)/365;
    END;
-   ELSE OUTPUT BASEL3_5;
-RUN;
-
-DATA STAFF_LNA;
-   SET BASEL3_5;
-   IF D_SOURCE_CATEGORY NOT IN ('UNDRAWN BILLS','IBILL_OS','UNDRAWN CARD') AND 
-   D_PROD_GROUP_KONGLOMERAT_BNM IN ('StaffLoans') AND D_PRODUCT_TYPE = 'RM STAFF LOANS' THEN OUTPUT STAFF_LNA;
-RUN;
-
-DATA CORP_RETL_OD(DROP=FM_PROD FM_LOB);
-   SET CORP_LNA_MAPOD RETL_LNA_MAPOD;  
-RUN;
-
-PROC SORT DATA=CORP_RETL_OD;BY PRODUCT;RUN;
-PROC SORT DATA=APPL.APP2 OUT=APP2 NODUPKEY;BY PRODUCT;RUN; 
-
-DATA CORP_RETL_OD;
-   MERGE CORP_RETL_OD(IN=A) APP2(IN=B);BY PRODUCT;
-   IF A;
-RUN;
- 
-
-data appl.allfmnew(keep=indicator source rwa2 costcenter fm_prod fm_lob product MASTACC 
-   noteno D_EXPOSURE_TYPE M_TOTAL_ON_OFF_BAL D_EXPOSURE_TYPE
-   D_SOURCE_CATEGORY D_PRODUCT_TYPE D_PROD_GROUP_KONGLOMERAT_BNM) appl.EXCEPT_B3;
-  set CORP_LNA RETL_LNA HP_LNA CARD_LNA STAFF_LNA CORP_RETL_OD; 
-  rwa2 = M_RW_ASSET;
-  indicator = 'PBB';
-  IF FM_PROD = ' ' OR FM_LOB = ' ' THEN OUTPUT appl.EXCEPT_B3;
-  ELSE OUTPUT appl.allfmnew;
-run;
-
-DATA except;  
-  SET appl.EXCEPT_B3;
-  file '/dwh/ftp/drr/EXCEPT.txt' LRECL=160 TERMSTR=CRLF;  
-  if _N_ = 1 then  
-  PUT @001 "MASTACC"     
-      @020 "NOTENO"   
-      @030 "SOURCE"        
-      @050 "BRANCH"                    
-      @060 "PRODUCT"           
-      @070 "COSTCENTER"           
-      @090 "FM_PROD"        
-      @110 "FM_LOB"  
-      @140 "RWA" ;
-   
-  PUT @001 MASTACC     $15.
-      @020 NOTENO      5.
-      @030 SOURCE      $10.  
-      @050 BRANCH      5.              
-      @060 PRODUCT     5.      
-      @070 COSTCENTER  $10.         
-      @090 FM_PROD     $10.   
-      @110 FM_LOB      $10. 
-      @140 rwa2         18.2 ; 
-  
-run;  
-
-PROC SUMMARY DATA=appl.allfmnew NWAY;                                     
-CLASS SOURCE;                              
-VAR RWA2;                                              
-OUTPUT OUT=new (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_) SUM=;            
-RUN;      
-
-DATA new;  
-  SET new;
-  file '/dwh/ftp/drr/FM_SUMMARY.txt' LRECL=30 TERMSTR=CRLF;      
-  PUT @001 SOURCE         $10.   
-      @010 RWA2            18.2;                            
-run;
-
-PROC SUMMARY DATA=appl.allfmnew NWAY missing; 
-CLASS INDICATOR SOURCE COSTCENTER FM_PROD FM_LOB;                                   
-VAR RWA2;                                              
-OUTPUT OUT=RWA (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_) SUM=;            
-RUN;      
-
-DATA RWAFINAL;   
-FORMAT GLACCD $32.; 
-  SET RWA;  
-  RWA2 = round(RWA2,.01);
-  AFFORGCD  ='EXT';               
-  ANALYCD  ='ACTUAL';
-  IF SOURCE = 'E' THEN GLACCD = 'RWA_CR_ONBS_LNA';
-  IF SOURCE = 'IBILL' THEN GLACCD = 'RWA_CR_OFFBS_LNA_IBILLS';
-  IF SOURCE = 'UBILL' THEN GLACCD = 'RWA_CR_OFFBS_LNA_UBILLS';
-  IF SOURCE = 'ULOAN' THEN GLACCD = 'RWA_CR_OFFBS_LNA_ULOAN';
-  IF SOURCE = 'ELDS' THEN GLACCD = 'RWA_CR_OFFBS_LNA_ELDS';  
-  CURRCD ='MYR';
-  YM      = &REPTYEA1&REPTMON1;
-run; 
-
-DATA RWAFINAL; SET RWAFINAL; CNT+1; RWATOT+RWA2; run;
-%macro PRINTER;
-DATA RWAFINAL;  
-  SET RWAFINAL END=EOF;
-  file OUTFL LRECL=500 TERMSTR=CRLF;    
-  PUT @001 'D,'                                                   
-      @003 'PBB'     @035 ','   
-      @036 AFFORGCD  @068 ','        
-      @069 GLACCD    @101 ','                                     
-      @102 ANALYCD   @134 ','
-      @135 CURRCD    @167 ','                        
-      @168 COSTCENTER    @200 ','                                     
-      @201 FM_LOB        @233 ','       
-      @234 FM_PROD       @266 ','                     
-      @267 YM     6. @299 ','                                     
-      @300 RWA2 15.2                @315 ','                     
-      @316 'Y,'      
-      @350 ','        
-      @383 ','         
-      @416 ',';  
-  IF  EOF THEN DO;                                                
-      PUT @001 'T,' 
-          @003 CNT   10. ','  RWATOT 15.2 ',';           
-  END;
-run; 
-%MEND PRINTER;
-FILENAME OUTFL '/stgsrcsys/host/ftpfiles/DWH_RWA_PBB_.TXT';
-%PRINTER;
-FILENAME OUTFL "/stgsrcsys/host/ftpfiles/DWH_RWA_PBB_&REPTMON1..TXT"; 
-%PRINTER;   
-
-
-/* GENERATE NEW INTERFACES TO GL ON TRANSFER PRICING ON UNDRAWN IN PBBH AND PIBB */
-
-FILENAME OUTFTP '/stgsrcsys/host/ftpfiles'; 
-
+   BLDATE = BLDTE;
+%MEND OVINT;
+*; */
 DATA REPTDATE;
-    TODAY = &SAS_DT_SASDLY;
-	DATENOW  = PUT(YEAR(TODAY),Z4.)||PUT(MONTH(TODAY),Z2.)||PUT(25,Z2.);  
-	TIMENOW  = PUT(HOUR(TIME()),Z2.)||PUT(MINUTE(TIME()),Z2.)||PUT(SECOND(TIME()),Z2.); 
-	REPTDATE = MDY(MONTH(TODAY),25,YEAR(TODAY)); 
-	MONTHEND = MDY(MONTH(TODAY),1,YEAR(TODAY))-1;
-	CALL SYMPUT('CRDATE',PUT(DATENOW,8.)); 
-	CALL SYMPUT('CRTIME',PUT(TIMENOW,6.));
-	CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
-	CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-	CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
-	CALL SYMPUT('REPTYY',PUT(REPTDATE,YEAR2.));
-	CALL SYMPUT('REPTDATE',PUT(REPTDATE,YYMMDDN.));
-	CALL SYMPUT('NEXTDATE',PUT(NEXTDATE,YYMMDDN.));
-	CALL SYMPUT('MONNAME',UPCASE(PUT(REPTDATE,MONNAME3.)));	
-	CALL SYMPUT('LMONTH',PUT(MONTH(MONTHEND),Z2.));
-	CALL SYMPUT('LDAY',PUT(DAY(MONTHEND),Z2.));
-	CALL SYMPUT('LYEAR',PUT(MONTHEND,YEAR4.));
-	CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));  
-	FORMAT REPTDATE DDMMYY10.;
+   SET NPL.REPTDATE;
+   IF MONTH(REPTDATE) = 1 THEN MM1 = 12;
+   ELSE MM1 = MONTH(REPTDATE)-1;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
+   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+   CALL SYMPUT('PREVMON',PUT(MM1,Z2.));
 RUN;
-
-DATA UNDRAWN_OD UNDRAWN_LN UNDRAWN_BILL CARD;
-   SET appl.allfmnew(DROP=FM_PROD FM_LOB) appl.EXCEPT_B3(DROP=FM_PROD FM_LOB);
-   WHERE D_EXPOSURE_TYPE = 'Off Balance Sheet';
-   IF D_SOURCE_CATEGORY = 'UNDRAWN CARD' THEN OUTPUT CARD;
-   IF SOURCE IN ('IBILL','UBILL','ULOAN','ELDS');
-   IF ('3000000000'<=MASTACC<='3999999999') THEN OUTPUT UNDRAWN_OD;
-   ELSE IF D_SOURCE_CATEGORY IN ('IBILL OS','UNDRAWN BILLS') AND D_PRODUCT_TYPE = 'BILLS' THEN OUTPUT UNDRAWN_BILL;
-   ELSE OUTPUT UNDRAWN_LN;
+*;
+*------------------------------------------------*
+*  MERGE WITH WRITTEN OFF ACCOUNT                *
+*------------------------------------------------*;
+PROC SORT DATA=NPL.LOAN&REPTMON;BY ACCTNO;
+PROC SORT DATA=NPL.WIIS;BY ACCTNO;
+DATA LOANWOFF;
+   MERGE NPL.LOAN&REPTMON NPL.WIIS (IN=AA DROP=NOTENO NTBRCH);
+   BY ACCTNO;
+   IF LOANTYPE IN (380,381) THEN FEEAMT = FEETOT2;
+   IF AA THEN WRITEOFF = 'Y';ELSE WRITEOFF = 'N';
+   IF LOANTYPE IN (983,993) THEN WDOWNIND = 'N';
+   IF IISP = . THEN IISP = 0;
+   IF OIP = . THEN OIP = 0;
+   IF EARNTERM IN (0,.) THEN EARNTERM = NOTETERM;
 RUN;
-
-DATA CARD;
-   SET CARD;
-   COSTCENTER = '7400720';
-   FM_PROD = 'LCARDS';
-   FM_LOB = 'CARD';
-   GL_ACCTNO = '92180';
-   GL_PROD_PBB = 'MFC1';
-RUN;
-
-DATA UNDRAWN_BILL;
-   SET UNDRAWN_BILL;
-   IF D_PROD_GROUP_KONGLOMERAT_BNM = 'CorporateBankingLonas' THEN RETAILID = 'C';
-   ELSE RETAILID = 'R';
-RUN;
-
-DATA RATE;
-   FORMAT PERIOD 6.;
-   SET EGS.keep_undrawn_ln_ftp_rate;
-   IF ORG='PBB' AND PERIOD="&LYEAR"||"&LMONTH";
-   INDICATOR='PBB';
-RUN;
-PROC SORT DATA=RATE NODUPKEY;BY INDICATOR;RUN;
-
-DATA ODMAPPING(KEEP=FM_PROD FM_LOB GL_ACCTNO GL_PROD_PBB PROD1 RENAME=(PROD1=PRODUCT));
-   SET EGS.keep_undrawn_ln_ftp_prod_od;
-   PROD1=PRODUCT*1;
-RUN;
-
-PROC SORT DATA=ODMAPPING NODUPKEY;BY PRODUCT;RUN;
-PROC SORT DATA=UNDRAWN_OD;BY PRODUCT;RUN;
-
-DATA UNDRAWN_OD;
-   MERGE UNDRAWN_OD(IN=A) ODMAPPING(IN=B);BY PRODUCT;
-   IF A;
-RUN;
-
-DATA LNMAPPING(KEEP=FM_PROD FM_LOB GL_ACCTNO GL_PROD_PBB PROD1 PROD RENAME=(PROD1=PRODUCT));
-   SET EGS.keep_undrawn_ln_ftp_prod_loan;
-   IF PRODUCT NOT IN ('all');
-   PROD1=PRODUCT*1;
-RUN;
-
-PROC SORT DATA=LNMAPPING NODUPKEY;BY PRODUCT;RUN;
-PROC SORT DATA=UNDRAWN_LN;BY PRODUCT;RUN;
-
-DATA UNDRAWN_LN COR_GRP;
-   MERGE UNDRAWN_LN(IN=A) LNMAPPING(IN=B);BY PRODUCT;
-   IF A;
-   IF D_PROD_GROUP_KONGLOMERAT_BNM = 'CorporateBankingLoans' AND PRODUCT = . THEN DO;
-      PROD = 'COR';
-	  OUTPUT COR_GRP;
+*------------------------------------------------*
+*  CALCULATE IIS FOR EXISTING NPL ACCOUNTS       *
+*------------------------------------------------*;
+DATA LOAN1;
+   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME NETPROC CURBAL BORSTAT DAYS
+        IIS UHC NETBAL IISP SUSPEND RECOVER RECC IISPW OIP OISUSP OI
+        OIRECV OIRECC OIW TOTIIS LOANTYP EXIST COSTCTR PENDBRH USER5
+        WDOWNIND RESCHEIND ACCRUAL;
+   LENGTH LOANTYP $20;
+   RETAIN STMTH 1 STYR;
+   %DCLVAR
+  * SET NPL.LOAN&REPTMON;
+   SET LOANWOFF;
+   IF _N_ = 1 THEN DO;
+      SET REPTDATE;
+      STYR = YEAR(REPTDATE);
    END;
-   ELSE OUTPUT UNDRAWN_LN;
-RUN;
-
-DATA LNMAPPING_COR(KEEP=FM_PROD FM_LOB GL_ACCTNO GL_PROD_PBB PROD1 PROD RENAME=(PROD1=PRODUCT));
-   SET EGS.keep_undrawn_ln_ftp_prod_loan;
-   WHERE PROD = 'COR';
-   PROD1=PRODUCT*1;
-RUN;
-
-DATA COR_GRP;
-   MERGE COR_GRP(IN=A DROP=FM_PROD FM_LOB GL_ACCTNO GL_PROD_PBB) LNMAPPING_COR(IN=B);BY PROD;
-   IF A;
-RUN; 
-
-DATA UNDRAWN_LN;
-   SET UNDRAWN_LN COR_GRP(DROP=PROD);
-RUN;
-
-DATA BTMAPPING(KEEP=FM_PROD FM_LOB GL_ACCTNO GL_PROD_PBB PROD RENAME=(PROD=RETAILID));
-   SET EGS.keep_undrawn_ln_ftp_prod_loan;
-   IF PROD IN ('C','R');
-RUN;
-
-PROC SORT DATA=BTMAPPING NODUPKEY;BY RETAILID;RUN;
-PROC SORT DATA=UNDRAWN_BILL;BY RETAILID;RUN;
-
-DATA UNDRAWN_BILL;
-   MERGE UNDRAWN_BILL(IN=A) BTMAPPING(IN=B);BY RETAILID;
-   IF A;
-   COSTCENTER='7800';
-RUN;
-
-
-DATA UNDRAWN EGS.KEEP_UNDRAWN_PBB_EXP;
-   SET UNDRAWN_OD UNDRAWN_LN UNDRAWN_BILL CARD;
-   IF FM_PROD=' ' THEN OUTPUT EGS.KEEP_UNDRAWN_PBB_EXP;
-   ELSE OUTPUT UNDRAWN;
-RUN;
-
-PROC SUMMARY DATA=UNDRAWN NWAY missing; 
-CLASS INDICATOR SOURCE COSTCENTER FM_PROD FM_LOB GL_ACCTNO GL_PROD_PBB;                                   
-VAR M_TOTAL_ON_OFF_BAL;                                              
-OUTPUT OUT=UNDRAWNOUT (RENAME=(_FREQ_=NOACCT) DROP=_TYPE_) SUM=;            
-RUN;  
-
-DATA UNDRAWNOUT;
-   MERGE UNDRAWNOUT(IN=A) RATE(IN=B);BY INDICATOR;
-   IF A;
-RUN;
-
-DATA UNDRAWNOUT STAFF;
-   SET UNDRAWNOUT;
-   LENGTH COSTCTR_C $7.;
-   ANALYCD  ='ACTUAL';
-   IF SOURCE = 'IBILL' THEN GLACCD = 'RWA_CR_OFFBS_LNA_IBILLS';
-   ELSE IF SOURCE = 'UBILL' THEN GLACCD = 'RWA_CR_OFFBS_LNA_UBILLS';
-   ELSE IF SOURCE = 'ULOAN' THEN GLACCD = 'RWA_CR_OFFBS_LNA_ULOAN';
-   ELSE IF SOURCE = 'ELDS' THEN GLACCD = 'RWA_CR_OFFBS_LNA_ELDS'; 
-   ELSE GLACCD = 'RWA_CR_OFFBS_LNA_CARD'; 
-   SIGN='+';
-   LDAY=("&LDAY")*1;
-   IF LENGTH(COSTCENTER)=3 THEN COSTCTR_C='0'||COSTCENTER;
-   ELSE COSTCTR_C=COSTCENTER;
-   CURRCD ='MYR';
-   DAYINYEAR=365;
-   IF FM_PROD='LSTAFF' THEN FTPRATE=0.00;
-   FTPEXPENSE = M_TOTAL_ON_OFF_BAL*(LCRWEIGHT/100)*(FTPRATE/100)*LDAY/DAYINYEAR;
-   IF FM_PROD='LSTAFF' THEN DO;
-      FM_LOB='RETL';
-	  GL_ACCTNO='92180';
-	  GL_PROD_PBB='3900';
-      OUTPUT STAFF;
+   IF EXIST = 'Y';
+   IIS = 0; SUSPEND = 0; UHC = 0; OI = 0; OISUSP = 0; RECOVER = 0;
+   OIRECV = 0; OIRECC=0; OIW = 0;
+   IF IISP = . THEN IISP = 0;
+   IF OIP = . THEN OIP = 0;
+   IF IISPW = . THEN IISPW = 0;
+   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
+   IF BLDATE > 0 & TERMCHG > 0 THEN DO;
+      IF DAYS >  89 | BORSTAT IN ('F','R','I')
+      OR (USER5 = 'N' AND LOANTYPE NOT IN (983,993)) THEN DO;
+         REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
+                   MONTH(BLDATE) - MONTH(ISSDTE) + 1);
+         REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                   MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+         REMMTHS = EARNTERM - ((STYR - YEAR(ISSDTE))*12 +
+                   STMTH - MONTH(ISSDTE) + 1);
+         IF REMMTH2 < 0 THEN REMMTH2 = 0;
+         IF LOANTYPE IN (128,130) THEN REMMTH1 = REMMTH1 - 3;
+         ELSE REMMTH1 = REMMTH1 - 1;
+         IF REMMTH1 >= REMMTH2 THEN DO;
+            DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
+               IIS + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+            END;
+         END;
+       *  OI = FEETOT2;
+         OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
+         DO REMMTH = REMMTHS TO REMMTH2 BY -1;
+            SUSPEND + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+         END;
+         IF LOANTYPE NOT IN (128,130) THEN DO;
+       OISUSP = SUM(FEEAMT,(-1)*FEEAMTA,FEEAMT5);
+         END;
+         IF REMMTH2 > 0 THEN
+            UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+      END;
    END;
-   ELSE OUTPUT UNDRAWNOUT;
+   ELSE IF DAYS >  89 | BORSTAT IN ('F','R','I')
+   OR (USER5 = 'N' AND LOANTYPE NOT IN (983,993)) THEN DO;
+       OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
+       OISUSP = SUM(FEEAMT,(-1)*FEEAMTA,FEEAMT5);
+   END;
+   IF CURBAL = . THEN CURBAL = 0;
+   NETBAL = CURBAL - UHC;
+   IF NETBAL <= IISP THEN
+      IF DAYS >  89 | BORSTAT IN ('F','R','I')
+      OR USER5 = 'N' THEN
+         IIS = NETBAL;
+   IF BORSTAT = 'W' THEN DO;
+      IISPW = IISP; OIW = OIP;
+   END;
+   ELSE DO;
+      RECOVER = IISP + SUSPEND - IIS;
+      IF RECOVER < 0 THEN DO;
+         SUSPEND = SUSPEND - RECOVER;
+         RECOVER = 0;
+      END;
+      IF RECOVER > IISP THEN DO;
+         RECC = RECOVER - IISP;
+         RECOVER = IISP;
+      END;
+      IF LOANTYPE NOT IN (128,130) THEN DO;
+         OIRECV = OIP - OI;
+         IF OIRECV < 0 THEN DO;
+            OISUSP = OISUSP - OIRECV;
+            OIRECV = 0;
+         END;
+         IF OISUSP LT 0 THEN OIRECV = OIRECV - OISUSP;
+         IF OIRECV > OIP THEN DO;
+            OIRECC = OIRECV - OIP;
+            OIRECV = OIP;
+         END;
+      END;
+   END;
+   IF TERMCHG = 0 THEN DO;
+      IF BORSTAT IN ('R') THEN NETEXP = CURBAL - IISP - MARKETVL;
+         ELSE NETEXP = CURBAL - IISP;
+      IF (NETEXP > 0 & DAYS > 89) | BORSTAT IN ('R') THEN DO;
+         IIS = RECOVER; RECOVER = 0;
+         OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);OIRECV = 0;
+      END;
+   END;
+   IF LOANTYPE IN (720,725) THEN IIS = ACCRUAL;
+   OISUSP = OIRECV + OIRECC + OIW - OIP + OI;
+   IF OISUSP LT 0 THEN OIRECV = OIRECV - OISUSP;
+   IF OIRECV > OIP THEN DO;
+      OIRECC = OIRECV - OIP;
+      OIRECV = OIP;
+   END;
+   OISUSP = OIRECV + OIRECC + OIW - OIP + OI;
+   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+   LOANTYP = PUT(LOANTYPE,LNTYP.);
+   IF WRITEOFF = 'Y' THEN DO;
+      SUSPEND = WSUSPEND;
+      OISUSP  = WOISUSP;
+      IF WDOWNIND ^= 'Y' THEN DO;
+         RECOVER = WRECOVER;
+         RECC    = WRECC;
+         OIRECV  = WOIRECV;
+         OIRECC  = WOIRECC;
+         IIS = 0;
+         IISPW   = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC);
+         OI = 0;
+         OIW     = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC);
+      END;
+      ELSE DO;
+         OISUSP  = WOISUSP;
+         IISPW   = WIISPW;
+         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+         IF IIS < 0 THEN RECOVER = 0;
+         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+         OIW     = WOIW;
+         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+         IF OI < 0 THEN DO;
+            OIRECV = 0;
+            OIRECC = 0;
+         END;
+         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+      END;
+      IF OIP = . THEN OIP = 0;IF IISP = . THEN IISP = 0;
+      IF SUSPEND = . THEN SUSPEND = 0;IF OISUSP = . THEN OISUSP = 0;
+      IF RECOVER = . THEN RECOVER = 0;IF OIRECV = . THEN OIRECV = 0;
+      IF RECC = . THEN RECC = 0;IF OIRECC = . THEN OIRECC = 0;
+   END;
+   TOTIIS = IIS + OI;
+
+ IF RESCHEIND = 'Y' THEN DO;
+      SUSPEND = WSUSPEND;
+      OISUSP  = WOISUSP;
+      RECOVER = WRECOVER;
+      RECC    = WRECC;
+      OIRECV  = WOIRECV;
+      OIRECC  = WOIRECC;
+      IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+      OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+      TOTIIS = IIS + OI;
+      END;
+*;
+*------------------------------------------------*
+*  CALCULATE IIS FOR CURRENT NPL ACCOUNTS        *
+*------------------------------------------------*;
+DATA LOAN2;
+   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME NETPROC CURBAL BORSTAT DAYS
+        IIS UHC NETBAL IISP SUSPEND RECOVER RECC IISPW OIP OISUSP OI
+        OIRECV OIRECC OIW TOTIIS LOANTYP EXIST COSTCTR PENDBRH USER5
+        WDOWNIND RESCHEIND ACCRUAL;
+   LENGTH LOANTYP $20;
+   %DCLVAR
+   SET LOANWOFF;
+ * SET NPL.LOAN&REPTMON;
+   IF _N_ = 1 THEN SET REPTDATE;
+   IF EXIST ^= 'Y';
+   IIS = 0; UHC = 0; OI = 0;
+   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
+   IF BLDATE > 0 & TERMCHG > 0 OR (USER5 = 'N' AND
+   LOANTYPE NOT IN (983,993)) THEN DO;
+      REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
+                MONTH(BLDATE) - MONTH(ISSDTE) + 1);
+      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+      IF REMMTH2 < 0 THEN REMMTH2 = 0;
+      IF LOANTYPE IN (128,130) THEN
+           REMMTH1 = REMMTH1 - 3;
+      ELSE REMMTH1 = REMMTH1 - 1;
+      IF REMMTH1 >= REMMTH2 THEN DO;
+         DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
+            IIS + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+         END;
+      END;
+      IF REMMTH2 > 0 THEN
+         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+   END;
+   ELSE DO;
+      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
+                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
+      IF REMMTH2 < 0 THEN REMMTH2 = 0;
+      IF REMMTH2 > 0 THEN
+         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
+   END;
+   OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
+   IF LOANTYPE IN (720,725) THEN IIS = ACCRUAL;
+   SUSPEND = IIS;
+   OISUSP = OI;
+   NETBAL = CURBAL - UHC;
+   IF WRITEOFF = 'Y' THEN DO;
+      SUSPEND = WSUSPEND;
+      OISUSP  = WOISUSP;
+      IF WDOWNIND ^= 'Y' THEN DO;
+         RECOVER = WRECOVER;
+         RECC    = WRECC;
+         OIRECV  = WOIRECV;
+         OIRECC  = WOIRECC;
+         IIS = 0;
+         IISPW   = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC);
+         OI = 0;
+         OIW     = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC);
+      END;
+      ELSE DO;
+         OISUSP  = WOISUSP;
+         IISPW   = WIISPW;
+         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+         IF IIS < 0 THEN RECOVER = 0;
+         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+         OIW     = WOIW;
+         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+         IF OI < 0 THEN DO;
+            OIRECV = 0;
+            OIRECC = 0;
+         END;
+         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+      END;
+      IF OIP = . THEN OIP = 0;IF IISP = . THEN IISP = 0;
+      IF SUSPEND = . THEN SUSPEND = 0;IF OISUSP = . THEN OISUSP = 0;
+      IF RECOVER = . THEN RECOVER = 0;IF OIRECV = . THEN OIRECV = 0;
+      IF RECC = . THEN RECC = 0;IF OIRECC = . THEN OIRECC = 0;
+   END;
+   TOTIIS = IIS + OI;
+   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+   LOANTYP = PUT(LOANTYPE,LNTYP.);
+
+ IF RESCHEIND = 'Y' THEN DO;
+      SUSPEND = WSUSPEND;
+      OISUSP  = WOISUSP;
+      RECOVER = WRECOVER;
+      RECC    = WRECC;
+      OIRECV  = WOIRECV;
+      OIRECC  = WOIRECC;
+      IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+      OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+      TOTIIS = IIS + OI;
+      END;
+*;
+*------------------------------------------------*
+*  COMPARE PREVIOUS MONTH NPL ACCOUNTS (MAY 05)  *
+*------------------------------------------------*;
+%MACRO MONTHLY;
+   %IF "&REPTMON" EQ "01" %THEN %DO;
+      DATA LOAN1;
+         SET LOAN1;
+         IISPCUM = 0;
+         OIPCUM = 0;
+         POI = 0;
+      RUN;
+      DATA LOAN2;
+         SET LOAN2;
+         IISPCUM = 0;
+         OIPCUM = 0;
+         POI = 0;
+      RUN;
+   %END;
+   %ELSE %DO;
+      PROC SORT DATA=NPL.IIS&PREVMON (DROP=POI
+         RENAME=(DAYS=PDAYS SUSPEND=PSUSPEND OISUSP=POISUSP
+                 IISP=PIISP OIP=POIP OI=POI RECC=PRECC
+                 OIRECC=POIRECC RECOVER=PRECOVER OIRECV=POIRECV))
+         OUT=IISPREV NODUPKEY;
+      BY ACCTNO NOTENO; RUN;
+
+      DATA IISPREV;
+         SET IISPREV;
+             IF LOANTYPE IN (128,130,131,132,380,381,390,
+                             700,705,720,725,983,993,996)
+             AND PAIDIND='P' THEN DO;
+             %INC PGM(NPLNTB);
+             END;
+         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+         IF PDAYS = . THEN PDAYS = 0;
+         IF PSUSPEND = . THEN PSUSPEND = 0;
+         IF POISUSP = . THEN POISUSP = 0;
+         IF PIISP = . THEN PIISP = 0;
+         IF POIP = . THEN POIP = 0;
+         IF POI = . THEN POI = 0;
+      RUN;
+      ********************
+      *** EXISTING NPL ***
+      ********************;
+      PROC SORT DATA=LOAN1; BY ACCTNO; RUN;
+      DATA LOAN1(DROP=PDAYS PSUSPEND POISUSP PIISP POIP PRECC
+                 POIRECC PRECOVER POIRECV);
+         MERGE IISPREV(IN=B) LOAN1(IN=A);
+         BY ACCTNO;
+         IF ((A AND B) OR (B AND NOT A)) AND EXIST = 'Y';
+
+         *** A/C SETTLE FOR EXISTING NPL ***;
+         IF ((B AND NOT A) OR (CURBAL LE 0 AND POI LE 0)) AND
+            BORSTAT NOT IN ('F','I','R','W','S') THEN DO;
+            IISP=PIISP;
+            RECOVER=IISP;
+            SUSPEND=PSUSPEND;
+            RECC=SUSPEND;
+            OIP=POIP;
+            OIRECV=OIP;
+            OISUSP=POISUSP;
+            OIRECC=OISUSP;
+            CURBAL=0;
+            NETBAL=0;
+            DAYS=0;
+            OI  = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+            IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+            TOTIIS = IIS + OI;
+            OUTPUT;
+         END;
+         ELSE DO;
+            IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN DO;
+               OUTPUT;
+            END;
+            ELSE DO;
+               IF (A AND B) THEN DO;
+                  *** CONTINUE PERFORMING ***;
+                  IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
+                     SUSPEND=IIS;
+                  IF USER5 = 'N' AND IIS < IISP THEN DO;
+                     SUSPEND = 0;
+                     RECOVER = IISP - IIS;
+                  RECC = 0;
+                  END;
+                  IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                     SUSPEND = IIS - IISP;
+                     RECOVER = 0;
+                     RECC = 0;
+                  END;
+                  IF USER5 = 'N' AND IISP = 0 THEN DO;
+                     SUSPEND = IIS;
+                     RECC = IIS - SUSPEND;
+                  END;
+                  IF USER5 = 'N' AND OI < OIP THEN DO;
+                     OISUSP = 0;
+                     OIRECV = OIP - OI;
+                     OIRECC = 0;
+                  END;
+                  IF USER5 = 'N' AND OI >= OIP THEN DO;
+                     OISUSP = OI - OIP;
+                     OIRECV = 0;
+                     OIRECC = 0;
+                  END;
+                  IF USER5 = 'N' AND OIP = 0 THEN DO;
+                     OISUSP = OI;
+                     OIRECC = OI - OISUSP;
+                  END;
+                  OUTPUT;
+                  END;
+                  *** TURN PERFORMING ***;
+                  IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        SUSPEND = PSUSPEND;
+                        RECC    = PSUSPEND;
+                        OISUSP  = POISUSP;
+                        OIRECC  = POISUSP;
+                        TOTIIS = IIS + OI;
+                     END;
+                     IF USER5 = 'N' AND IIS < IISP THEN DO;
+                        SUSPEND = 0;
+                        RECOVER = IISP - IIS;
+                        RECC = 0;
+                     END;
+                     IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                        SUSPEND = IIS - IISP;
+                        RECOVER = 0;
+                        RECC = 0;
+                     END;
+                     IF USER5 = 'N' AND IISP = 0 THEN DO;
+                        SUSPEND = IIS;
+                        RECC = IIS - SUSPEND;
+                     END;
+                     IF USER5 = 'N' AND OI < OIP THEN DO;
+                        OISUSP = 0;
+                        OIRECV = OIP - OI;
+                        OIRECC = 0;
+                     END;
+                     IF USER5 = 'N' AND OI >= OIP THEN DO;
+                        OISUSP = OI - OIP;
+                        OIRECV = 0;
+                        OIRECC = 0;
+                     END;
+                     IF USER5 = 'N' AND OIP = 0 THEN DO;
+                        OISUSP = OI;
+                        OIRECC = OI - OISUSP;
+                     END;
+                     OUTPUT;
+                  END;
+                  *** TURN NPL FR PERFORMING ***;
+                  IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        RECC = PRECC;
+                        RECOVER = PRECOVER;
+                        SUSPEND = SUM(IIS,IISP,(-1)*RECOVER,RECC);
+                        IF SUSPEND < 0 THEN DO;
+                           RECOVER = SUM(RECOVER,(-1)*SUSPEND);
+                           SUSPEND = 0;
+                           IF RECOVER GT IISP THEN DO;
+                              RECC = SUM(RECC,RECOVER-IISP);
+                           END;
+                        END;
+                        OIRECC = POIRECC;
+                        OIRECV = POIRECV;
+                        OISUSP = SUM(OI,OIP,(-1)*OIRECV,OIRECC);
+                        IF OISUSP < 0 THEN DO;
+                           OIRECV = SUM(OIRECV,(-1)*OISUSP);
+                           OISUSP = 0;
+                           IF OIRECV GT OIP THEN DO;
+                              OIRECC = SUM(OIRECC,OIRECV-OIP);
+                           END;
+                        END;
+                        TOTIIS = IIS + OI;
+                     END;
+                     IF USER5 = 'N' AND IIS < IISP THEN DO;
+                        SUSPEND = 0;
+                        RECOVER = IISP - IIS;
+                        RECC = 0;
+                     END;
+                     IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                        SUSPEND = IIS - IISP;
+                        RECOVER = 0;
+                        RECC = 0;
+                     END;
+                     IF USER5 = 'N' AND IISP = 0 THEN DO;
+                        SUSPEND = IIS;
+                        RECC = IIS - SUSPEND;
+                     END;
+                     IF USER5 = 'N' AND OI < OIP THEN DO;
+                        OISUSP = 0;
+                        OIRECV = OIP - OI;
+                        OIRECC = 0;
+                     END;
+                     IF USER5 = 'N' AND OI >= OIP THEN DO;
+                        OISUSP = OI - OIP;
+                        OIRECV = 0;
+                        OIRECC = 0;
+                     END;
+                     IF USER5 = 'N' AND OIP = 0 THEN DO;
+                        OISUSP = OI;
+                        OIRECC = OI - OISUSP;
+                     END;
+                     OUTPUT;
+                  END;
+                  *** CONTINUE NPL ***;
+                  IF DAYS GE 90 AND PDAYS GE 90 THEN DO;
+                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                        RECOVER = PRECOVER;
+                        RECC = PRECC;
+                        SUSPEND = SUM(IIS,(-1)*IISP,RECOVER,RECC);
+                        IF SUSPEND < 0 THEN DO;
+                           RECOVER = SUM(RECOVER,(-1)*SUSPEND);
+                           SUSPEND = 0;
+                           IF RECOVER GT IISP THEN DO;
+                              RECC = SUM(RECC,RECOVER,(-1)*IISP);
+                           END;
+                        END;
+                        OIRECV = POIRECV;
+                        OIRECC = POIRECC;
+                        OISUSP = SUM(OI,(-1)*OIP,OIRECV, OIRECC);
+                        IF OISUSP < 0 THEN DO;
+                           OIRECV = SUM(OIRECV,(-1)*OISUSP);
+                           OISUSP = 0;
+                           IF OIRECV  GT OIP THEN DO;
+                              OIRECC = SUM(OIRECC,OIRECV,(-1)*OIP);
+                           END;
+                        END;
+                        TOTIIS = IIS + OI;
+                     END;
+                     OUTPUT;
+                  END;
+               END;
+            END;
+         END;
+      RUN;
+      *******************
+      *** CURRENT NPL ***
+      *******************;
+      PROC SORT DATA=NPL.PLOAN&REPTMON OUT=PLOAN
+         (KEEP=ACCTNO NOTENO CURBAL DAYS BORSTAT NTBRCH COSTCTR);
+         BY ACCTNO;
+      RUN;
+      DATA IISPREV;
+         MERGE IISPREV(IN=A) PLOAN(IN=B);
+         BY ACCTNO;
+         IF PIISP EQ 0 AND POIP EQ 0 AND EXIST NE 'Y';
+         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
+      RUN;
+
+      PROC SORT DATA=LOAN2; BY ACCTNO NOTENO; RUN;
+      DATA LOAN2(DROP=PDAYS PSUSPEND POISUSP PIISP POIP PRECC
+                 POIRECC PRECOVER POIRECV);
+         MERGE IISPREV(IN=B) LOAN2(IN=A);
+         BY ACCTNO;
+         IF (B AND NOT A) THEN DO;
+            *** A/C SETTLE FOR EXISTING NPL ***;
+               IISP=PIISP;
+               RECOVER=IISP;
+               SUSPEND=PSUSPEND;
+               RECC=SUSPEND;
+               OIP=POIP;
+               OIRECV=OIP;
+               OISUSP=POISUSP;
+               OIRECC=OISUSP;
+               CURBAL=0;
+               NETBAL=0;
+               DAYS=0;
+               OI  = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
+              IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
+               TOTIIS = IIS + OI;
+               OUTPUT;
+         END;
+
+         *** NEW NPL FOR THE MTH ***;
+         IF (A AND NOT B) AND
+            (DAYS GE 90 OR BORSTAT IN ('F','I','R','W') OR USER5='N')
+            THEN OUTPUT;
+
+         IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN OUTPUT;
+         IF (A AND B) AND BORSTAT NOT IN ('W') THEN DO;
+            *** CONTINUE PERFORMING ***;
+            IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
+               IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                  SUSPEND = PSUSPEND;
+                  RECC    = PSUSPEND;
+                  OISUSP  = POISUSP;
+                  OIRECC  = POISUSP;
+                  TOTIIS = IIS + OI;
+               END;
+               IF USER5 = 'N' AND IIS < IISP THEN DO;
+                  SUSPEND = 0;
+                  RECOVER = IISP - IIS;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                  SUSPEND = IIS - IISP;
+                  RECOVER = 0;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IISP = 0 THEN DO;
+                  SUSPEND = IIS;
+                  RECC = IIS - SUSPEND;
+               END;
+               IF USER5 = 'N' AND OI < OIP THEN DO;
+                  OISUSP = 0;
+                  OIRECV = OIP - OI;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OI >= OIP THEN DO;
+                  OISUSP = OI - OIP;
+                  OIRECV = 0;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OIP = 0 THEN DO;
+                  OISUSP = OI;
+                  OIRECC = OI - OISUSP;
+               END;
+               ELSE DO;
+                  SUSPEND = SUM(SUSPEND,RECC);
+                  OISUSP = SUM(OISUSP,OIRECC);
+               END;
+              OUTPUT;
+            END;
+
+            *** TURN PERFORMING FR NPL ***;
+            IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
+               IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                  SUSPEND = PSUSPEND;
+                  RECC    = PSUSPEND;
+                  OISUSP  = POISUSP;
+                  OIRECC  = POISUSP;
+                  OI  = SUM(OIP,OISUSP,(-1)*OIRECV,
+                            (-1)*OIRECC,(-1)*OIW);
+                  IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,
+                            (-1)*RECC,(-1)*IISPW);
+                  TOTIIS = IIS + OI;
+               END;
+               IF USER5 = 'N' AND IIS < IISP THEN DO;
+                  SUSPEND = 0;
+                  RECOVER = IISP - IIS;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                  SUSPEND = IIS - IISP;
+                  RECOVER = 0;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IISP = 0 THEN DO;
+                  SUSPEND = IIS;
+                  RECC = IIS - SUSPEND;
+               END;
+               IF USER5 = 'N' AND OI < OIP THEN DO;
+                  OISUSP = 0;
+                  OIRECV = OIP - OI;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OI >= OIP THEN DO;
+                  OISUSP = OI - OIP;
+                  OIRECV = 0;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OIP = 0 THEN DO;
+                  OISUSP = OI;
+                  OIRECC = OI - OISUSP;
+               END;
+               OUTPUT;
+            END;
+
+            *** TURN NPL FR PERFORMING ***;
+            IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
+               IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                  RECC    = SUM(RECC,PRECC);
+                  SUSPEND = SUM(SUSPEND,RECC);
+                  OIRECC  = SUM(OIRECC,POIRECC);
+                  OISUSP  = SUM(OISUSP,OIRECC);
+                  TOTIIS = IIS + OI;
+               END;
+               IF USER5 = 'N' AND IIS < IISP THEN DO;
+                  SUSPEND = 0;
+                  RECOVER = IISP - IIS;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                  SUSPEND = IIS - IISP;
+                  RECOVER = 0;
+                  RECC = 0;
+               END;
+               IF USER5 = 'N' AND IISP = 0 THEN DO;
+                  SUSPEND = IIS;
+                  RECC = IIS - SUSPEND;
+               END;
+               IF USER5 = 'N' AND OI < OIP THEN DO;
+                  OISUSP = 0;
+                  OIRECV = OIP - OI;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OI >= OIP THEN DO;
+                  OISUSP = OI - OIP;
+                  OIRECV = 0;
+                  OIRECC = 0;
+               END;
+               IF USER5 = 'N' AND OIP = 0 THEN DO;
+                  OISUSP = OI;
+                  OIRECC = OI - OISUSP;
+               END;
+               OUTPUT;
+            END;
+
+            *** CONTINUE NPL ***;
+            IF DAYS GE 90 AND PDAYS GE 90 THEN DO;
+               IF BORSTAT NOT IN ('F','I','R') THEN DO;
+                  RECC    = SUM(RECC,PRECC);
+                  SUSPEND = SUM(SUSPEND,RECC);
+                  OIRECC  = SUM(OIRECC,POIRECC);
+                  OISUSP  = SUM(OISUSP,OIRECC);
+                  TOTIIS = IIS + OI;
+               END;
+               OUTPUT;
+            END;
+         END;
+      RUN;
+   %END;
+%MEND MONTHLY;
+%MONTHLY;
+
+*------------------------------------------------*
+*  COMBINE EXISTING & CURRENT NPL ACCOUNTS       *
+*------------------------------------------------*;
+DATA LOAN3 NPL.IIS&REPTMON NPL.IIS;
+   SET LOAN1 LOAN2;
+   LENGTH RISK $13;
+   IF DAYS > 364 OR BORSTAT = 'W' THEN RISK = 'BAD';
+   ELSE IF DAYS > 273 THEN RISK = 'DOUBTFUL';
+   ELSE IF DAYS > 182 THEN RISK = 'SUBSTANDARD 2';
+   ELSE IF DAYS < 90 AND USER5='N' THEN RISK = 'SUBSTANDARD-1';
+   ELSE RISK = 'SUBSTANDARD-1';
+   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
+          COSTCTR NOT IN (4043,4048) AND
+          COSTCTR NE .;
 RUN;
+PROC SORT DATA=LOAN3 NODUPKEY;BY ACCTNO NOTENO;RUN;
+PROC SORT DATA=NPL.IIS&REPTMON NODUPKEY;BY ACCTNO NOTENO;RUN;
+PROC SORT DATA=NPL.IIS NODUPKEY;BY ACCTNO NOTENO;RUN;
+*------------------------------------------------*
+*  PRODUCE REPORTS                               *
+*------------------------------------------------*;
+OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
+%LET TBL1=(EXISTING);
+%LET TBL2=(CURRENT);
+%LET TBL3=(EXISTING AND CURRENT);
+%LET TTL=MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH ENDING;
+*;
+%MACRO TBLS;
+   %DO I = 3 %TO 3;
+      PROC TABULATE DATA=LOAN&I FORMAT=COMMA15.2 MISSING NOSEPS;
+         CLASS LOANTYP RISK BRANCH;
+         VAR CURBAL UHC NETBAL IISP SUSPEND RECOVER RECC IISPW IIS
+             OIP OISUSP OIRECV OIRECC OIW OI TOTIIS;
+         TABLE LOANTYP=' ',
+               RISK=' '*(BRANCH=' ' ALL='SUB-TOTAL') ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*
+               (CURBAL='CURRENT BAL (A)'
+                UHC='UNEARNED HIRING CHARGES (B)'
+                NETBAL='NET BAL (A-B=C)')
+               SUM='MOVEMENTS OF INTEREST IN SUSPENSE'*
+               (IISP='OPENING BAL FOR FINANCIAL YEAR (D)'
+                SUSPEND='INTEREST SUSPENDED DURING THE PERIOD (E)'
+                RECOVER='WRITTEN BACK TO PROFIT & LOSS (F)'
+                RECC='REVERSAL OF CURRENT YEAR IIS (G)'
+                IISPW='WRITTEN OFF (H)'
+                IIS='IIS CLOSING BAL (D+E-F-G-H=I)')
+               SUM='MOVEMENTS OF OVERDUE INTEREST'*
+               (OIP='OPENING BAL FOR FINANCIAL YEAR (J)'
+                OISUSP='OI SUSPENDED DURING THE PERIOD (K)'
+                OIRECV='WRITTEN BACK TO PROFIT & LOSS (L)'
+                OIRECC='REVERSAL OF CURRENT YEAR OI (M)'
+                OIW='WRITTEN OFF (N)'
+                OI='OI CLOSING BAL (J+K-L-M-N=O)')
+               SUM=' '*TOTIIS='TOTAL CLOSING BAL AS AT RPT DATE (I+O)'
+               / BOX='RISK        BRANCH' RTS=29;
+         TABLE LOANTYP=' ', BRANCH=' ' ALL='TOTAL',
+               N='NO OF ACCOUNT'*F=COMMA7.
+               SUM=' '*
+               (CURBAL='CURRENT BAL (A)'
+                UHC='UNEARNED HIRING CHARGES (B)'
+                NETBAL='NET BAL (A-B=C)')
+               SUM='MOVEMENTS OF INTEREST IN SUSPENSE'*
+               (IISP='OPENING BAL FOR FINANCIAL YEAR (D)'
+                SUSPEND='INTEREST SUSPENDED DURING THE PERIOD (E)'
+                RECOVER='WRITTEN BACK TO PROFIT & LOSS (F)'
+                RECC='REVERSAL OF CURRENT YEAR IIS (G)'
+                IISPW='WRITTEN OFF (H)'
+                IIS='IIS CLOSING BAL (D+E-F-G-H=I)')
+               SUM='MOVEMENTS OF OVERDUE INTEREST'*
+               (OIP='OPENING BAL FOR FINANCIAL YEAR (J)'
+                OISUSP='OI SUSPENDED DURING THE PERIOD (K)'
+                OIRECV='WRITTEN BACK TO PROFIT & LOSS (L)'
+                OIRECC='REVERSAL OF CURRENT YEAR OI (M)'
+                OIW='WRITTEN OFF (N)'
+                OI='OI CLOSING BAL (J+K-L-M-N=O)')
+               SUM=' '*TOTIIS='TOTAL CLOSING BAL AS AT RPT DATE (I+O)'
+               / BOX='BRANCH' RTS=9;
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE2 &TTL &RDATE &&TBL&I;
+   %END;
+%MEND TBLS;
+*;
+%MACRO DTLS;
+   %DO I = 3 %TO 3;
+      PROC SORT DATA=LOAN&I;
+         BY LOANTYP BRANCH RISK DAYS ACCTNO;
+*;
+        PROC PRINT LABEL N;
+
+         FORMAT NETPROC CURBAL UHC NETBAL IISP SUSPEND RECOVER
+                RECC IISPW IIS OIP OISUSP OIRECV OIRECC OIW OI
+                TOTIIS COMMA15.2;
+         LABEL ACCTNO  = 'MNI ACCOUNT NO'
+               DAYS    = 'NO OF DAYS PAST DUE'
+               BORSTAT = 'BORROWER''S STATUS'
+               NETPROC = 'LIMIT'
+               CURBAL  = 'CURRENT BAL (A)'
+               UHC     = 'UNEARNED HIRING CHARGES (B)'
+               NETBAL  = 'NET BAL (A-B=C)'
+               IISP    = 'OPENING BAL FOR FINANCIAL YEAR (D)'
+               SUSPEND = 'INTEREST SUSPENDED DURING THE PERIOD (E)'
+               RECOVER = 'WRITTEN BACK TO PROFIT & LOSS (F)'
+               RECC    = 'REVERSAL OF CURRENT YEAR IIS (G)'
+               IISPW   = 'WRITTEN OFF (H)'
+               IIS     = 'IIS CLOSING BAL (D+E-F-G-H=I)'
+               OIP     = 'OPENING BAL FOR FINANCIAL YEAR (J)'
+               OISUSP  = 'OI SUSPENDED DURING THE PERIOD (K)'
+               OIRECV  = 'WRITTEN BACK TO PROFIT & LOSS (L)'
+               OIRECC  = 'REVERSAL OF CURRENT YEAR OI (M)'
+               OIW     = 'WRITTEN OFF (N)'
+               OI      = 'OI CLOSING BAL (J+K-L-M-N=O)'
+               TOTIIS  = 'TOTAL CLOSING BAL AS AT RPT DATE (I+O)';
+         VAR ACCTNO NAME DAYS BORSTAT NETPROC CURBAL UHC NETBAL
+             IISP SUSPEND RECOVER RECC IISPW IIS OIP OISUSP OIRECV
+             OIRECC OIW OI TOTIIS;
+         BY LOANTYP BRANCH RISK;
+         PAGEBY BRANCH;
+         SUMBY RISK;
+         SUM NETPROC CURBAL UHC NETBAL IISP SUSPEND RECOVER
+             RECC IISPW IIS OIP OISUSP OIRECV OIRECC OIW OI TOTIIS;
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE2 &TTL &RDATE &&TBL&I;
+   %END;
+%MEND DTLS;
+*;
+%TBLS;
+    /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS */
+%DTLS;
 
-DATA STAFFMAP(DROP=ADDED_ON RENAME=(COSTCTR=COSTCTR_C));
-   SET EGS.keep_undrawn_ln_ftp_lstaff;
-RUN;
 
-PROC SORT DATA=STAFF;BY COSTCTR_C;RUN;
-PROC SORT DATA=STAFFMAP;BY COSTCTR_C;RUN;
-
-DATA STAFF;
-   MERGE STAFF(IN=A) STAFFMAP(IN=B);BY COSTCTR_C;
-   IF A;
-RUN;
-
-DATA UNDRAWNOUT;
-   SET UNDRAWNOUT STAFF;
-RUN;
-
-DATA COSTCENTRE(RENAME=(COSTCTR1=COSTCTR_C));
-   SET EGS.KEEP_UNDRAWN_LN_FTP_COSTCTR;
-RUN;
-
-PROC SORT DATA=COSTCENTRE;BY COSTCTR_C DESCENDING UPDATED_ON;RUN;
-PROC SORT DATA=COSTCENTRE NODUPKEY;BY COSTCTR_C;RUN;
-PROC SORT DATA=UNDRAWNOUT;BY COSTCTR_C;RUN;
-
-DATA UNDRAWNOUT;
-   MERGE UNDRAWNOUT(IN=A) COSTCENTRE(IN=B);BY COSTCTR_C;
-   IF A;
-   IF COSTCTR2 NE ' ' THEN COSTCTR_C = COSTCTR2;
-RUN;
-
-DATA _NULL_;
-	SET UNDRAWNOUT NOBS=TRN END=LAST;
-	FILE OUTFTP('INTFULTP') LRECL=324 TERMSTR=CRLF;                
-
-	IF TRN=0 THEN DO;           
-		PUT @001  'INTFULTP'         			/* INTERFACE IDENTIFIER		*/
-		    @009  '0'                			/* INTERFACE RECORD TYPE	*/
-		    @018  "&REPTDATE"          	
-		    @026  "&CRDATE"          
-		    @034  "&CRTIME"         
-		    @040  285*' '
-			;           
-		PUT @001  'INTFULTP'         
-		    @009  '9'                
-		    @018  "&REPTDATE"         	
-		    @026  "&CRDATE"         
-		    @034  "&CRTIME"         
-		    @040  '+'                
-		    @041  '0000000000000000' 
-		    @057  '-'                
-		    @058  '0000000000000000' 
-			@074  '+'                 
-			@075  '0000000000000000'  
-			@091  '-'                 
-			@092  '0000000000000000'  
-			@108  '000000000'         
-			@117  208*' '
-			;            
-	END;
-
-	RETAIN TRN;             
-     
-	IF _N_=1 THEN DO;       
-		PUT @001  'INTFULTP'         			/* INTERFACE IDENTIFIER		*/
-		    @009  '0'                			/* INTERFACE RECORD TYPE	*/
-		    @018  "&REPTDATE"        	
-		    @026  "&CRDATE"          
-		    @034  "&CRTIME"        
-		    @040  285*' '
-			;
-	END;  
-	
-	
-	IF MISSING(FTPEXPENSE) THEN FTPEXPENSE = 0;
-	FTPEXPENSE = ROUND(FTPEXPENSE,0.01)*100;
-
-	FORMAT TOTDEBIT TOTCREDIT 16.;
-
-	IF 	 SIGN = '+' THEN  TOTDEBIT+FTPEXPENSE;                    
-	ELSE				 TOTCREDIT+FTPEXPENSE;
-  
- 
-	PUT 	@001  'INTFULTP'          
-			@009  '1'                 
-      		@010  'ULTP01'     
-      		@018  'PBBH'        
-	      	@022  COSTCTR_C         $7.		         
-	      	@029  GL_ACCTNO         $5.     
-	      	@047  GL_PROD_PBB       $18.
-	      	@071  CURRCD            $3.
-            @077  "&REPTDATE"       
-			@085  SIGN              $1.
- 	      	@086  FTPEXPENSE     	Z16.          
-	      	@102  'BG FTP ON UNDRAWN LOAN/FINANCING'                  
-	      	@252  '+'                 
-	      	@253  '0000000000000000'  
-	      	@273  '+'                 
-	      	@274  '000000000000000'   
-	      	@297  "&REPTDATE"   
-			@307  '+'                  
-      		@308  '0000000000000000'   
-      		@324  ' '                  
-      		;               
- 
-	IF LAST THEN DO;                 
-	   	PUT @001  'INTFULTP'           
-	       	@009  '9'                  
-	       	@018  "&REPTDATE"          	
-		   	@026  "&CRDATE"          
-		   	@034  "&CRTIME"         
-	       	@040  '+'                  
-	       	@041  TOTDEBIT  		Z16.               
-	       	@057  '-'                  
-	       	@058  TOTCREDIT        	Z16.    
-	       	@74   '+'                  
-	       	@75   '0000000000000000'   
-	       	@91   '-'                  
-	       	@92   '0000000000000000'   
-	       	@108  TRN            	 Z9. 
-		   	@117  208*' '
-			; 
-	END;     
-RUN; 
-
-FILENAME OUTFILE "/dwh/ftp/drr/UNDRAWN_LN&REPTDATE..txt" TERMSTR=CRLF;
-
-ODS LISTING;
-PROC PRINTTO FILE=OUTFILE NEW; RUN;   
-
-PROC REPORT DATA=UNDRAWNOUT NOCENTER HEADLINE FORMCHAR(1,2,3,4,5,6,7,8,9,10,11)='|----|+|---';
-   TITLE 'PBB FTP on Off Balance Sheet Undrawn Loans as at ' "&rdate";
-   COLUMN ORG GLACCD CURRCD COSTCTR_C PERIOD M_TOTAL_ON_OFF_BAL LCRWEIGHT FTPRATE LDAY DAYINYEAR FTPEXPENSE GL_ACCTNO GL_PROD_PBB FM_LOB FM_PROD ANALYCD;
-   DEFINE GLACCD /DISPLAY WIDTH=25 'SOURCE';
-   DEFINE CURRCD /DISPLAY WIDTH=10 'CURRENCY';
-   DEFINE COSTCTR_C /DISPLAY WIDTH=10 'COSTCTR';
-   DEFINE M_TOTAL_ON_OFF_BAL /DISPLAY WIDTH=20 FORMAT=17.2 'OUTSTANDING(RM)';
-   DEFINE LCRWEIGHT /DISPLAY WIDTH=15 'LCR WEIGHT(%)';
-   DEFINE FTPRATE /DISPLAY 'FTP RATE(%)';
-   DEFINE LDAY /DISPLAY WIDTH=10 'NO. OF DAYS IN MONTH';
-   DEFINE DAYINYEAR /DISPLAY WIDTH=10 'NO. OF DAYS IN YEAR';
-   DEFINE FTPEXPENSE /DISPLAY WIDTH=20 FORMAT=17.2 'FTP EXPENSE(RM)';
-   DEFINE GL_ACCTNO /DISPLAY WIDTH=10 'GL_ACCTNO';
-   DEFINE GL_PROD_PBB /DISPLAY WIDTH=15 'GL_PROD_PBB';
-   DEFINE FM_PROD /DISPLAY WIDTH=10 'FM_PROD';
-   DEFINE FM_LOB /DISPLAY WIDTH=10 'FM_LOB';
-   DEFINE ANALYCD /DISPLAY 'ACTUAL';
-RUN;
-
-
-
-ODS LISTING CLOSE;
-
-DATA _NULL_;
-	FILE FTPFILE(EIBMRWAX.TXT) TERMSTR=CRLF;
-	PUT @1 "put /dwh/ftp/drr/UNDRAWN_LN&REPTDATE..txt";
-		;
-RUN;
-
-DATA _NULL_;
-	FILE FTPFILE(RWA2DRR.TXT) TERMSTR=CRLF;
-	PUT @1 'cd "FD-MA/FM_DWH_RWA"';
-	PUT @1 "put /dwh/ftp/drr/EXCEPT.txt";
-	PUT @1 "put /dwh/ftp/drr/FM_SUMMARY.txt";
-		;
-RUN;
-
-
-
-
-
-
-NOTE: Log file opened at  Sun, 9 Aug 2026 10:38:13.634
-1                                                          The SAS System                               10:38 Sunday, August 9, 2026
-
-NOTE: Unable to open SASUSER.REGSTRY. WORK.REGSTRY will be opened instead.
-NOTE: All registry changes will be lost at the end of the session.
-
-WARNING: Unable to copy SASUSER registry to WORK registry. Because of this, you will not see registry customizations during this 
-         session.
-NOTE: Unable to open SASUSER.PROFILE. WORK.PROFILE will be opened instead.
-NOTE: All profile changes will be lost at the end of the session.
-NOTE: Copyright (c) 2025 by SAS Institute Inc., Cary, NC, USA. 
-NOTE: SAS (r) Proprietary Software 9.4 (TS1M9) 
-      Licensed to PUBLIC BANK BERHAD, Site 12602125.
-NOTE: This session is executing on the Linux 4.18.0-553.147.1.el8_10.x86_64 (LIN X64) platform.
-
-
-
-NOTE: Analytical products:
-      
-      SAS/STAT 15.4
-
-NOTE: Additional host information:
-
- Linux LIN X64 4.18.0-553.147.1.el8_10.x86_64 #1 SMP Thu Jul 23 06:31:18 EDT 2026 x86_64 Red Hat Enterprise Linux release 8.10 
-      (Ootpa) 
-
-You are running SAS 9. Some SAS 8 files will be automatically converted 
-by the V9 engine; others are incompatible.  Please see 
-http://support.sas.com/rnd/migration/planning/platform/64bit.html
-
-PROC MIGRATE will preserve current SAS file attributes and is 
-recommended for converting all your SAS libraries from any 
-SAS 8 release to SAS 9.  For details and examples, please see
-http://support.sas.com/rnd/migration/index.html
-
-
-This message is contained in the SAS news file, and is presented upon
-initialization.  Edit the file "news" in the "misc/base" directory to
-display site-specific news and information in the program log.
-The command line option "-nonews" will prevent this display.
-
-
-
-
-NOTE: SAS initialization used:
-      real time           0.07 seconds
-      cpu time            0.03 seconds
-      
-NOTE: Library SASDATA does not exist.
-NOTE: Libref EGS_CRM successfully assigned from logical server.
-NOTE: Libref EGS_RMD successfully assigned from logical server.
-NOTE: Libref EGS_RFS successfully assigned from logical server.
-NOTE: Libref EGS_FD successfully assigned from logical server.
-NOTE: Libref EGTASK successfully assigned from logical server.
-NOTE: Libref EGS_ALM successfully assigned from logical server.
-
-NOTE: AUTOEXEC processing beginning; file is /sasapp/configEDW/Lev5/SASEDW/BatchServer/autoexec.sas.
-
-NOTE: Libref DWHCTL was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /sasdata/dwh/control
-2                                                          The SAS System                               10:38 Sunday, August 9, 2026
-
-
-NOTE: Numeric values have been converted to character values at the places given by: (Line):(Column).
-      54:50    67:43    71:42    82:42    132:56   134:48   
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      133:48   
-NOTE: There were 59 observations read from the data set DWHCTL.CTL_DWH_BATCH_DTTM.
-NOTE: The data set WORK.A has 59 observations and 18 variables.
-NOTE: Compressing data set WORK.A increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: Numeric values have been converted to character values at the places given by: (Line):(Column).
-      142:8   142:8   
-NOTE: There were 3 observations read from the data set DWHCTL.CTL_BATCH_MODE.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-DATEPART(RV38_TIMESTAMP)=24327
-DATEPART(APPROVESTMP)^=.
-NOTE: Data file DWHCTL.CTL_DWH_GLOBAL_HIGH_DTTM.DATA is in a format that is native to another host, or the file encoding does not 
-      match the session encoding. Cross Environment Data Access will be used, which might require additional CPU resources and 
-      might reduce performance.
-
-NOTE: There were 1 observations read from the data set DWHCTL.CTL_DWH_GLOBAL_HIGH_DTTM.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-NOTE: Libref DWHCTL has been deassigned.
-NOTE: Libref DWHCTL was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /sasdata/dwh/control
-
-3                                                          The SAS System                               10:38 Sunday, August 9, 2026
-
-NOTE: There were 28 observations read from the data set DWHCTL.CTL_MART_BATCH_DTTM.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 1 observations read from the data set DWHCTL.CTL_EHP_BATCH_MODE.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 3 observations read from the data set DWHCTL.CTL_BATCH_MODE.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: Numeric values have been converted to character values at the places given by: (Line):(Column).
-      294:39   295:35   
-NOTE: Variable folder_path is uninitialized.
-NOTE: There were 3 observations read from the data set DWHCTL.CTL_BATCH_MODE.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-._d
-NOTE: Libref DWHCTL has been deassigned.
-
-NOTE: AUTOEXEC processing completed.
-
-1          /****************************************************************************
-2           * Job:             EIBMRWAX                              A57ZX8YI.BF00012V *
-3           * Description:                                                             *
-4           *                                                                          *
-5           * Metadata Server: svdwh002                                                *
-6           * Port:            8565                                                    *
-7           * Location:        /Shared Data/SAS Warehouse/02                           *
-8           *                   Jobs/PROGRAMS/DRRREPORTS/FD-MA                         *
-9           *                                                                          *
-10          * Server:          SASEDW                                A57ZX8YI.AS000002 *
-11          *                                                                          *
-12          * Generated on:    Thursday, February 23, 2023 4:14:55 PM SGT              *
-13          * Generated by:    sasdemo_edw                                             *
-14          * Version:         SAS Data Integration Studio 4.904                       *
-15          ****************************************************************************/
-16         
-17         /* Generate the process id for job  */
-18         %put Process ID: &SYSJOBID;
-Process ID: 2020372
-19         
-20         /* General macro variables  */
-21         %let jobID = %quote(A57ZX8YI.BF00012V);
-22         %let etls_jobName = %nrquote(EIBMRWAX);
-4                                                          The SAS System                               10:38 Sunday, August 9, 2026
-
-23         %let etls_userID = %nrquote(sasdemo_edw);
-24         
-25         /* Setup to capture return codes  */
-26         %global job_rc trans_rc sqlrc;
-27         %let sysrc = 0;
-28         %let job_rc = 0;
-29         %let trans_rc = 0;
-30         %let sqlrc = 0;
-31         %global etls_stepStartTime;
-32         /* initialize syserr to 0 */
-33         data _null_; run;
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-34         
-35         %macro rcSet(error);
-36            %if (&error gt &trans_rc) %then
-37               %let trans_rc = &error;
-38            %if (&error gt &job_rc) %then
-39               %let job_rc = &error;
-40         %mend rcSet;
-41         
-42         %macro rcSetDS(error);
-43            if &error gt input(symget('trans_rc'),12.) then
-44               call symput('trans_rc',trim(left(put(&error,12.))));
-45            if &error gt input(symget('job_rc'),12.) then
-46               call symput('job_rc',trim(left(put(&error,12.))));
-47         %mend rcSetDS;
-48         
-49         /* Create metadata macro variables */
-50         %let IOMServer      = %nrquote(SASEDW);
-51         %let metaPort       = %nrquote(8565);
-52         %let metaServer     = %nrquote(svdwh002);
-53         
-54         /* Setup for capturing job status  */
-55         %let etls_startTime = %sysfunc(datetime(),datetime.);
-56         %let etls_recordsBefore = 0;
-57         %let etls_recordsAfter = 0;
-58         %let etls_lib = 0;
-59         %let etls_table = 0;
-60         
-61         %global etls_debug;
-62         %macro etls_setDebug;
-63            %if %str(&etls_debug) ne 0 %then
-64               OPTIONS MPRINT%str(;);
-65         %mend;
-66         %etls_setDebug;
-67         
-68         /*==========================================================================*
-69          * Step:            EIBMRWAX                              A57ZX8YI.BI002DVR *
-70          * Transform:       User Written                                            *
-71          * Description:                                                             *
-72          *                                                                          *
-73          * Target Table:    User Written - work.W23A9Q4           A57ZX8YI.BK000YTP *
-74          *                                                                          *
-5                                                          The SAS System                               10:38 Sunday, August 9, 2026
-
-75          * User Written:    SourceCode                                              *
-76          *==========================================================================*/
-77         
-78         %let transformID = %quote(A57ZX8YI.BI002DVR);
-79         %let trans_rc = 0;
-80         %let etls_stepStartTime = %sysfunc(datetime(), datetime20.);
-81         
-82         %let _INPUT_count = 0;
-83         %let _OUTPUT_count = 1;
-84         %let _OUTPUT = work.W23A9Q4;
-85         %let _OUTPUT_connect = ;
-86         %let _OUTPUT_engine = ;
-87         %let _OUTPUT_memtype = DATA;
-88         %let _OUTPUT_options = %nrquote();
-89         %let _OUTPUT_alter = %nrquote();
-90         %let _OUTPUT_path = %nrquote(/User Written_A57ZX8YI.BK000YTP%(WorkTable%));
-91         %let _OUTPUT_type = 1;
-92         %let _OUTPUT_label = %nrquote();
-93         %let _OUTPUT_col_count = 0;
-94         %let _OUTPUT_filetype = WorkTable;
-95         
-96         %let _OUTPUT1 = work.W23A9Q4;
-97         %let _OUTPUT1_connect = ;
-98         %let _OUTPUT1_engine = ;
-99         %let _OUTPUT1_memtype = DATA;
-100        %let _OUTPUT1_options = %nrquote();
-101        %let _OUTPUT1_alter = %nrquote();
-102        %let _OUTPUT1_path = %nrquote(/User Written_A57ZX8YI.BK000YTP%(WorkTable%));
-103        %let _OUTPUT1_type = 1;
-104        %let _OUTPUT1_label = %nrquote();
-105        %let _OUTPUT1_col_count = 0;
-106        %let _OUTPUT1_filetype = WorkTable;
-NOTE: A byte-order mark in the file "/dwh/ftp/batch/EIBMRWAX.sas" (for fileref "#LN00014") indicates that the data is encoded in 
-      "utf-8".  This encoding will be used to process the file.
-107        
-108        /*---- Start of User Written Code  ----*/
-109        
-110        %include '/dwh/ftp/batch/EIBMRWAX.sas';
-NOTE: Libref BASEL was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /exdwh/mis/basel3
-NOTE: Libref APPL was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /dwh/dwh_m/tempsource/rwa
-NOTE: Libref BT was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /dwh/btrade
-NOTE: Libref EGS refers to the same physical library as EGS_FD.
-NOTE: Libref EGS was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /eguser/egshared/egs_fd
-
-NOTE: The data set WORK.EL has 133 observations and 6 variables.
-NOTE: Compressing data set WORK.EL increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-6 The SAS System                                                                                                                                                                                                                    10:38 Sunday, August 9, 2026
-
-      
-
-
-NOTE: The data set WORK.ELI has 133 observations and 6 variables.
-NOTE: Compressing data set WORK.ELI increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-NOTE: Format BRCHCD has been output.
-NOTE: Format CACBRCH has been output.
-NOTE: Format CACNAME has been output.
-NOTE: Format REGIOFF has been output.
-NOTE: Format REGNEW has been output.
-NOTE: Format $CTYPE has been output.
-NOTE: Format HPBRCHCD has been output.
-
-NOTE: PROCEDURE FORMAT used (Total process time):
-      real time           0.02 seconds
-      cpu time            0.01 seconds
-      
-
-NOTE: Format $BRCHRVR has been output.
-
-NOTE: PROCEDURE FORMAT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: Numeric values have been converted to character values at the places given by: (Line):(Column).
-      1392:27   
-NOTE: Compression was disabled for data set WORK.REPTDATE because compression overhead would increase the size of the data set.
-NOTE: The data set WORK.REPTDATE has 1 observations and 1 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      1402:14   
-NOTE: Invalid numeric data, SYS_PRODUCT='BGP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2509013926G402500000~IBILLOS K_BASEL_UNIQUE_KEY=2509013926G402500000~IBILLOS K_BASEL_CUST_KEY=CISBASEL-1 K_CCRIS_KEY=250901392600000 K_MART_HYBRID_KEY=2509013926 K_MART_UNIQUE_KEY=2509013926G402500000
-K_ACCT_KEY=2509013926 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=. K_EFC_GRP_ID=. VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=GAMUDA BERHAD CUSTNO=2258985 D_B3CUST_RETL_CE_GRP=NA D_B3CUST_RETL_CE_WO_EIR=112297820.7 D_CISCUST_RETL_CE_GRP=NA
-D_CISCUST_RETL_CE_WO_EIR=0 D_RETL_CE_GRP_CHECK=CIS-NA-->B3-NA GRP_ANNL_SALES_AMT=13346712000 GRP_ANNL_SALES_FINANCIAL_DT=23741 CITIZEN=MY DNBFISME_CUSTOMER_CODE=059 D_CUST_CTPY=CORPORATE D_CTPY_PORTFOLIO=CORPORATE D_EXPOSURE_TYPE=Off Balance Sheet
-D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2509013926 MASTACC_OMNI=2509013926 ACCTNO=2509013926 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G402500000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N
-D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CorporateBankingLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24072 EXPIRY_DT=24470 D_TENURE=13 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=  D_REAL_ESTATE_RELATIONSHIP=  D_REGULATE_REAL_ESTATE=  D_FTV=.
-M_GRP_PROP_VALUE=. M_GRP_REAL_ESTATE_EXPOSURE=. M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=NA D_LE250=NA D_PU5=NA D_TRANSACTOR=NA D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=  D_CTPY_RW=100 D_MAX_RE_RW_BF_GUAR=.
-D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=100 D_EXPOSURE_PORT_BF_GUAR=CORPORATE D_EXPOSURE_SUB_PORT_BF_GUAR=GENERAL CORPORATES D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=.
-D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL D_EFC_IND=N M_ELN_PROP_VALUE=. M_BAL=35300000 M_BAL_AFT_EIR=35300000 M_UNDRAWN_AMT=.
-M_EXPOSURE_PRE_CRM_NET=17650000 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=17650000 M_ALLOCATION=. M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=.
-M_EXPOSURE_AFT_CRM=17650000 D_EXPOSURE_PORT=CORPORATE D_EXPOSURE_SUB_PORT=GENERAL CORPORATES D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=0.5 M_TOTAL_ON_OFF_BAL=35300000 SYS_PRODUCT=BGP
-CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=168 D_INDUSTRIAL_SECTOR_CODE_BNM=42109 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=GENERALCORPORATES-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM= 
-LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=N D_EXPOSURE_RW=20 M_RW_ASSET=3530000 D_EXPOSURE_RW_B4_MULTIPLY=20 D_EXTERNAL_RATING_ADJ=Y CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL
-PRODUCT=. _ERROR_=1 _N_=1
-7 The SAS System                                                                                                                                                                                                                    10:38 Sunday, August 9, 2026
-
-NOTE: Invalid numeric data, SYS_PRODUCT='BGP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2509013926G402502000~IBILLOS K_BASEL_UNIQUE_KEY=2509013926G402502000~IBILLOS K_BASEL_CUST_KEY=CISBASEL-1 K_CCRIS_KEY=250901392600000 K_MART_HYBRID_KEY=2509013926 K_MART_UNIQUE_KEY=2509013926G402502000
-K_ACCT_KEY=2509013926 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=. K_EFC_GRP_ID=. VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=GAMUDA BERHAD CUSTNO=2258985 D_B3CUST_RETL_CE_GRP=NA D_B3CUST_RETL_CE_WO_EIR=112297820.7 D_CISCUST_RETL_CE_GRP=NA
-D_CISCUST_RETL_CE_WO_EIR=0 D_RETL_CE_GRP_CHECK=CIS-NA-->B3-NA GRP_ANNL_SALES_AMT=13346712000 GRP_ANNL_SALES_FINANCIAL_DT=23741 CITIZEN=MY DNBFISME_CUSTOMER_CODE=059 D_CUST_CTPY=CORPORATE D_CTPY_PORTFOLIO=CORPORATE D_EXPOSURE_TYPE=Off Balance Sheet
-D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2509013926 MASTACC_OMNI=2509013926 ACCTNO=2509013926 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G402502000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N
-D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CorporateBankingLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24072 EXPIRY_DT=24682 D_TENURE=20 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=  D_REAL_ESTATE_RELATIONSHIP=  D_REGULATE_REAL_ESTATE=  D_FTV=.
-M_GRP_PROP_VALUE=. M_GRP_REAL_ESTATE_EXPOSURE=. M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=NA D_LE250=NA D_PU5=NA D_TRANSACTOR=NA D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=  D_CTPY_RW=100 D_MAX_RE_RW_BF_GUAR=.
-D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=100 D_EXPOSURE_PORT_BF_GUAR=CORPORATE D_EXPOSURE_SUB_PORT_BF_GUAR=GENERAL CORPORATES D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=.
-D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL D_EFC_IND=N M_ELN_PROP_VALUE=. M_BAL=35300000 M_BAL_AFT_EIR=35300000 M_UNDRAWN_AMT=.
-M_EXPOSURE_PRE_CRM_NET=17650000 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=17650000 M_ALLOCATION=. M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=.
-M_EXPOSURE_AFT_CRM=17650000 D_EXPOSURE_PORT=CORPORATE D_EXPOSURE_SUB_PORT=GENERAL CORPORATES D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=0.5 M_TOTAL_ON_OFF_BAL=35300000 SYS_PRODUCT=BGP
-CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=168 D_INDUSTRIAL_SECTOR_CODE_BNM=42109 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=GENERALCORPORATES-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM= 
-LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=N D_EXPOSURE_RW=20 M_RW_ASSET=3530000 D_EXPOSURE_RW_B4_MULTIPLY=20 D_EXTERNAL_RATING_ADJ=Y CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL
-PRODUCT=. _ERROR_=1 _N_=3
-NOTE: Invalid numeric data, SYS_PRODUCT='BAP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2503159935B634273000~LNMART K_BASEL_UNIQUE_KEY=2503159935B634273000~LNMART K_BASEL_CUST_KEY=CISBASEL-458 K_CCRIS_KEY=250315993534476 K_MART_HYBRID_KEY=2503159935 K_MART_UNIQUE_KEY=2503159935B634273000
-K_ACCT_KEY=2503159935 K_AANO_KEY=WMU/000361/23 K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=574391 K_EFC_GRP_ID=. VIN_AANO=WMU/000361/23 CUST_SOURCE=CIS CUSTNAME=E H H FOOD INDUSTRY SDN. BHD. CUSTNO=6286517 D_B3CUST_RETL_CE_GRP=>5MIL
-D_B3CUST_RETL_CE_WO_EIR=14395007.627 D_CISCUST_RETL_CE_GRP=>5MIL D_CISCUST_RETL_CE_WO_EIR=14395007.627 D_RETL_CE_GRP_CHECK=CIS->5MIL-->B3->5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=047 D_CUST_CTPY=SME
-D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=On Balance Sheet D_SOURCE_CATEGORY=LNMART DEFAULT_LOAN=N MASTACC=2503159935 MASTACC_OMNI=2503159935 ACCTNO=2503159935 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=B634273000 D_COMMITMENT_CHECK=EXIST
-PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24303 EXPIRY_DT=24423 D_TENURE=4 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL
-D_REAL_ESTATE_RELATIONSHIP=MA TO 1C D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=81 M_GRP_PROP_VALUE=4604800 M_GRP_REAL_ESTATE_EXPOSURE=3,738,247.45 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=N D_LE250=NA D_PU5=NA D_TRANSACTOR=NA
-D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=N-00110.00013 D_CTPY_RW=100 D_MAX_RE_RW_BF_GUAR=110 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=110 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_I D_GUARANTOR= 
-D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL D_EFC_IND=N
-M_ELN_PROP_VALUE=. M_BAL=327092.67 M_BAL_AFT_EIR=327092.67 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=327092.67 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=327092.67 M_ALLOCATION=. M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=.
-M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=327092.67 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_I D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1
-M_IMPAIRED_PROVISION=0 CCF_RATE=1 M_TOTAL_ON_OFF_BAL=327092.67 SYS_PRODUCT=BAP CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=138 D_INDUSTRIAL_SECTOR_CODE_BNM=10741 SECTOR_CODE=3114 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=CRE_I-BILLS-N- PROP_DEVELOP_FIN_IND= 
-D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=2503159935 AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=110 M_RW_ASSET=359801.937 D_EXPOSURE_RW_B4_MULTIPLY=110 D_EXTERNAL_RATING_ADJ=  CG_RATIO=.
-D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=E PRODUCT=. _ERROR_=1 _N_=739341
-NOTE: Invalid numeric data, SYS_PRODUCT='BGP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2502418135G398558000~IBILLOS K_BASEL_UNIQUE_KEY=2502418135G398558000~IBILLOS K_BASEL_CUST_KEY=CISNO-11272936 K_CCRIS_KEY=250241813500000 K_MART_HYBRID_KEY=2502418135 K_MART_UNIQUE_KEY=2502418135G398558000
-K_ACCT_KEY=2502418135 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=85734 K_EFC_GRP_ID=18730 VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=KW GLASS SDN. BHD. CUSTNO=11272936 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=4026118.3411
-D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=4026118.3411 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=044 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL
-D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2502418135 MASTACC_OMNI=2502418135 ACCTNO=2502418135 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G398558000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470
-D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=23980 EXPIRY_DT=24455 D_TENURE=16 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL D_REAL_ESTATE_RELATIONSHIP=MA TO 1C
-D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=54 M_GRP_PROP_VALUE=8750000 M_GRP_REAL_ESTATE_EXPOSURE=4,750,056.11 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW= 
-D_GRP_COMM_RW=N-00060.00014 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=60 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=60 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_NI D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N
-F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NOT FULLY COVERED D_EFC_IND=N M_ELN_PROP_VALUE=. M_BAL=42820 M_BAL_AFT_EIR=42820
-M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=21410 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=21410 M_ALLOCATION=0 M_ALLCT_CASH=0 M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=.
-M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=21410 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=0.5 M_TOTAL_ON_OFF_BAL=42820 SYS_PRODUCT=BGP
-CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=148 D_INDUSTRIAL_SECTOR_CODE_BNM=23109 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=CRE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC= 
-K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=60 M_RW_ASSET=12846 D_EXPOSURE_RW_B4_MULTIPLY=60 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL
-PRODUCT=. _ERROR_=1 _N_=739344
-NOTE: Invalid numeric data, SYS_PRODUCT='BGP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2503625533G398745000~IBILLOS K_BASEL_UNIQUE_KEY=2503625533G398745000~IBILLOS K_BASEL_CUST_KEY=CISBASEL-3118 K_CCRIS_KEY=250362553300000 K_MART_HYBRID_KEY=2503625533 K_MART_UNIQUE_KEY=2503625533G398745000
-K_ACCT_KEY=2503625533 K_AANO_KEY=CPE/000709/24 K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=710709 K_EFC_GRP_ID=. VIN_AANO=CPE/000709/24 CUST_SOURCE=CIS CUSTNAME=TRU-ONE KONSEP SDN. BHD. CUSTNO=12051861 D_B3CUST_RETL_CE_GRP=<=5MIL
-D_B3CUST_RETL_CE_WO_EIR=4568020.9856 D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=4568020.9856 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=042 D_CUST_CTPY=SME
-D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2503625533 MASTACC_OMNI=2503625533 ACCTNO=2503625533 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G398745000 D_COMMITMENT_CHECK=EXIST
-PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=23982 EXPIRY_DT=24501 D_TENURE=17 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL
-D_REAL_ESTATE_RELATIONSHIP=MA TO NC D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=102 M_GRP_PROP_VALUE=6436506.0228 M_GRP_REAL_ESTATE_EXPOSURE=6,544,103.50 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N
-D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=N-00085.00029 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_NI D_GUARANTOR=CGC
-D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=0.7 D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=7720000 M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL
-D_EFC_IND=N M_ELN_PROP_VALUE=. M_BAL=12375 M_BAL_AFT_EIR=12375 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=6187.5 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=6187.5 M_ALLOCATION=. M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=.
-M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=6187.5 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1
-M_IMPAIRED_PROVISION=0 CCF_RATE=0.5 M_TOTAL_ON_OFF_BAL=12375 SYS_PRODUCT=BGP CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=140 D_INDUSTRIAL_SECTOR_CODE_BNM=46421 SECTOR_CODE=6120 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=CRE_NI-BILLS-N- PROP_DEVELOP_FIN_IND= 
-D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=5259.375 D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND= 
-M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739348
-NOTE: Invalid numeric data, SYS_PRODUCT='BAP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2501831610B615352000~LNMART K_BASEL_UNIQUE_KEY=2501831610B615352000~LNMART K_BASEL_CUST_KEY=CISNO-10778040 K_CCRIS_KEY=250183161034476 K_MART_HYBRID_KEY=2501831610 K_MART_UNIQUE_KEY=2501831610B615352000
-8 The SAS System                                                                                                                                                                                                                    10:38 Sunday, August 9, 2026
-
-K_ACCT_KEY=2501831610 K_AANO_KEY=IMO/000050/09 K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=668334 K_EFC_GRP_ID=34447 VIN_AANO=IMO/000050/09 CUST_SOURCE=CIS CUSTNAME=AYS BUILDING MATERIALS SDN. BHD. CUSTNO=10778040 D_B3CUST_RETL_CE_GRP=<=5MIL
-D_B3CUST_RETL_CE_WO_EIR=3876919.2587 D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=3876919.2587 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=046 D_CUST_CTPY=SME
-D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=On Balance Sheet D_SOURCE_CATEGORY=LNMART DEFAULT_LOAN=N MASTACC=2501831610 MASTACC_OMNI=2501831610 ACCTNO=2501831610 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=B615352000 D_COMMITMENT_CHECK=EXIST
-PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24209 EXPIRY_DT=24323 D_TENURE=4 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL
-D_REAL_ESTATE_RELATIONSHIP=MA TO NC D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=142 M_GRP_PROP_VALUE=3480000 M_GRP_REAL_ESTATE_EXPOSURE=4,927,045.34 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N
-D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=N-00085.00029 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_NI D_GUARANTOR=  D_GUARANTOR_RW=.
-D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NOT FULLY COVERED D_EFC_IND=N M_ELN_PROP_VALUE=.
-M_BAL=131748.91 M_BAL_AFT_EIR=131748.91 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=131748.91 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=131748.91 M_ALLOCATION=0 M_ALLCT_CASH=. M_ALLCT_FD=0 M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=.
-M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=131748.91 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0
-CCF_RATE=1 M_TOTAL_ON_OFF_BAL=131748.91 SYS_PRODUCT=BAP CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=5 D_INDUSTRIAL_SECTOR_CODE_BNM=46633 SECTOR_CODE=6120 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=CRE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA
-D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=2501831610 AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=111986.5735 D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND= 
-M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=E PRODUCT=. _ERROR_=1 _N_=739355
-NOTE: Invalid numeric data, SYS_PRODUCT='BGF' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2501564025G408673000~IBILLOS K_BASEL_UNIQUE_KEY=2501564025G408673000~IBILLOS K_BASEL_CUST_KEY=CISBASEL-1531 K_CCRIS_KEY=250156402500000 K_MART_HYBRID_KEY=2501564025 K_MART_UNIQUE_KEY=2501564025G408673000
-K_ACCT_KEY=2501564025 K_AANO_KEY=LBN/000250/25 K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=3753 K_EFC_GRP_ID=4597 VIN_AANO=LBN/000250/25 CUST_SOURCE=CIS CUSTNAME=KEMMAS ENTERPRISE (LABUAN) SDN. BHD. CUSTNO=11589176 D_B3CUST_RETL_CE_GRP=>5MIL
-D_B3CUST_RETL_CE_WO_EIR=8301211.7344 D_CISCUST_RETL_CE_GRP=>5MIL D_CISCUST_RETL_CE_WO_EIR=8301211.7344 D_RETL_CE_GRP_CHECK=CIS->5MIL-->B3->5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=047 D_CUST_CTPY=SME
-D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2501564025 MASTACC_OMNI=2501564025 ACCTNO=2501564025 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G408673000 D_COMMITMENT_CHECK=EXIST
-PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24233 EXPIRY_DT=24678 D_TENURE=14 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL
-D_REAL_ESTATE_RELATIONSHIP=MA TO NC D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=102 M_GRP_PROP_VALUE=6300000 M_GRP_REAL_ESTATE_EXPOSURE=6,395,988.22 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=N D_LE250=NA D_PU5=NA D_TRANSACTOR=NA
-D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=N-00110.00013 D_CTPY_RW=100 D_MAX_RE_RW_BF_GUAR=110 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=110 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_I D_GUARANTOR= 
-D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NOT FULLY COVERED D_EFC_IND=N
-M_ELN_PROP_VALUE=. M_BAL=8701.06 M_BAL_AFT_EIR=8701.06 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=8701.06 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=8701.06 M_ALLOCATION=0 M_ALLCT_CASH=0 M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=.
-M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=8701.06 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_I D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0
-CCF_RATE=1 M_TOTAL_ON_OFF_BAL=8701.06 SYS_PRODUCT=BGF CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=55 D_INDUSTRIAL_SECTOR_CODE_BNM=56290 SECTOR_CODE=6310 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=CRE_I-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0
-IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=110 M_RW_ASSET=9571.166 D_EXPOSURE_RW_B4_MULTIPLY=110 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=.
-D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739356
-NOTE: Invalid numeric data, SYS_PRODUCT='BAP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2501259234B624601000~LNMART K_BASEL_UNIQUE_KEY=2501259234B624601000~LNMART K_BASEL_CUST_KEY=CISBASEL-1565 K_CCRIS_KEY=250125923434476 K_MART_HYBRID_KEY=2501259234 K_MART_UNIQUE_KEY=2501259234B624601000
-K_ACCT_KEY=2501259234 K_AANO_KEY=BAM/001125/19 K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=4084 K_EFC_GRP_ID=. VIN_AANO=BAM/001125/19 CUST_SOURCE=CIS CUSTNAME=HOCK LEONG ENGINEERING SDN. BHD. CUSTNO=4056191 D_B3CUST_RETL_CE_GRP=<=5MIL
-D_B3CUST_RETL_CE_WO_EIR=3235903.37 D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=3235903.37 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=42597591 GRP_ANNL_SALES_FINANCIAL_DT=23741 CITIZEN=MY DNBFISME_CUSTOMER_CODE=047
-D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=On Balance Sheet D_SOURCE_CATEGORY=LNMART DEFAULT_LOAN=N MASTACC=2501259234 MASTACC_OMNI=2501259234 ACCTNO=2501259234 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=B624601000
-D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24255 EXPIRY_DT=24373 D_TENURE=4 D_RATING=UNRATED
-D_GRP_PROPERTY_TYPE=COMMERCIAL D_REAL_ESTATE_RELATIONSHIP=MA TO NC D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=37 M_GRP_PROP_VALUE=11658000 M_GRP_REAL_ESTATE_EXPOSURE=4,319,388.23 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y
-D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=N-00060.00014 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=60 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=60 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE
-D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_NI D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=.
-M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL D_EFC_IND=N M_ELN_PROP_VALUE=. M_BAL=298313.42 M_BAL_AFT_EIR=298313.42 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=298313.42 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=298313.42
-M_ALLOCATION=. M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=298313.42 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_NI
-D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=1 M_TOTAL_ON_OFF_BAL=298313.42 SYS_PRODUCT=BAP CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=60 D_INDUSTRIAL_SECTOR_CODE_BNM=42909 SECTOR_CODE=5008
-CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=CRE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=2501259234 AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=60 M_RW_ASSET=178988.052
-D_EXPOSURE_RW_B4_MULTIPLY=60 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=E PRODUCT=. _ERROR_=1 _N_=739359
-NOTE: Invalid numeric data, SYS_PRODUCT='BGT' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2501409732G410075000~IBILLOS K_BASEL_UNIQUE_KEY=2501409732G410075000~IBILLOS K_BASEL_CUST_KEY=CISBASEL-1887 K_CCRIS_KEY=250140973200000 K_MART_HYBRID_KEY=2501409732 K_MART_UNIQUE_KEY=2501409732G410075000
-K_ACCT_KEY=2501409732 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=706464 K_EFC_GRP_ID=52973 VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=HOW THONG CONSTRUCTION & CIVIL ENGINEERI CUSTNO=5746146 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=3729249.802
-D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=3729249.802 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=046 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL
-D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2501409732 MASTACC_OMNI=2501409732 ACCTNO=2501409732 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G410075000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470
-D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24268 EXPIRY_DT=24398 D_TENURE=4 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=MIXED D_REAL_ESTATE_RELATIONSHIP=1A TO NC
-D_REGULATE_REAL_ESTATE=NON-REGULATORY D_FTV=402 M_GRP_PROP_VALUE=1853400 M_GRP_REAL_ESTATE_EXPOSURE=7,450,000.00 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA
-D_GRP_RESI_RW=N-00085.00019 D_GRP_COMM_RW=N-00085.00020 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=ORE_NI D_GUARANTOR=  D_GUARANTOR_RW=.
-D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=FULLY COVERED D_EFC_IND=Y M_ELN_PROP_VALUE=.
-M_BAL=20000 M_BAL_AFT_EIR=20000 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=10000 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=10000 M_ALLOCATION=10000 M_ALLCT_CASH=. M_ALLCT_FD=10000 M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=.
-M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=0 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=ORE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=0.5
-M_TOTAL_ON_OFF_BAL=20000 SYS_PRODUCT=BGT CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=40 D_INDUSTRIAL_SECTOR_CODE_BNM=43224 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=ORE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0
-IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=0 D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND= 
-D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739361
-NOTE: Invalid numeric data, SYS_PRODUCT='BGP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2501723909G361759000~IBILLOS K_BASEL_UNIQUE_KEY=2501723909G361759000~IBILLOS K_BASEL_CUST_KEY=CISNO-15676638 K_CCRIS_KEY=250172390900000 K_MART_HYBRID_KEY=2501723909 K_MART_UNIQUE_KEY=2501723909G361759000
-K_ACCT_KEY=2501723909 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=. K_EFC_GRP_ID=46137 VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=BUMI UTARA CONSTRUCTION SDN. BHD. CUSTNO=15676638 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=423138.26744
-D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=423138.26744 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=042 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL
-9 The SAS System                                                                                                                                                                                                                    10:38 Sunday, August 9, 2026
-
-D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2501723909 MASTACC_OMNI=2501723909 ACCTNO=2501723909 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G361759000 D_COMMITMENT_CHECK=NEW PURPOSE_CODE=0470
-D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=23097 EXPIRY_DT=24212 D_TENURE=37 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=  D_REAL_ESTATE_RELATIONSHIP= 
-D_REGULATE_REAL_ESTATE=  D_FTV=. M_GRP_PROP_VALUE=. M_GRP_REAL_ESTATE_EXPOSURE=. M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=  D_CTPY_RW=75
-D_MAX_RE_RW_BF_GUAR=. D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=75 D_EXPOSURE_PORT_BF_GUAR=RETAIL D_EXPOSURE_SUB_PORT_BF_GUAR=REGULATORY RETAIL: NON TRANSACTORS D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0
-CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=FULLY COVERED D_EFC_IND=Y M_ELN_PROP_VALUE=. M_BAL=44669.1 M_BAL_AFT_EIR=44669.1 M_UNDRAWN_AMT=.
-M_EXPOSURE_PRE_CRM_NET=22334.55 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=22334.55 M_ALLOCATION=22334.55 M_ALLCT_CASH=. M_ALLCT_FD=22334.55 M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=.
-M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=0 D_EXPOSURE_PORT=RETAIL D_EXPOSURE_SUB_PORT=REGULATORY RETAIL: NON TRANSACTORS D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=0.5
-M_TOTAL_ON_OFF_BAL=44669.1 SYS_PRODUCT=BGP CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=50 D_INDUSTRIAL_SECTOR_CODE_BNM=42109 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=REGULATORYRETAIL:NONTRANSACTORS-BILLS-N- PROP_DEVELOP_FIN_IND= 
-D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=75 M_RW_ASSET=0 D_EXPOSURE_RW_B4_MULTIPLY=75 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND= 
-M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739363
-NOTE: Invalid numeric data, SYS_PRODUCT='BGF' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2501989210G400927000~IBILLOS K_BASEL_UNIQUE_KEY=2501989210G400927000~IBILLOS K_BASEL_CUST_KEY=CISNO-4458043 K_CCRIS_KEY=250198921000000 K_MART_HYBRID_KEY=2501989210 K_MART_UNIQUE_KEY=2501989210G400927000
-K_ACCT_KEY=2501989210 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=. K_EFC_GRP_ID=29525 VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=LAM HUAT HEAVY EQUIPMENT TRANSPORTS CO. CUSTNO=4458043 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=6000
-D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=6000 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=047 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL
-D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2501989210 MASTACC_OMNI=2501989210 ACCTNO=2501989210 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G400927000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470
-D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24037 EXPIRY_DT=24532 D_TENURE=17 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=  D_REAL_ESTATE_RELATIONSHIP= 
-D_REGULATE_REAL_ESTATE=  D_FTV=. M_GRP_PROP_VALUE=. M_GRP_REAL_ESTATE_EXPOSURE=. M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=  D_CTPY_RW=75
-D_MAX_RE_RW_BF_GUAR=. D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=75 D_EXPOSURE_PORT_BF_GUAR=RETAIL D_EXPOSURE_SUB_PORT_BF_GUAR=REGULATORY RETAIL: NON TRANSACTORS D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0
-CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=FULLY COVERED D_EFC_IND=Y M_ELN_PROP_VALUE=. M_BAL=6000 M_BAL_AFT_EIR=6000 M_UNDRAWN_AMT=.
-M_EXPOSURE_PRE_CRM_NET=6000 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=6000 M_ALLOCATION=6000 M_ALLCT_CASH=. M_ALLCT_FD=6000 M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=.
-M_EXPOSURE_AFT_CRM=0 D_EXPOSURE_PORT=RETAIL D_EXPOSURE_SUB_PORT=REGULATORY RETAIL: NON TRANSACTORS D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=1 M_TOTAL_ON_OFF_BAL=6000 SYS_PRODUCT=BGF
-CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=50 D_INDUSTRIAL_SECTOR_CODE_BNM=7191 SECTOR_CODE=7191 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=REGULATORYRETAIL:NONTRANSACTORS-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N
-K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=75 M_RW_ASSET=0 D_EXPOSURE_RW_B4_MULTIPLY=75 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND= 
-D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739365
-NOTE: Invalid numeric data, SYS_PRODUCT='BGF' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2502650222G403195000~IBILLOS K_BASEL_UNIQUE_KEY=2502650222G403195000~IBILLOS K_BASEL_CUST_KEY=CISNO-4167078 K_CCRIS_KEY=250265022200000 K_MART_HYBRID_KEY=2502650222 K_MART_UNIQUE_KEY=2502650222G403195000
-K_ACCT_KEY=2502650222 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=709037 K_EFC_GRP_ID=21443 VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=PROGRESS WIRA HOTEL SDN BHD CUSTNO=4167078 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=101642
-D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=101642 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=046 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL
-D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2502650222 MASTACC_OMNI=2502650222 ACCTNO=2502650222 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G403195000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470
-D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24087 EXPIRY_DT=24545 D_TENURE=15 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL D_REAL_ESTATE_RELATIONSHIP=MA TO 1C
-D_REGULATE_REAL_ESTATE=NON-REGULATORY D_FTV=5 M_GRP_PROP_VALUE=3250000 M_GRP_REAL_ESTATE_EXPOSURE=155,000.00 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW= 
-D_GRP_COMM_RW=N-00085.00020 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=ORE_NI D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N
-F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=FULLY COVERED D_EFC_IND=Y M_ELN_PROP_VALUE=. M_BAL=66070 M_BAL_AFT_EIR=66070
-M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=66070 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=66070 M_ALLOCATION=66070 M_ALLCT_CASH=66070 M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=.
-M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=0 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=ORE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=1 M_TOTAL_ON_OFF_BAL=66070 SYS_PRODUCT=BGF
-CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=197 D_INDUSTRIAL_SECTOR_CODE_BNM=6320 SECTOR_CODE=6320 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=ORE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC= 
-K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=0 D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=.
-_ERROR_=1 _N_=739369
-NOTE: Invalid numeric data, SYS_PRODUCT='BUF' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2503000915L140566001~IBILLOS K_BASEL_UNIQUE_KEY=2503000915L140566001~IBILLOS K_BASEL_CUST_KEY=CISNO-4175426 K_CCRIS_KEY=250300091500000 K_MART_HYBRID_KEY=2503000915 K_MART_UNIQUE_KEY=2503000915L140566001
-K_ACCT_KEY=2503000915 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=709666 K_EFC_GRP_ID=. VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=WAI HONG SHOE INDUSTRY (M) SDN. BHD. CUSTNO=4175426 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=873826.9339
-D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=873826.9339 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=046 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL
-D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2503000915 MASTACC_OMNI=2503000915 ACCTNO=2503000915 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=L140566001 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470
-D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24294 EXPIRY_DT=24401 D_TENURE=3 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL D_REAL_ESTATE_RELATIONSHIP=MA TO NC
-D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=66 M_GRP_PROP_VALUE=2116477.1106 M_GRP_REAL_ESTATE_EXPOSURE=1,400,000.00 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW= 
-D_GRP_COMM_RW=N-00085.00029 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_NI D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N
-F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL D_EFC_IND=N M_ELN_PROP_VALUE=. M_BAL=168569.8
-M_BAL_AFT_EIR=168569.8 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=168569.8 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=168569.8 M_ALLOCATION=. M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=.
-M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=168569.8 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=1
-M_TOTAL_ON_OFF_BAL=168569.8 SYS_PRODUCT=BUF CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=122 D_INDUSTRIAL_SECTOR_CODE_BNM=15201 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=CRE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0
-IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=143284.33 D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=.
-D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739371
-NOTE: Invalid numeric data, SYS_PRODUCT='BGP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2503447919G386108000~IBILLOS K_BASEL_UNIQUE_KEY=2503447919G386108000~IBILLOS K_BASEL_CUST_KEY=CISNO-19218673 K_CCRIS_KEY=250344791900000 K_MART_HYBRID_KEY=2503447919 K_MART_UNIQUE_KEY=2503447919G386108000
-K_ACCT_KEY=2503447919 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=. K_EFC_GRP_ID=31314 VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=PRISMA INVASION ENTERPRISE CUSTNO=19218673 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=14738.697
-D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=14738.697 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=041 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL
-D_EXPOSURE_TYPE=Off Balance Sheet D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2503447919 MASTACC_OMNI=2503447919 ACCTNO=2503447919 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G386108000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470
-D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=23672 EXPIRY_DT=24714 D_TENURE=34 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=  D_REAL_ESTATE_RELATIONSHIP= 
-10 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-D_REGULATE_REAL_ESTATE=  D_FTV=. M_GRP_PROP_VALUE=. M_GRP_REAL_ESTATE_EXPOSURE=. M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=  D_CTPY_RW=75
-D_MAX_RE_RW_BF_GUAR=. D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=75 D_EXPOSURE_PORT_BF_GUAR=RETAIL D_EXPOSURE_SUB_PORT_BF_GUAR=REGULATORY RETAIL: NON TRANSACTORS D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0
-CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=FULLY COVERED D_EFC_IND=Y M_ELN_PROP_VALUE=. M_BAL=4352 M_BAL_AFT_EIR=4352 M_UNDRAWN_AMT=.
-M_EXPOSURE_PRE_CRM_NET=2176 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=2176 M_ALLOCATION=2176 M_ALLCT_CASH=2176 M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=.
-M_EXPOSURE_AFT_CRM=0 D_EXPOSURE_PORT=RETAIL D_EXPOSURE_SUB_PORT=REGULATORY RETAIL: NON TRANSACTORS D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=0.5 M_TOTAL_ON_OFF_BAL=4352
-SYS_PRODUCT=BGP CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=73 D_INDUSTRIAL_SECTOR_CODE_BNM=42909 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=REGULATORYRETAIL:NONTRANSACTORS-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0
-IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=75 M_RW_ASSET=0 D_EXPOSURE_RW_B4_MULTIPLY=75 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND= 
-D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739373
-NOTE: Invalid numeric data, SYS_PRODUCT='BAP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2503810834B627167000~LNMART K_BASEL_UNIQUE_KEY=2503810834B627167000~LNMART K_BASEL_CUST_KEY=CISBASEL-182 K_CCRIS_KEY=250381083434476 K_MART_HYBRID_KEY=2503810834 K_MART_UNIQUE_KEY=2503810834B627167000
-K_ACCT_KEY=2503810834 K_AANO_KEY=BSR/000629/09 K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=95074 K_EFC_GRP_ID=. VIN_AANO=BSR/000629/09 CUST_SOURCE=CIS CUSTNAME=MSM METAL INDUSTRIES SDN. BHD. CUSTNO=10941341 D_B3CUST_RETL_CE_GRP=>5MIL
-D_B3CUST_RETL_CE_WO_EIR=29599253.373 D_CISCUST_RETL_CE_GRP=>5MIL D_CISCUST_RETL_CE_WO_EIR=29599253.373 D_RETL_CE_GRP_CHECK=CIS->5MIL-->B3->5MIL GRP_ANNL_SALES_AMT=82277000 GRP_ANNL_SALES_FINANCIAL_DT=23831 CITIZEN=MY DNBFISME_CUSTOMER_CODE=047
-D_CUST_CTPY=SME D_CTPY_PORTFOLIO=CORPORATE D_EXPOSURE_TYPE=On Balance Sheet D_SOURCE_CATEGORY=LNMART DEFAULT_LOAN=N MASTACC=2503810834 MASTACC_OMNI=2503810834 ACCTNO=2503810834 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=B627167000
-D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24268 EXPIRY_DT=24388 D_TENURE=4 D_RATING=UNRATED
-D_GRP_PROPERTY_TYPE=COMMERCIAL D_REAL_ESTATE_RELATIONSHIP=MA TO NC D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=83 M_GRP_PROP_VALUE=33000000 M_GRP_REAL_ESTATE_EXPOSURE=27,302,939.54 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=N
-D_LE250=Y D_PU5=NA D_TRANSACTOR=NA D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=N-00085.00029 D_CTPY_RW=85 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE
-D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_NI D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=.
-M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL D_EFC_IND=N M_ELN_PROP_VALUE=. M_BAL=235297.5 M_BAL_AFT_EIR=235297.5 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=235297.5 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=235297.5 M_ALLOCATION=.
-M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=235297.5 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_NI D_PROD_CURRENCY_CD=MYR
-SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=1 M_TOTAL_ON_OFF_BAL=235297.5 SYS_PRODUCT=BAP CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=129 D_INDUSTRIAL_SECTOR_CODE_BNM=25999 SECTOR_CODE=3819 CRIS_PURPOSE_CODE=5300
-RR=  K_ADC_OTH=CRE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=2503810834 AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=200002.875
-D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=E PRODUCT=. _ERROR_=1 _N_=739375
-NOTE: Invalid numeric data, SYS_PRODUCT='BGP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2500838006G409271000~IBILLOS K_BASEL_UNIQUE_KEY=2500838006G409271000~IBILLOS K_BASEL_CUST_KEY=CISNO-5382316 K_CCRIS_KEY=250083800600000 K_MART_HYBRID_KEY=2500838006 K_MART_UNIQUE_KEY=2500838006G409271000
-K_ACCT_KEY=2500838006 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=. K_EFC_GRP_ID=47604 VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=SELOKA BAKTI SDN. BHD. CUSTNO=5382316 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=425964.255 D_CISCUST_RETL_CE_GRP=<=5MIL
-D_CISCUST_RETL_CE_WO_EIR=425964.255 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=042 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=Off Balance Sheet
-D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2500838006 MASTACC_OMNI=2500838006 ACCTNO=2500838006 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G409271000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N
-D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24246 EXPIRY_DT=25016 D_TENURE=25 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=  D_REAL_ESTATE_RELATIONSHIP=  D_REGULATE_REAL_ESTATE=  D_FTV=.
-M_GRP_PROP_VALUE=. M_GRP_REAL_ESTATE_EXPOSURE=. M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=  D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=.
-D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=75 D_EXPOSURE_PORT_BF_GUAR=RETAIL D_EXPOSURE_SUB_PORT_BF_GUAR=REGULATORY RETAIL: NON TRANSACTORS D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=.
-D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=FULLY COVERED D_EFC_IND=Y M_ELN_PROP_VALUE=. M_BAL=5587.5 M_BAL_AFT_EIR=5587.5 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=2793.75
-M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=2793.75 M_ALLOCATION=2793.75 M_ALLCT_CASH=. M_ALLCT_FD=2793.75 M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=0
-D_EXPOSURE_PORT=RETAIL D_EXPOSURE_SUB_PORT=REGULATORY RETAIL: NON TRANSACTORS D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=0.5 M_TOTAL_ON_OFF_BAL=5587.5 SYS_PRODUCT=BGP CENSUS0=.
-D_SHARIAH_CONCEPT=NA BRANCH=171 D_INDUSTRIAL_SECTOR_CODE_BNM=47721 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=REGULATORYRETAIL:NONTRANSACTORS-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N
-K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=75 M_RW_ASSET=0 D_EXPOSURE_RW_B4_MULTIPLY=75 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND= 
-D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739386
-NOTE: Invalid numeric data, SYS_PRODUCT='BAP' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2500439433B636694000~LNMART K_BASEL_UNIQUE_KEY=2500439433B636694000~LNMART K_BASEL_CUST_KEY=CISNO-3704416 K_CCRIS_KEY=250043943334476 K_MART_HYBRID_KEY=2500439433 K_MART_UNIQUE_KEY=2500439433B636694000
-K_ACCT_KEY=2500439433 K_AANO_KEY=TPI/000157/04 K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=688698 K_EFC_GRP_ID=33640 VIN_AANO=TPI/000157/04 CUST_SOURCE=CIS CUSTNAME=CARTON INDUSTRIES (JOHORE) SDN BHD CUSTNO=3704416 D_B3CUST_RETL_CE_GRP=<=5MIL
-D_B3CUST_RETL_CE_WO_EIR=3459233.7724 D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=3459233.7724 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=047 D_CUST_CTPY=SME
-D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=On Balance Sheet D_SOURCE_CATEGORY=LNMART DEFAULT_LOAN=N MASTACC=2500439433 MASTACC_OMNI=2500439433 ACCTNO=2500439433 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=B636694000 D_COMMITMENT_CHECK=EXIST
-PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24317 EXPIRY_DT=24393 D_TENURE=3 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL
-D_REAL_ESTATE_RELATIONSHIP=MA TO 1C D_REGULATE_REAL_ESTATE=REGULATORY D_FTV=93 M_GRP_PROP_VALUE=7100000 M_GRP_REAL_ESTATE_EXPOSURE=6,633,930.57 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N
-D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=N-00085.00029 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=CRE_NI D_GUARANTOR=  D_GUARANTOR_RW=.
-D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NOT FULLY COVERED D_EFC_IND=N M_ELN_PROP_VALUE=.
-M_BAL=617233.26 M_BAL_AFT_EIR=617233.26 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=617233.26 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=617233.26 M_ALLOCATION=0 M_ALLCT_CASH=0 M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=.
-M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=617233.26 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=CRE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0
-CCF_RATE=1 M_TOTAL_ON_OFF_BAL=617233.26 SYS_PRODUCT=BAP CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=89 D_INDUSTRIAL_SECTOR_CODE_BNM=3250 SECTOR_CODE=3250 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=CRE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA
-D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=2500439433 AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=524648.271 D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND= 
-M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=E PRODUCT=. _ERROR_=1 _N_=739390
-NOTE: Invalid numeric data, SYS_PRODUCT='BGF' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2500546721G385056000~IBILLOS K_BASEL_UNIQUE_KEY=2500546721G385056000~IBILLOS K_BASEL_CUST_KEY=CISNO-5209430 K_CCRIS_KEY=250054672100000 K_MART_HYBRID_KEY=2500546721 K_MART_UNIQUE_KEY=2500546721G385056000
-K_ACCT_KEY=2500546721 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=705044 K_EFC_GRP_ID=. VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=MARATHON MOTOR SDN BHD CUSTNO=5209430 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=188000 D_CISCUST_RETL_CE_GRP=<=5MIL
-D_CISCUST_RETL_CE_WO_EIR=188000 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=047 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=Off Balance Sheet
-D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2500546721 MASTACC_OMNI=2500546721 ACCTNO=2500546721 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G385056000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470 D_PURP_INCOME_TAG=N
-D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=23651 EXPIRY_DT=24471 D_TENURE=26 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=COMMERCIAL D_REAL_ESTATE_RELATIONSHIP=MA TO NC
-D_REGULATE_REAL_ESTATE=NON-REGULATORY D_FTV=31 M_GRP_PROP_VALUE=2540000 M_GRP_REAL_ESTATE_EXPOSURE=780,000.00 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW= 
-D_GRP_COMM_RW=N-00085.00020 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=ORE_NI D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N
-11 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL D_EFC_IND=N M_ELN_PROP_VALUE=. M_BAL=100000 M_BAL_AFT_EIR=100000
-M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=100000 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=100000 M_ALLOCATION=. M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=.
-M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=100000 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=ORE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=1 M_TOTAL_ON_OFF_BAL=100000 SYS_PRODUCT=BGF
-CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=113 D_INDUSTRIAL_SECTOR_CODE_BNM=45101 SECTOR_CODE=0000 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=ORE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N K_CARD_BILL_ACCT_UCM=  LC= 
-K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=85000 D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND=  D_EFC_GRP_SBLC_IND=  SOURCE=IBILL
-PRODUCT=. _ERROR_=1 _N_=739392
-NOTE: Invalid numeric data, SYS_PRODUCT='PBA' , at line 1402 column 14.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2500743326Y091777001~LNMART K_BASEL_UNIQUE_KEY=2500743326Y091777001~LNMART K_BASEL_CUST_KEY=CISNO-13938617 K_CCRIS_KEY=250074332634470 K_MART_HYBRID_KEY=2500743326 K_MART_UNIQUE_KEY=2500743326Y091777001
-K_ACCT_KEY=2500743326 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=705365 K_EFC_GRP_ID=. VIN_AANO=ATR/000071/15 CUST_SOURCE=CIS CUSTNAME=B.S. YEAP TRADING SDN. BHD. CUSTNO=13938617 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=837345.44
-D_CISCUST_RETL_CE_GRP=<=5MIL D_CISCUST_RETL_CE_WO_EIR=837345.44 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=047 D_CUST_CTPY=SME D_CTPY_PORTFOLIO=RETAIL
-D_EXPOSURE_TYPE=On Balance Sheet D_SOURCE_CATEGORY=LNMART DEFAULT_LOAN=N MASTACC=2500743326 MASTACC_OMNI=2500743326 ACCTNO=2500743326 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=Y091777001 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0470
-D_PURP_INCOME_TAG=N D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24290 EXPIRY_DT=24290 D_TENURE=0 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=MIXED D_REAL_ESTATE_RELATIONSHIP=MA TO NC
-D_REGULATE_REAL_ESTATE=NON-REGULATORY D_FTV=56 M_GRP_PROP_VALUE=1880000 M_GRP_REAL_ESTATE_EXPOSURE=1,047,345.44 M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA
-D_GRP_RESI_RW=N-00085.00019 D_GRP_COMM_RW=N-00085.00020 D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=85 D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=85 D_EXPOSURE_PORT_BF_GUAR=REAL ESTATE D_EXPOSURE_SUB_PORT_BF_GUAR=ORE_NI D_GUARANTOR=  D_GUARANTOR_RW=.
-D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=. D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=NO FIN COLLATERAL D_EFC_IND=N M_ELN_PROP_VALUE=.
-M_BAL=0 M_BAL_AFT_EIR=0 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=0 M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=0 M_ALLOCATION=. M_ALLCT_CASH=. M_ALLCT_FD=. M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=.
-M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=0 D_EXPOSURE_PORT=REAL ESTATE D_EXPOSURE_SUB_PORT=ORE_NI D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=1 M_TOTAL_ON_OFF_BAL=0
-SYS_PRODUCT=PBA CENSUS0=. D_SHARIAH_CONCEPT=NA BRANCH=152 D_INDUSTRIAL_SECTOR_CODE_BNM=46322 SECTOR_CODE=6120 CRIS_PURPOSE_CODE=5300 RR=  K_ADC_OTH=ORE_NI-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N
-K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=2500743326 AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=85 M_RW_ASSET=0 D_EXPOSURE_RW_B4_MULTIPLY=85 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND= 
-D_EFC_GRP_SBLC_IND=  SOURCE=E PRODUCT=. _ERROR_=1 _N_=739394
-NOTE: Invalid numeric data, SYS_PRODUCT='BGF' , at line 1402 column 14.
-WARNING: Limit set by ERRORS= option reached.  Further errors of this type will not be printed.
-D_BANK_ENTITY=PBBH K_BASEL_FINAL_UNIQUE_KEY=2500932316G402320000~IBILLOS K_BASEL_UNIQUE_KEY=2500932316G402320000~IBILLOS K_BASEL_CUST_KEY=CISNO-4671203 K_CCRIS_KEY=250093231600000 K_MART_HYBRID_KEY=2500932316 K_MART_UNIQUE_KEY=2500932316G402320000
-K_ACCT_KEY=2500932316 K_AANO_KEY=  K_RATING_KEY=NA K_ACCT_COLL_GRP_ID=. K_EFC_GRP_ID=29886 VIN_AANO=  CUST_SOURCE=CIS CUSTNAME=LING SIEW CHOON CUSTNO=4671203 D_B3CUST_RETL_CE_GRP=<=5MIL D_B3CUST_RETL_CE_WO_EIR=316995.42139 D_CISCUST_RETL_CE_GRP=<=5MIL
-D_CISCUST_RETL_CE_WO_EIR=316995.42139 D_RETL_CE_GRP_CHECK=CIS-<=5MIL-->B3-<=5MIL GRP_ANNL_SALES_AMT=. GRP_ANNL_SALES_FINANCIAL_DT=. CITIZEN=MY DNBFISME_CUSTOMER_CODE=078 D_CUST_CTPY=INDIVIDUAL D_CTPY_PORTFOLIO=RETAIL D_EXPOSURE_TYPE=Off Balance Sheet
-D_SOURCE_CATEGORY=IBILL OS DEFAULT_LOAN=N MASTACC=2500932316 MASTACC_OMNI=2500932316 ACCTNO=2500932316 NOTENO=. COMMITMENT_NO=. COMMITMENT_NO_PREV=. TRANSREX=G402320000 D_COMMITMENT_CHECK=EXIST PURPOSE_CODE=0410 D_PURP_INCOME_TAG=N
-D_PURP_INCOME_GROUP=OTHER_NON_INCOME D_PROD_GROUP_KONGLOMERAT_BNM=CommercialRetailLoans D_PRODUCT_TYPE=BILLS ISSUED_DT=24070 EXPIRY_DT=24603 D_TENURE=18 D_RATING=UNRATED D_GRP_PROPERTY_TYPE=  D_REAL_ESTATE_RELATIONSHIP=  D_REGULATE_REAL_ESTATE=  D_FTV=.
-M_GRP_PROP_VALUE=. M_GRP_REAL_ESTATE_EXPOSURE=. M_REGULATE_RETL_PORT_AMT=180,357,427,824.03 D_REGULATE_RETL_EXPOSURE=Y D_LE250=NA D_PU5=NA D_TRANSACTOR=N D_SPECIALISED_TYPE=NA D_GRP_RESI_RW=  D_GRP_COMM_RW=  D_CTPY_RW=75 D_MAX_RE_RW_BF_GUAR=.
-D_COMPARE_RW_IND_BF_GUAR=N D_EXPOSURE_RW_BF_GUAR=75 D_EXPOSURE_PORT_BF_GUAR=RETAIL D_EXPOSURE_SUB_PORT_BF_GUAR=REGULATORY RETAIL: NON TRANSACTORS D_GUARANTOR=  D_GUARANTOR_RW=. D_BFR_EFC_IND=N D_CHK_CMV_CCOLL=N F_GUARANTOR_FLAG=0 CGC_UNSECURE_RATIO_PERC=.
-D_GUARANTEE_IND=N D_GUARANTEE_LINE=  M_GUARANTEE_AMT_ORI=0 M_COLL_VALUE_DISC_FRM_BAL=. M_BAL_ENTITLE_GUARANTEE=0 D_CRM_COVERAGE=FULLY COVERED D_EFC_IND=Y M_ELN_PROP_VALUE=. M_BAL=5000 M_BAL_AFT_EIR=5000 M_UNDRAWN_AMT=. M_EXPOSURE_PRE_CRM_NET=5000
-M_POST_ADJ_LLP=. M_GUARANTEE_AMT=0 M_EXPOSURE_PRE_CRM=5000 M_ALLOCATION=5000 M_ALLCT_CASH=. M_ALLCT_FD=5000 M_ALLCT_QS_I=. M_ALLCT_QS_NI=. M_ALLCT_SMF_I=. M_ALLCT_SMF_NI=. M_ALLCT_SHARE_SMF=. M_ALLCT_UT=. M_ALLCT_OTH=. M_EXPOSURE_AFT_CRM=0
-D_EXPOSURE_PORT=RETAIL D_EXPOSURE_SUB_PORT=REGULATORY RETAIL: NON TRANSACTORS D_PROD_CURRENCY_CD=MYR SOURCE_INCOME_CURRENCY_CD=  D_CURR_MISMATCH=N D_MULTIPLIER=1 M_IMPAIRED_PROVISION=0 CCF_RATE=1 M_TOTAL_ON_OFF_BAL=5000 SYS_PRODUCT=BGF CENSUS0=.
-D_SHARIAH_CONCEPT=NA BRANCH=190 D_INDUSTRIAL_SECTOR_CODE_BNM=6310 SECTOR_CODE=6310 CRIS_PURPOSE_CODE=4300 RR=  K_ADC_OTH=REGULATORYRETAIL:NONTRANSACTORS-BILLS-N- PROP_DEVELOP_FIN_IND=  D_ADC_IDENTIFIER=NA D_SPC_GROSS=0 IMPAIRED_LOAN=N
-K_CARD_BILL_ACCT_UCM=  LC=  K_FACILITY_ID=  AADATE_SAS=. D_GUARANTEE_REMARK=  D_EXPOSURE_RW=75 M_RW_ASSET=0 D_EXPOSURE_RW_B4_MULTIPLY=75 D_EXTERNAL_RATING_ADJ=  CG_RATIO=. D_CHECK_GUARANTEE_IND=  M_AGGR_RW_ASSET_1ST_RUN=. D_REPLACE_IND= 
-D_EFC_GRP_SBLC_IND=  SOURCE=IBILL PRODUCT=. _ERROR_=1 _N_=739396
-NOTE: Missing values were generated as a result of performing an operation on missing values.
-      Each place is given by: (Number of times) at (Line):(Column).
-      2144160 at 1402:26   
-NOTE: There were 4279843 observations read from the data set BASEL.BASEL3_EXPOSURE_FINAL_2607.
-      WHERE (D_BANK_ENTITY='PBBH') and D_SOURCE_CATEGORY in ('IBILL OS', 'LNMART', 'UNDISBURSED', 'UNDISBURSED FS', 'UNDISBURSED MANUAL', 'UNDRAWN BILLS', 'UNDRAWN CARD', 'UNDRAWN LN', 'UNDRAWN MANUAL', 'UNDRAWN ULOAN') and D_PROD_GROUP_KONGLOMERAT_BNM 
-      not in ('NEW', 'New', 'new');
-NOTE: The data set WORK.BASEL3_EXPOSURE_FINAL has 4279843 observations and 13 variables.
-NOTE: Compressing data set WORK.BASEL3_EXPOSURE_FINAL decreased size by 67.45 percent. 
-      Compressed is 9225 pages; un-compressed would require 28344 pages.
-NOTE: DATA statement used (Total process time):
-      real time           25.10 seconds
-      cpu time            19.15 seconds
-      
-
-
-NOTE: There were 4279843 observations read from the data set WORK.BASEL3_EXPOSURE_FINAL.
-NOTE: The data set WORK.BASEL3_EXPOSURE_FINAL has 4279843 observations and 13 variables.
-NOTE: Compressing data set WORK.BASEL3_EXPOSURE_FINAL decreased size by 67.45 percent. 
-      Compressed is 9225 pages; un-compressed would require 28344 pages.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           7.74 seconds
-      cpu time            10.85 seconds
-      
-12 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-
-
-NOTE: Compression was disabled for data set WORK.APP1 because compression overhead would increase the size of the data set.
-NOTE: There were 399 observations read from the data set APPL.APP1.
-NOTE: 1 observations with duplicate key values were deleted.
-NOTE: The data set WORK.APP1 has 398 observations and 4 variables.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 4279843 observations read from the data set WORK.BASEL3_EXPOSURE_FINAL.
-NOTE: There were 398 observations read from the data set WORK.APP1.
-NOTE: The data set WORK.BASEL3_EXPOSURE_FINAL has 4279843 observations and 16 variables.
-NOTE: Compressing data set WORK.BASEL3_EXPOSURE_FINAL decreased size by 66.64 percent. 
-      Compressed is 9648 pages; un-compressed would require 28918 pages.
-NOTE: DATA statement used (Total process time):
-      real time           6.78 seconds
-      cpu time            6.70 seconds
-      
-
-
-NOTE: There were 4279843 observations read from the data set WORK.BASEL3_EXPOSURE_FINAL.
-NOTE: The data set WORK.BASEL3_EXPOSURE_FINAL has 4279843 observations and 16 variables.
-NOTE: Compressing data set WORK.BASEL3_EXPOSURE_FINAL decreased size by 66.63 percent. 
-      Compressed is 9649 pages; un-compressed would require 28918 pages.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           8.04 seconds
-      cpu time            11.85 seconds
-      
-
-
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      1424:14   
-NOTE: Compression was disabled for data set WORK.APP3 because compression overhead would increase the size of the data set.
-NOTE: There were 325 observations read from the data set EGS.KEEP_UNDRAWN_LN_FTP_APP3_BR.
-NOTE: The data set WORK.APP3 has 325 observations and 2 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 325 observations read from the data set WORK.APP3.
-NOTE: The data set WORK.APP3 has 325 observations and 2 variables.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 4279843 observations read from the data set WORK.BASEL3_EXPOSURE_FINAL.
-NOTE: There were 325 observations read from the data set WORK.APP3.
-NOTE: The data set WORK.BASEL3_EXPOSURE_FINAL has 4279843 observations and 18 variables.
-NOTE: Compressing data set WORK.BASEL3_EXPOSURE_FINAL decreased size by 65.76 percent. 
-      Compressed is 10248 pages; un-compressed would require 29930 pages.
-NOTE: At least one W.D format was too small for the number to be printed. The decimal may be shifted by the "BEST" format.
-13 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-NOTE: DATA statement used (Total process time):
-      real time           7.17 seconds
-      cpu time            7.11 seconds
-      
-
-
-NOTE: There were 4279843 observations read from the data set WORK.BASEL3_EXPOSURE_FINAL.
-NOTE: The data set WORK.HP_LNA has 1275154 observations and 18 variables.
-NOTE: Compressing data set WORK.HP_LNA decreased size by 62.65 percent. 
-      Compressed is 3331 pages; un-compressed would require 8918 pages.
-NOTE: The data set WORK.BASEL3_2 has 3004689 observations and 18 variables.
-NOTE: Compressing data set WORK.BASEL3_2 decreased size by 67.07 percent. 
-      Compressed is 6919 pages; un-compressed would require 21012 pages.
-NOTE: DATA statement used (Total process time):
-      real time           7.24 seconds
-      cpu time            7.16 seconds
-      
-
-
-NOTE: There were 3004689 observations read from the data set WORK.BASEL3_2.
-NOTE: The data set WORK.RETL_LNA has 845363 observations and 18 variables.
-NOTE: Compressing data set WORK.RETL_LNA decreased size by 64.80 percent. 
-      Compressed is 2081 pages; un-compressed would require 5912 pages.
-NOTE: The data set WORK.RETL_LNA_MAPOD has 58726 observations and 18 variables.
-NOTE: Compressing data set WORK.RETL_LNA_MAPOD decreased size by 62.04 percent. 
-      Compressed is 156 pages; un-compressed would require 411 pages.
-NOTE: The data set WORK.BASEL3_3 has 2100600 observations and 18 variables.
-NOTE: Compressing data set WORK.BASEL3_3 decreased size by 68.04 percent. 
-      Compressed is 4695 pages; un-compressed would require 14690 pages.
-NOTE: DATA statement used (Total process time):
-      real time           5.28 seconds
-      cpu time            5.20 seconds
-      
-
-
-NOTE: There were 2100600 observations read from the data set WORK.BASEL3_3.
-NOTE: The data set WORK.CORP_LNA has 2939 observations and 18 variables.
-NOTE: Compressing data set WORK.CORP_LNA decreased size by 57.14 percent. 
-      Compressed is 9 pages; un-compressed would require 21 pages.
-NOTE: The data set WORK.CORP_LNA_MAPOD has 184 observations and 18 variables.
-NOTE: Compressing data set WORK.CORP_LNA_MAPOD decreased size by 0.00 percent. 
-      Compressed is 2 pages; un-compressed would require 2 pages.
-NOTE: The data set WORK.BASEL3_4 has 2097477 observations and 18 variables.
-NOTE: Compressing data set WORK.BASEL3_4 decreased size by 68.04 percent. 
-      Compressed is 4688 pages; un-compressed would require 14668 pages.
-NOTE: DATA statement used (Total process time):
-      real time           3.37 seconds
-      cpu time            3.30 seconds
-      
-
-
-NOTE: There were 2097477 observations read from the data set WORK.BASEL3_4.
-NOTE: The data set WORK.CARD_LNA has 2087196 observations and 18 variables.
-NOTE: Compressing data set WORK.CARD_LNA decreased size by 64.30 percent. 
-      Compressed is 5211 pages; un-compressed would require 14596 pages.
-NOTE: The data set WORK.BASEL3_5 has 10281 observations and 18 variables.
-NOTE: Compressing data set WORK.BASEL3_5 decreased size by 63.89 percent. 
-      Compressed is 26 pages; un-compressed would require 72 pages.
-14 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-NOTE: DATA statement used (Total process time):
-      real time           3.81 seconds
-      cpu time            3.78 seconds
-      
-
-
-NOTE: There were 10281 observations read from the data set WORK.BASEL3_5.
-NOTE: The data set WORK.STAFF_LNA has 10281 observations and 18 variables.
-NOTE: Compressing data set WORK.STAFF_LNA decreased size by 63.89 percent. 
-      Compressed is 26 pages; un-compressed would require 72 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.02 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: There were 184 observations read from the data set WORK.CORP_LNA_MAPOD.
-NOTE: There were 58726 observations read from the data set WORK.RETL_LNA_MAPOD.
-NOTE: The data set WORK.CORP_RETL_OD has 58910 observations and 16 variables.
-NOTE: Compressing data set WORK.CORP_RETL_OD decreased size by 63.37 percent. 
-      Compressed is 148 pages; un-compressed would require 404 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.09 seconds
-      cpu time            0.10 seconds
-      
-
-
-NOTE: There were 58910 observations read from the data set WORK.CORP_RETL_OD.
-NOTE: The data set WORK.CORP_RETL_OD has 58910 observations and 16 variables.
-NOTE: Compressing data set WORK.CORP_RETL_OD decreased size by 63.37 percent. 
-      Compressed is 148 pages; un-compressed would require 404 pages.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.13 seconds
-      cpu time            0.13 seconds
-      
-
-
-NOTE: Compression was disabled for data set WORK.APP2 because compression overhead would increase the size of the data set.
-NOTE: There were 145 observations read from the data set APPL.APP2.
-NOTE: 0 observations with duplicate key values were deleted.
-NOTE: The data set WORK.APP2 has 145 observations and 3 variables.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 58910 observations read from the data set WORK.CORP_RETL_OD.
-NOTE: There were 145 observations read from the data set WORK.APP2.
-NOTE: The data set WORK.CORP_RETL_OD has 58910 observations and 18 variables.
-NOTE: Compressing data set WORK.CORP_RETL_OD decreased size by 61.74 percent. 
-      Compressed is 158 pages; un-compressed would require 413 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.10 seconds
-      cpu time            0.11 seconds
-      
-
-
-15 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-NOTE: There were 2939 observations read from the data set WORK.CORP_LNA.
-NOTE: There were 845363 observations read from the data set WORK.RETL_LNA.
-NOTE: There were 1275154 observations read from the data set WORK.HP_LNA.
-NOTE: There were 2087196 observations read from the data set WORK.CARD_LNA.
-NOTE: There were 10281 observations read from the data set WORK.STAFF_LNA.
-NOTE: There were 58910 observations read from the data set WORK.CORP_RETL_OD.
-NOTE: The data set APPL.ALLFMNEW has 4279843 observations and 14 variables.
-NOTE: Compressing data set APPL.ALLFMNEW decreased size by 65.26 percent. 
-      Compressed is 9848 pages; un-compressed would require 28344 pages.
-NOTE: The data set APPL.EXCEPT_B3 has 0 observations and 20 variables.
-NOTE: DATA statement used (Total process time):
-      real time           6.43 seconds
-      cpu time            6.34 seconds
-      
-
-
-NOTE: The file '/dwh/ftp/drr/EXCEPT.txt' is:
-      Filename=/dwh/ftp/drr/EXCEPT.txt,
-      Owner Name=sasdemo_edw,Group Name=sas_edw_grp,
-      Access Permission=-rw-r-xr--,
-      Last Modified=09Aug2026:10:39:36
-
-NOTE: 0 records were written to the file '/dwh/ftp/drr/EXCEPT.txt'.
-NOTE: There were 0 observations read from the data set APPL.EXCEPT_B3.
-NOTE: The data set WORK.EXCEPT has 0 observations and 20 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: There were 4279843 observations read from the data set APPL.ALLFMNEW.
-NOTE: The data set WORK.NEW has 5 observations and 3 variables.
-NOTE: Compressing data set WORK.NEW increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: PROCEDURE SUMMARY used (Total process time):
-      real time           1.95 seconds
-      cpu time            2.39 seconds
-      
-
-
-NOTE: The file '/dwh/ftp/drr/FM_SUMMARY.txt' is:
-      Filename=/dwh/ftp/drr/FM_SUMMARY.txt,
-      Owner Name=sasdemo_edw,Group Name=sas_edw_grp,
-      Access Permission=-rw-r-xr--,
-      Last Modified=09Aug2026:10:39:38
-
-NOTE: 5 records were written to the file '/dwh/ftp/drr/FM_SUMMARY.txt'.
-      The minimum record length was 27.
-      The maximum record length was 27.
-NOTE: There were 5 observations read from the data set WORK.NEW.
-NOTE: The data set WORK.NEW has 5 observations and 3 variables.
-NOTE: Compressing data set WORK.NEW increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-16 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-
-
-NOTE: There were 4279843 observations read from the data set APPL.ALLFMNEW.
-NOTE: The data set WORK.RWA has 4443 observations and 7 variables.
-NOTE: Compressing data set WORK.RWA increased size by 20.00 percent. 
-      Compressed is 6 pages; un-compressed would require 5 pages.
-NOTE: PROCEDURE SUMMARY used (Total process time):
-      real time           2.01 seconds
-      cpu time            3.57 seconds
-      
-
-
-NOTE: There were 4443 observations read from the data set WORK.RWA.
-NOTE: The data set WORK.RWAFINAL has 4443 observations and 12 variables.
-NOTE: Compressing data set WORK.RWAFINAL decreased size by 11.11 percent. 
-      Compressed is 8 pages; un-compressed would require 9 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.02 seconds
-      
-
-
-NOTE: There were 4443 observations read from the data set WORK.RWAFINAL.
-NOTE: The data set WORK.RWAFINAL has 4443 observations and 14 variables.
-NOTE: Compressing data set WORK.RWAFINAL decreased size by 10.00 percent. 
-      Compressed is 9 pages; un-compressed would require 10 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-MPRINT(PRINTER):   DATA RWAFINAL;
-MPRINT(PRINTER):   SET RWAFINAL END=EOF;
-MPRINT(PRINTER):   file OUTFL LRECL=500 TERMSTR=CRLF;
-MPRINT(PRINTER):   PUT @001 'D,' @003 'PBB' @035 ',' @036 AFFORGCD @068 ',' @069 GLACCD @101 ',' @102 ANALYCD @134 ',' @135 CURRCD @167 ',' @168 COSTCENTER @200 ',' @201 FM_LOB @233 ',' @234 FM_PROD @266 ',' @267 YM 6. @299 ',' @300 RWA2 15.2 @315 ',' 
-@316 'Y,' @350 ',' @383 ',' @416 ',';
-MPRINT(PRINTER):   IF EOF THEN DO;
-MPRINT(PRINTER):   PUT @001 'T,' @003 CNT 10. ',' RWATOT 15.2 ',';
-MPRINT(PRINTER):   END;
-MPRINT(PRINTER):   run;
-
-NOTE: The file OUTFL is:
-      Filename=/stgsrcsys/host/ftpfiles/DWH_RWA_PBB_.TXT,
-      Owner Name=sasdemo_edw,Group Name=domain users,
-      Access Permission=-rw-rw-r--,
-      Last Modified=09Aug2026:10:39:40
-
-NOTE: 4444 records were written to the file OUTFL.
-      The minimum record length was 29.
-      The maximum record length was 416.
-NOTE: There were 4443 observations read from the data set WORK.RWAFINAL.
-NOTE: The data set WORK.RWAFINAL has 4443 observations and 14 variables.
-NOTE: Compressing data set WORK.RWAFINAL decreased size by 10.00 percent. 
-      Compressed is 9 pages; un-compressed would require 10 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.02 seconds
-      
-17 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-
-MPRINT(PRINTER):   DATA RWAFINAL;
-MPRINT(PRINTER):   SET RWAFINAL END=EOF;
-MPRINT(PRINTER):   file OUTFL LRECL=500 TERMSTR=CRLF;
-MPRINT(PRINTER):   PUT @001 'D,' @003 'PBB' @035 ',' @036 AFFORGCD @068 ',' @069 GLACCD @101 ',' @102 ANALYCD @134 ',' @135 CURRCD @167 ',' @168 COSTCENTER @200 ',' @201 FM_LOB @233 ',' @234 FM_PROD @266 ',' @267 YM 6. @299 ',' @300 RWA2 15.2 @315 ',' 
-@316 'Y,' @350 ',' @383 ',' @416 ',';
-MPRINT(PRINTER):   IF EOF THEN DO;
-MPRINT(PRINTER):   PUT @001 'T,' @003 CNT 10. ',' RWATOT 15.2 ',';
-MPRINT(PRINTER):   END;
-MPRINT(PRINTER):   run;
-
-NOTE: The file OUTFL is:
-      Filename=/stgsrcsys/host/ftpfiles/DWH_RWA_PBB_07.TXT,
-      Owner Name=sasdemo_edw,Group Name=domain users,
-      Access Permission=-rw-rw-r--,
-      Last Modified=09Aug2026:10:39:40
-
-NOTE: 4444 records were written to the file OUTFL.
-      The minimum record length was 29.
-      The maximum record length was 416.
-NOTE: There were 4443 observations read from the data set WORK.RWAFINAL.
-NOTE: The data set WORK.RWAFINAL has 4443 observations and 14 variables.
-NOTE: Compressing data set WORK.RWAFINAL decreased size by 10.00 percent. 
-      Compressed is 9 pages; un-compressed would require 10 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: Variable NEXTDATE is uninitialized.
-NOTE: The data set WORK.REPTDATE has 1 observations and 6 variables.
-NOTE: Compressing data set WORK.REPTDATE increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: There were 917955 observations read from the data set APPL.ALLFMNEW.
-      WHERE D_EXPOSURE_TYPE='Off Balance Sheet';
-NOTE: There were 0 observations read from the data set APPL.EXCEPT_B3.
-      WHERE D_EXPOSURE_TYPE='Off Balance Sheet';
-NOTE: The data set WORK.UNDRAWN_OD has 33587 observations and 18 variables.
-NOTE: Compressing data set WORK.UNDRAWN_OD decreased size by 64.44 percent. 
-      Compressed is 85 pages; un-compressed would require 239 pages.
-NOTE: The data set WORK.UNDRAWN_LN has 89819 observations and 18 variables.
-NOTE: Compressing data set WORK.UNDRAWN_LN decreased size by 66.93 percent. 
-      Compressed is 211 pages; un-compressed would require 638 pages.
-NOTE: The data set WORK.UNDRAWN_BILL has 37062 observations and 18 variables.
-NOTE: Compressing data set WORK.UNDRAWN_BILL decreased size by 68.06 percent. 
-      Compressed is 84 pages; un-compressed would require 263 pages.
-NOTE: The data set WORK.CARD has 757487 observations and 18 variables.
-NOTE: Compressing data set WORK.CARD decreased size by 65.31 percent. 
-      Compressed is 1864 pages; un-compressed would require 5373 pages.
-NOTE: DATA statement used (Total process time):
-      real time           2.56 seconds
-18 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-      cpu time            2.52 seconds
-      
-
-
-NOTE: There were 757487 observations read from the data set WORK.CARD.
-NOTE: The data set WORK.CARD has 757487 observations and 22 variables.
-NOTE: Compressing data set WORK.CARD decreased size by 62.57 percent. 
-      Compressed is 2085 pages; un-compressed would require 5570 pages.
-NOTE: DATA statement used (Total process time):
-      real time           1.29 seconds
-      cpu time            1.29 seconds
-      
-
-
-NOTE: There were 37062 observations read from the data set WORK.UNDRAWN_BILL.
-NOTE: The data set WORK.UNDRAWN_BILL has 37062 observations and 19 variables.
-NOTE: Compressing data set WORK.UNDRAWN_BILL decreased size by 67.68 percent. 
-      Compressed is 85 pages; un-compressed would require 263 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.06 seconds
-      cpu time            0.06 seconds
-      
-
-
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      1667:36   
-NOTE: There were 232 observations read from the data set EGS.KEEP_UNDRAWN_LN_FTP_RATE.
-NOTE: The data set WORK.RATE has 1 observations and 5 variables.
-NOTE: Compressing data set WORK.RATE increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 1 observations read from the data set WORK.RATE.
-NOTE: 0 observations with duplicate key values were deleted.
-NOTE: The data set WORK.RATE has 1 observations and 5 variables.
-NOTE: Compressing data set WORK.RATE increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      1674:10   
-NOTE: There were 133 observations read from the data set EGS.KEEP_UNDRAWN_LN_FTP_PROD_OD.
-NOTE: The data set WORK.ODMAPPING has 133 observations and 5 variables.
-NOTE: Compressing data set WORK.ODMAPPING increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-19 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-
-NOTE: There were 133 observations read from the data set WORK.ODMAPPING.
-NOTE: 0 observations with duplicate key values were deleted.
-NOTE: The data set WORK.ODMAPPING has 133 observations and 5 variables.
-NOTE: Compressing data set WORK.ODMAPPING increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: There were 33587 observations read from the data set WORK.UNDRAWN_OD.
-NOTE: The data set WORK.UNDRAWN_OD has 33587 observations and 18 variables.
-NOTE: Compressing data set WORK.UNDRAWN_OD decreased size by 64.44 percent. 
-      Compressed is 85 pages; un-compressed would require 239 pages.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.07 seconds
-      cpu time            0.07 seconds
-      
-
-
-NOTE: There were 33587 observations read from the data set WORK.UNDRAWN_OD.
-NOTE: There were 133 observations read from the data set WORK.ODMAPPING.
-NOTE: The data set WORK.UNDRAWN_OD has 33587 observations and 22 variables.
-NOTE: Compressing data set WORK.UNDRAWN_OD decreased size by 67.45 percent. 
-      Compressed is 97 pages; un-compressed would require 298 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.07 seconds
-      cpu time            0.07 seconds
-      
-
-ERROR: The value 'BRANCH (Hardcode)'n is not a valid SAS name.
-
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      1688:10   
-WARNING: The variable FM_PROD in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable FM_LOB in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable GL_ACCTNO in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable GL_PROD_PBB in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable PROD in the DROP, KEEP, or RENAME list has never been referenced.
-NOTE: Compression was disabled for data set WORK.LNMAPPING because compression overhead would increase the size of the data set.
-NOTE: The SAS System stopped processing this step because of errors.
-NOTE: Due to ERROR(s) above, SAS set option OBS=0, enabling syntax check mode. This prevents execution of subsequent data modification statements.
-WARNING: The data set WORK.LNMAPPING may be incomplete.  When this step was stopped there were 0 observations and 1 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: PROCEDURE SORT used (Total process time):
-20 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: The data set WORK.UNDRAWN_LN has 0 observations and 18 variables.
-WARNING: Data set WORK.UNDRAWN_LN was not replaced because this step was stopped.
-NOTE: The data set WORK.COR_GRP has 0 observations and 18 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-ERROR: The value 'BRANCH (Hardcode)'n is not a valid SAS name.
-
-WARNING: The variable FM_PROD in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable FM_LOB in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable GL_ACCTNO in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable GL_PROD_PBB in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable PROD in the DROP, KEEP, or RENAME list has never been referenced.
-NOTE: Compression was disabled for data set WORK.LNMAPPING_COR because compression overhead would increase the size of the data set.
-NOTE: The SAS System stopped processing this step because of errors.
-WARNING: The data set WORK.LNMAPPING_COR may be incomplete.  When this step was stopped there were 0 observations and 1 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-ERROR: The variable FM_PROD in the DROP, KEEP, or RENAME list has never been referenced.
-ERROR: The variable FM_LOB in the DROP, KEEP, or RENAME list has never been referenced.
-ERROR: The variable GL_ACCTNO in the DROP, KEEP, or RENAME list has never been referenced.
-ERROR: The variable GL_PROD_PBB in the DROP, KEEP, or RENAME list has never been referenced.
-ERROR: Invalid DROP, KEEP, or RENAME option on file WORK.COR_GRP.
-
-NOTE: Compression was disabled for data set WORK.COR_GRP because compression overhead would increase the size of the data set.
-NOTE: The SAS System stopped processing this step because of errors.
-WARNING: The data set WORK.COR_GRP may be incomplete.  When this step was stopped there were 0 observations and 1 variables.
-WARNING: Data set WORK.COR_GRP was not replaced because this step was stopped.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-
-NOTE: The data set WORK.UNDRAWN_LN has 0 observations and 18 variables.
-WARNING: Data set WORK.UNDRAWN_LN was not replaced because this step was stopped.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-ERROR: The value 'BRANCH (Hardcode)'n is not a valid SAS name.
-
-WARNING: The variable FM_PROD in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable FM_LOB in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable GL_ACCTNO in the DROP, KEEP, or RENAME list has never been referenced.
-WARNING: The variable GL_PROD_PBB in the DROP, KEEP, or RENAME list has never been referenced.
-21 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-NOTE: Compression was disabled for data set WORK.BTMAPPING because compression overhead would increase the size of the data set.
-NOTE: The SAS System stopped processing this step because of errors.
-WARNING: The data set WORK.BTMAPPING may be incomplete.  When this step was stopped there were 0 observations and 1 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: The data set WORK.UNDRAWN_BILL has 0 observations and 19 variables.
-WARNING: Data set WORK.UNDRAWN_BILL was not replaced because this step was stopped.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: The data set WORK.UNDRAWN has 0 observations and 23 variables.
-NOTE: The data set EGS.KEEP_UNDRAWN_PBB_EXP has 0 observations and 23 variables.
-WARNING: Data set EGS.KEEP_UNDRAWN_PBB_EXP was not replaced because this step was stopped.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: The SAS System stopped processing this step because of errors.
-WARNING: The data set WORK.UNDRAWNOUT may be incomplete.  When this step was stopped there were 0 observations and 0 variables.
-NOTE: Compression was disabled for data set WORK.UNDRAWNOUT because compression overhead would increase the size of the data set.
-NOTE: PROCEDURE SUMMARY used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-
-NOTE: The data set WORK.UNDRAWNOUT has 0 observations and 5 variables.
-WARNING: Data set WORK.UNDRAWNOUT was not replaced because this step was stopped.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      1761:1   
-22 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-NOTE: Numeric values have been converted to character values at the places given by: (Line):(Column).
-      1762:14   1762:48   1763:19   
-NOTE: The data set WORK.UNDRAWNOUT has 0 observations and 17 variables.
-WARNING: Data set WORK.UNDRAWNOUT was not replaced because this step was stopped.
-NOTE: The data set WORK.STAFF has 0 observations and 17 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: Compression was disabled for data set WORK.STAFFMAP because compression overhead would increase the size of the data set.
-NOTE: The data set WORK.STAFFMAP has 0 observations and 4 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: The data set WORK.STAFF has 0 observations and 18 variables.
-WARNING: Data set WORK.STAFF was not replaced because this step was stopped.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: The data set WORK.UNDRAWNOUT has 0 observations and 17 variables.
-WARNING: Data set WORK.UNDRAWNOUT was not replaced because this step was stopped.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: The data set WORK.COSTCENTRE has 0 observations and 3 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-23 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-
-
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-ERROR: Variable COSTCTR_C not found.
-
-NOTE: The SAS System stopped processing this step because of errors.
-NOTE: PROCEDURE SORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-
-NOTE: The data set WORK.UNDRAWNOUT has 0 observations and 3 variables.
-WARNING: Data set WORK.UNDRAWNOUT was not replaced because this step was stopped.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: PROCEDURE PRINTTO used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: The SAS System stopped processing this step because of errors.
-NOTE: PROCEDURE REPORT used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-1942       /*---- End of User Written Code  ----*/
-1943       
-24 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-1944       %rcSet(&syserr);
-1945       %rcSet(&sqlrc);
-1946       
-1947       
-1948       /** Step end EIBMRWAX **/
-1949       
-1950       /*==========================================================================*
-1951        * Step:            FTPJOBS                               A57ZX8YI.BI002DVS *
-1952        * Transform:       User Written                                            *
-1953        * Description:                                                             *
-1954        *                                                                          *
-1955        * Source Table:    User Written - work.W23A9Q4           A57ZX8YI.BK000YTP *
-1956        * Target Table:    User Written - work.W1L6FXZ           A57ZX8YI.BK000YTQ *
-1957        *                                                                          *
-1958        * User Written:    SourceCode                                              *
-1959        *==========================================================================*/
-1960       
-1961       %let transformID = %quote(A57ZX8YI.BI002DVS);
-1962       %let trans_rc = 0;
-1963       %let etls_stepStartTime = %sysfunc(datetime(), datetime20.);
-1964       
-1965       %let etls_recCheckExist = 0;
-1966       %let etls_recnt = 0;
-1967       %macro etls_recordCheck;
-1968          %let etls_recCheckExist = %eval(%sysfunc(exist(work.W23A9Q4, DATA)) or
-1969                %sysfunc(exist(work.W23A9Q4, VIEW)));
-1970       
-1971          %if (&etls_recCheckExist) %then
-1972          %do;
-1973             %local etls_syntaxcheck;
-1974             %let etls_syntaxcheck = %sysfunc(getoption(syntaxcheck));
-1975             /* Turn off syntaxcheck option to perform following steps  */
-1976             options nosyntaxcheck;
-1977       
-1978             proc contents data = work.W23A9Q4 out = work.etls_contents(keep = nobs) noprint;
-1979             run;
-1980       
-1981             data _null_;
-1982                set work.etls_contents (obs = 1);
-1983                call symput("etls_recnt", left(put(nobs,32.)));
-1984             run;
-1985       
-1986             proc datasets lib = work nolist nowarn memtype = (data view);
-1987                delete etls_contents;
-1988             quit;
-1989       
-1990             /* Reset syntaxcheck option to previous setting  */
-1991             options &etls_syntaxcheck;
-1992          %end;
-1993       %mend etls_recordCheck;
-1994       %etls_recordCheck;
-1995       
-1996       %let SYSLAST = %nrquote(work.W23A9Q4);
-1997       
-1998       %let _INPUT_count = 1;
-1999       %let _INPUT = work.W23A9Q4;
-2000       %let _INPUT_connect = ;
-2001       %let _INPUT_engine = ;
-25 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-2002       %let _INPUT_memtype = DATA;
-2003       %let _INPUT_options = %nrquote();
-2004       %let _INPUT_alter = %nrquote();
-2005       %let _INPUT_path = %nrquote(/User Written_A57ZX8YI.BK000YTP%(WorkTable%));
-2006       %let _INPUT_type = 1;
-2007       %let _INPUT_label = %nrquote();
-2008       %let _INPUT_filetype = WorkTable;
-2009       
-2010       %let _INPUT1 = work.W23A9Q4;
-2011       %let _INPUT1_connect = ;
-2012       %let _INPUT1_engine = ;
-2013       %let _INPUT1_memtype = DATA;
-2014       %let _INPUT1_options = %nrquote();
-2015       %let _INPUT1_alter = %nrquote();
-2016       %let _INPUT1_path = %nrquote(/User Written_A57ZX8YI.BK000YTP%(WorkTable%));
-2017       %let _INPUT1_type = 1;
-2018       %let _INPUT1_label = %nrquote();
-2019       %let _INPUT1_filetype = WorkTable;
-2020       
-2021       %let _OUTPUT_count = 1;
-2022       %let _OUTPUT = work.W1L6FXZ;
-2023       %let _OUTPUT_connect = ;
-2024       %let _OUTPUT_engine = ;
-2025       %let _OUTPUT_memtype = DATA;
-2026       %let _OUTPUT_options = %nrquote();
-2027       %let _OUTPUT_alter = %nrquote();
-2028       %let _OUTPUT_path = %nrquote(/User Written_A57ZX8YI.BK000YTQ%(WorkTable%));
-2029       %let _OUTPUT_type = 1;
-2030       %let _OUTPUT_label = %nrquote();
-2031       %let _OUTPUT_col_count = 0;
-2032       %let _OUTPUT_filetype = WorkTable;
-2033       
-2034       %let _OUTPUT1 = work.W1L6FXZ;
-2035       %let _OUTPUT1_connect = ;
-2036       %let _OUTPUT1_engine = ;
-2037       %let _OUTPUT1_memtype = DATA;
-2038       %let _OUTPUT1_options = %nrquote();
-2039       %let _OUTPUT1_alter = %nrquote();
-2040       %let _OUTPUT1_path = %nrquote(/User Written_A57ZX8YI.BK000YTQ%(WorkTable%));
-2041       %let _OUTPUT1_type = 1;
-2042       %let _OUTPUT1_label = %nrquote();
-2043       %let _OUTPUT1_col_count = 0;
-2044       %let _OUTPUT1_filetype = WorkTable;
-2045       
-2046       /*---- Start of User Written Code  ----*/
-2047       
-2048       LIBNAME CTL     '/sasdata/dwh/control';
-NOTE: Libref CTL was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /sasdata/dwh/control
-2049       
-2050       data _null_;
-2051       	set ctl.ctl_dwh_sftp_info;
-2052       	where index(trim(host_desc),'Menara File Server (FINMA2)');
-2053       	
-2054       	call symput('idx',compress(sftp_id));
-2055       	call symput('passwordx',compress(sftp_pw));
-2056       	call symput('hostx',compress(host_ip));
-26 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
-
-2057       run;
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-2058       
-2059       data _null_;
-2060       	sftp_cmd =  "echo y|psftp &idx.@&hostx. -pw &passwordx. -b /sasdata/dwh/logs/EIBMRWAX.TXT -be > /sasdata/dwh/logs/EIBMRWAX_log.TXT";
-WARNING: Apparent symbolic reference IDX not resolved.
-WARNING: Apparent symbolic reference HOSTX not resolved.
-WARNING: Apparent symbolic reference PASSWORDX not resolved.
-2061       	rc = system(sftp_cmd);
-2062          if rc > 0 then abort;
-2063       run;
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-2064       
-2065       
-2066       data _null_;
-2067       	sftp_cmd= "echo y |psftp drrsftp@192.168.193.235 -pw Password1 -b /sasdata/dwh/logs/RWA2DRR.TXT -be > /sasdata/dwh/logs/RWA2DRR_log.TXT" ;
-2068       	rc = system(sftp_cmd);
-2069          if rc > 0 then abort;
-2070       run;
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-2071       
-2072       
-2073       
-2074       
-2075       /*---- End of User Written Code  ----*/
-2076       
-2077       %rcSet(&syserr);
-2078       %rcSet(&sqlrc);
-2079       
-2080       
-2081       /** Step end FTPJOBS **/
-2082       
-2083       %let etls_endTime = %sysfunc(datetime(),datetime.);
-2084       
-
-ERROR: Errors printed on pages 19,20,23.
-
-NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
-NOTE: The SAS System used:
-      real time           1:31.28
-      cpu time            1:33.25
-      
-
-27 The SAS System                                                                                                                                                                                                                   10:38 Sunday, August 9, 2026
 
 
