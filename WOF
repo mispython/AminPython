@@ -10,3 +10,8 @@ OPER.RESTORE.PBB.NPL.HP.WOFF02.TXT
 SAP.PBB.NPL.HP.SASDATA
 OPER.RESTORE.PBB.NPL.HP.WOFF03.TXT
 SAP.PIBB.NPL.WOFF
+
+
+libname eguser V8 '/dwh/python/';                               
+proc cimport lib=eguser infile='/dwh/python/PIBB_NPL_HP_SASDATA_WOFF';  
+RUN;   
