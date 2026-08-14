@@ -1,895 +1,393 @@
-*+--------------------------------------------------------------+
- |  PROGRAM : EIFMNP03                                          |
- |  DATE    : 12.03.98                                          |
- |  MODIFY  : ESMR 2004-720, 2004-579, 2006-1048                |
- |  REPORT  : MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH   |
- |            ENDING                                            |
- +--------------------------------------------------------------+;
-OPTIONS NOCENTER YEARCUTOFF=1950;
-*;
-%INC PGM(PBBLNFMT);
-%INC PGM(PBBELF);
-*;
-PROC FORMAT;
-   VALUE LNTYP 128,130,983             = 'HPD AITAB'
-               700,705,380,381,993,996,
-               720,725                 = 'HPD CONVENTIONAL'
-               200-299                 = 'HOUSING LOANS'
-               OTHER   = 'OTHERS';
-*;
-*------------------------------------------------*
-*  MACRO FOR CALCULATING NEXT BLDATE             *
-*------------------------------------------------*;
-%MACRO DCLVAR;
-   RETAIN D1-D12 31 D4 D6 D9 D11 30;
-   ARRAY LDAY D1-D12;
-%MEND DCLVAR;
-*;
-%MACRO NXTBLDT;
-   DD = DAY(ISSDTE);
-   MM = MONTH(BLDATE) + 1;
-   YY = YEAR(BLDATE);
-   IF MM > 12 THEN DO;
-      MM = 1; YY + 1;
-   END;
-   IF MM = 2 THEN
-      IF MOD(YY,4) = 0 THEN D2 = 29;
-      ELSE D2 = 28;
-   IF DD > LDAY(MM) THEN DD = LDAY(MM);
-   BLDATE = MDY(MM,DD,YY);
-%MEND NXTBLDT;
-*;
-  /*
-*------------------------------------------------*
-*  MACRO FOR CALCULATING OVERDUE INTEREST        *
-*------------------------------------------------*;
-%MACRO OVINT(I);
-   IF LOANTYPE = 705 THEN DO;
-      IF NOTETERM > 12 THEN TERM = 12;
-      ELSE TERM = NOTETERM;
-      TRATE = NOTETERM*INTRATE;
-      APR = TRATE*(300*TERM+TRATE)/
-            ((NOTETERM*TRATE)+(150*TERM*(NOTETERM+1)))*12/TERM;
-      RATE = (APR+1)/100;
-   END;
-   ELSE RATE = 8/100;
-   BILAMT = BILPAY;
-   BILAMTL = ORGBAL-BILPAY*(NOTETERM-1);
-   OITEMP = 0; BLDTE = BLDATE;
-   DO REMMTH = REMMTH&I TO REMMTH2 BY -1;
-      IF REMMTH = 0 THEN AMT = BILAMTL;
-      ELSE AMT = BILAMT;
-      %NXTBLDT
-      OITEMP + AMT*RATE*(REPTDATE-BLDATE)/365;
-   END;
-   BLDATE = BLDTE;
-%MEND OVINT;
-*; */
-DATA REPTDATE;
-   SET NPL.REPTDATE;
-   IF MONTH(REPTDATE) = 1 THEN MM1 = 12;
-   ELSE MM1 = MONTH(REPTDATE)-1;
-   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
-   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-   CALL SYMPUT('PREVMON',PUT(MM1,Z2.));
-RUN;
-*;
-*------------------------------------------------*
-*  MERGE WITH WRITTEN OFF ACCOUNT                *
-*------------------------------------------------*;
-PROC SORT DATA=NPL.LOAN&REPTMON;BY ACCTNO;
-PROC SORT DATA=NPL.WIIS;BY ACCTNO;
-DATA LOANWOFF;
-   MERGE NPL.LOAN&REPTMON NPL.WIIS (IN=AA DROP=NOTENO NTBRCH);
-   BY ACCTNO;
-   IF LOANTYPE IN (380,381) THEN FEEAMT = FEETOT2;
-   IF AA THEN WRITEOFF = 'Y';ELSE WRITEOFF = 'N';
-   IF LOANTYPE IN (983,993) THEN WDOWNIND = 'N';
-   IF IISP = . THEN IISP = 0;
-   IF OIP = . THEN OIP = 0;
-   IF EARNTERM IN (0,.) THEN EARNTERM = NOTETERM;
-RUN;
-*------------------------------------------------*
-*  CALCULATE IIS FOR EXISTING NPL ACCOUNTS       *
-*------------------------------------------------*;
-DATA LOAN1;
-   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME NETPROC CURBAL BORSTAT DAYS
-        IIS UHC NETBAL IISP SUSPEND RECOVER RECC IISPW OIP OISUSP OI
-        OIRECV OIRECC OIW TOTIIS LOANTYP EXIST COSTCTR PENDBRH USER5
-        WDOWNIND RESCHEIND ACCRUAL;
-   LENGTH LOANTYP $20;
-   RETAIN STMTH 1 STYR;
-   %DCLVAR
-  * SET NPL.LOAN&REPTMON;
-   SET LOANWOFF;
-   IF _N_ = 1 THEN DO;
-      SET REPTDATE;
-      STYR = YEAR(REPTDATE);
-   END;
-   IF EXIST = 'Y';
-   IIS = 0; SUSPEND = 0; UHC = 0; OI = 0; OISUSP = 0; RECOVER = 0;
-   OIRECV = 0; OIRECC=0; OIW = 0;
-   IF IISP = . THEN IISP = 0;
-   IF OIP = . THEN OIP = 0;
-   IF IISPW = . THEN IISPW = 0;
-   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
-   IF BLDATE > 0 & TERMCHG > 0 THEN DO;
-      IF DAYS >  89 | BORSTAT IN ('F','R','I')
-      OR (USER5 = 'N' AND LOANTYPE NOT IN (983,993)) THEN DO;
-         REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
-                   MONTH(BLDATE) - MONTH(ISSDTE) + 1);
-         REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                   MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-         REMMTHS = EARNTERM - ((STYR - YEAR(ISSDTE))*12 +
-                   STMTH - MONTH(ISSDTE) + 1);
-         IF REMMTH2 < 0 THEN REMMTH2 = 0;
-         IF LOANTYPE IN (128,130) THEN REMMTH1 = REMMTH1 - 3;
-         ELSE REMMTH1 = REMMTH1 - 1;
-         IF REMMTH1 >= REMMTH2 THEN DO;
-            DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
-               IIS + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-            END;
-         END;
-       *  OI = FEETOT2;
-         OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
-         DO REMMTH = REMMTHS TO REMMTH2 BY -1;
-            SUSPEND + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-         END;
-         IF LOANTYPE NOT IN (128,130) THEN DO;
-       OISUSP = SUM(FEEAMT,(-1)*FEEAMTA,FEEAMT5);
-         END;
-         IF REMMTH2 > 0 THEN
-            UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-      END;
-   END;
-   ELSE IF DAYS >  89 | BORSTAT IN ('F','R','I')
-   OR (USER5 = 'N' AND LOANTYPE NOT IN (983,993)) THEN DO;
-       OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
-       OISUSP = SUM(FEEAMT,(-1)*FEEAMTA,FEEAMT5);
-   END;
-   IF CURBAL = . THEN CURBAL = 0;
-   NETBAL = CURBAL - UHC;
-   IF NETBAL <= IISP THEN
-      IF DAYS >  89 | BORSTAT IN ('F','R','I')
-      OR USER5 = 'N' THEN
-         IIS = NETBAL;
-   IF BORSTAT = 'W' THEN DO;
-      IISPW = IISP; OIW = OIP;
-   END;
-   ELSE DO;
-      RECOVER = IISP + SUSPEND - IIS;
-      IF RECOVER < 0 THEN DO;
-         SUSPEND = SUSPEND - RECOVER;
-         RECOVER = 0;
-      END;
-      IF RECOVER > IISP THEN DO;
-         RECC = RECOVER - IISP;
-         RECOVER = IISP;
-      END;
-      IF LOANTYPE NOT IN (128,130) THEN DO;
-         OIRECV = OIP - OI;
-         IF OIRECV < 0 THEN DO;
-            OISUSP = OISUSP - OIRECV;
-            OIRECV = 0;
-         END;
-         IF OISUSP LT 0 THEN OIRECV = OIRECV - OISUSP;
-         IF OIRECV > OIP THEN DO;
-            OIRECC = OIRECV - OIP;
-            OIRECV = OIP;
-         END;
-      END;
-   END;
-   IF TERMCHG = 0 THEN DO;
-      IF BORSTAT IN ('R') THEN NETEXP = CURBAL - IISP - MARKETVL;
-         ELSE NETEXP = CURBAL - IISP;
-      IF (NETEXP > 0 & DAYS > 89) | BORSTAT IN ('R') THEN DO;
-         IIS = RECOVER; RECOVER = 0;
-         OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);OIRECV = 0;
-      END;
-   END;
-   IF LOANTYPE IN (720,725) THEN IIS = ACCRUAL;
-   OISUSP = OIRECV + OIRECC + OIW - OIP + OI;
-   IF OISUSP LT 0 THEN OIRECV = OIRECV - OISUSP;
-   IF OIRECV > OIP THEN DO;
-      OIRECC = OIRECV - OIP;
-      OIRECV = OIP;
-   END;
-   OISUSP = OIRECV + OIRECC + OIW - OIP + OI;
-   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-   LOANTYP = PUT(LOANTYPE,LNTYP.);
-   IF WRITEOFF = 'Y' THEN DO;
-      SUSPEND = WSUSPEND;
-      OISUSP  = WOISUSP;
-      IF WDOWNIND ^= 'Y' THEN DO;
-         RECOVER = WRECOVER;
-         RECC    = WRECC;
-         OIRECV  = WOIRECV;
-         OIRECC  = WOIRECC;
-         IIS = 0;
-         IISPW   = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC);
-         OI = 0;
-         OIW     = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC);
-      END;
-      ELSE DO;
-         OISUSP  = WOISUSP;
-         IISPW   = WIISPW;
-         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
-         IF IIS < 0 THEN RECOVER = 0;
-         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
-         OIW     = WOIW;
-         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
-         IF OI < 0 THEN DO;
-            OIRECV = 0;
-            OIRECC = 0;
-         END;
-         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
-      END;
-      IF OIP = . THEN OIP = 0;IF IISP = . THEN IISP = 0;
-      IF SUSPEND = . THEN SUSPEND = 0;IF OISUSP = . THEN OISUSP = 0;
-      IF RECOVER = . THEN RECOVER = 0;IF OIRECV = . THEN OIRECV = 0;
-      IF RECC = . THEN RECC = 0;IF OIRECC = . THEN OIRECC = 0;
-   END;
-   TOTIIS = IIS + OI;
+#!/usr/bin/env python3
+"""Python conversion of SAS program EIFMNP03.
 
- IF RESCHEIND = 'Y' THEN DO;
-      SUSPEND = WSUSPEND;
-      OISUSP  = WOISUSP;
-      RECOVER = WRECOVER;
-      RECC    = WRECC;
-      OIRECV  = WOIRECV;
-      OIRECC  = WOIRECC;
-      IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
-      OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
-      TOTIIS = IIS + OI;
-      END;
-*;
-*------------------------------------------------*
-*  CALCULATE IIS FOR CURRENT NPL ACCOUNTS        *
-*------------------------------------------------*;
-DATA LOAN2;
-   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME NETPROC CURBAL BORSTAT DAYS
-        IIS UHC NETBAL IISP SUSPEND RECOVER RECC IISPW OIP OISUSP OI
-        OIRECV OIRECC OIW TOTIIS LOANTYP EXIST COSTCTR PENDBRH USER5
-        WDOWNIND RESCHEIND ACCRUAL;
-   LENGTH LOANTYP $20;
-   %DCLVAR
-   SET LOANWOFF;
- * SET NPL.LOAN&REPTMON;
-   IF _N_ = 1 THEN SET REPTDATE;
-   IF EXIST ^= 'Y';
-   IIS = 0; UHC = 0; OI = 0;
-   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
-   IF BLDATE > 0 & TERMCHG > 0 OR (USER5 = 'N' AND
-   LOANTYPE NOT IN (983,993)) THEN DO;
-      REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
-                MONTH(BLDATE) - MONTH(ISSDTE) + 1);
-      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-      IF REMMTH2 < 0 THEN REMMTH2 = 0;
-      IF LOANTYPE IN (128,130) THEN
-           REMMTH1 = REMMTH1 - 3;
-      ELSE REMMTH1 = REMMTH1 - 1;
-      IF REMMTH1 >= REMMTH2 THEN DO;
-         DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
-            IIS + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-         END;
-      END;
-      IF REMMTH2 > 0 THEN
-         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-   END;
-   ELSE DO;
-      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-      IF REMMTH2 < 0 THEN REMMTH2 = 0;
-      IF REMMTH2 > 0 THEN
-         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-   END;
-   OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
-   IF LOANTYPE IN (720,725) THEN IIS = ACCRUAL;
-   SUSPEND = IIS;
-   OISUSP = OI;
-   NETBAL = CURBAL - UHC;
-   IF WRITEOFF = 'Y' THEN DO;
-      SUSPEND = WSUSPEND;
-      OISUSP  = WOISUSP;
-      IF WDOWNIND ^= 'Y' THEN DO;
-         RECOVER = WRECOVER;
-         RECC    = WRECC;
-         OIRECV  = WOIRECV;
-         OIRECC  = WOIRECC;
-         IIS = 0;
-         IISPW   = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC);
-         OI = 0;
-         OIW     = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC);
-      END;
-      ELSE DO;
-         OISUSP  = WOISUSP;
-         IISPW   = WIISPW;
-         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
-         IF IIS < 0 THEN RECOVER = 0;
-         IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
-         OIW     = WOIW;
-         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
-         IF OI < 0 THEN DO;
-            OIRECV = 0;
-            OIRECC = 0;
-         END;
-         OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
-      END;
-      IF OIP = . THEN OIP = 0;IF IISP = . THEN IISP = 0;
-      IF SUSPEND = . THEN SUSPEND = 0;IF OISUSP = . THEN OISUSP = 0;
-      IF RECOVER = . THEN RECOVER = 0;IF OIRECV = . THEN OIRECV = 0;
-      IF RECC = . THEN RECC = 0;IF OIRECC = . THEN OIRECC = 0;
-   END;
-   TOTIIS = IIS + OI;
-   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-   LOANTYP = PUT(LOANTYPE,LNTYP.);
+Inputs are SAS7BDAT files.  Column names are normalized to upper case.  The
+program preserves the original stages: report date, LOAN+WIIS merge, existing
+and current NPL calculations, previous-month movement processing, combined
+IIS outputs, and summary/detail reports.
 
- IF RESCHEIND = 'Y' THEN DO;
-      SUSPEND = WSUSPEND;
-      OISUSP  = WOISUSP;
-      RECOVER = WRECOVER;
-      RECC    = WRECC;
-      OIRECV  = WOIRECV;
-      OIRECC  = WOIRECC;
-      IIS     = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
-      OI      = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
-      TOTIIS = IIS + OI;
-      END;
-*;
-*------------------------------------------------*
-*  COMPARE PREVIOUS MONTH NPL ACCOUNTS (MAY 05)  *
-*------------------------------------------------*;
-%MACRO MONTHLY;
-   %IF "&REPTMON" EQ "01" %THEN %DO;
-      DATA LOAN1;
-         SET LOAN1;
-         IISPCUM = 0;
-         OIPCUM = 0;
-         POI = 0;
-      RUN;
-      DATA LOAN2;
-         SET LOAN2;
-         IISPCUM = 0;
-         OIPCUM = 0;
-         POI = 0;
-      RUN;
-   %END;
-   %ELSE %DO;
-      PROC SORT DATA=NPL.IIS&PREVMON (DROP=POI
-         RENAME=(DAYS=PDAYS SUSPEND=PSUSPEND OISUSP=POISUSP
-                 IISP=PIISP OIP=POIP OI=POI RECC=PRECC
-                 OIRECC=POIRECC RECOVER=PRECOVER OIRECV=POIRECV))
-         OUT=IISPREV NODUPKEY;
-      BY ACCTNO NOTENO; RUN;
+PBBLNFMT and PBBELF are provided as Python modules. The supplied NPLNTB include
+contains only commented-out mappings, so apply_nplntb() intentionally performs
+no transformation, matching the executable SAS behavior.
+"""
 
-      DATA IISPREV;
-         SET IISPREV;
-             IF LOANTYPE IN (128,130,131,132,380,381,390,
-                             700,705,720,725,983,993,996)
-             AND PAIDIND='P' THEN DO;
-             %INC PGM(NPLNTB);
-             END;
-         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-         IF PDAYS = . THEN PDAYS = 0;
-         IF PSUSPEND = . THEN PSUSPEND = 0;
-         IF POISUSP = . THEN POISUSP = 0;
-         IF PIISP = . THEN PIISP = 0;
-         IF POIP = . THEN POIP = 0;
-         IF POI = . THEN POI = 0;
-      RUN;
-      ********************
-      *** EXISTING NPL ***
-      ********************;
-      PROC SORT DATA=LOAN1; BY ACCTNO; RUN;
-      DATA LOAN1(DROP=PDAYS PSUSPEND POISUSP PIISP POIP PRECC
-                 POIRECC PRECOVER POIRECV);
-         MERGE IISPREV(IN=B) LOAN1(IN=A);
-         BY ACCTNO;
-         IF ((A AND B) OR (B AND NOT A)) AND EXIST = 'Y';
+from __future__ import annotations
 
-         *** A/C SETTLE FOR EXISTING NPL ***;
-         IF ((B AND NOT A) OR (CURBAL LE 0 AND POI LE 0)) AND
-            BORSTAT NOT IN ('F','I','R','W','S') THEN DO;
-            IISP=PIISP;
-            RECOVER=IISP;
-            SUSPEND=PSUSPEND;
-            RECC=SUSPEND;
-            OIP=POIP;
-            OIRECV=OIP;
-            OISUSP=POISUSP;
-            OIRECC=OISUSP;
-            CURBAL=0;
-            NETBAL=0;
-            DAYS=0;
-            OI  = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
-            IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
-            TOTIIS = IIS + OI;
-            OUTPUT;
-         END;
-         ELSE DO;
-            IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN DO;
-               OUTPUT;
-            END;
-            ELSE DO;
-               IF (A AND B) THEN DO;
-                  *** CONTINUE PERFORMING ***;
-                  IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
-                     SUSPEND=IIS;
-                  IF USER5 = 'N' AND IIS < IISP THEN DO;
-                     SUSPEND = 0;
-                     RECOVER = IISP - IIS;
-                  RECC = 0;
-                  END;
-                  IF USER5 = 'N' AND IIS >= IISP THEN DO;
-                     SUSPEND = IIS - IISP;
-                     RECOVER = 0;
-                     RECC = 0;
-                  END;
-                  IF USER5 = 'N' AND IISP = 0 THEN DO;
-                     SUSPEND = IIS;
-                     RECC = IIS - SUSPEND;
-                  END;
-                  IF USER5 = 'N' AND OI < OIP THEN DO;
-                     OISUSP = 0;
-                     OIRECV = OIP - OI;
-                     OIRECC = 0;
-                  END;
-                  IF USER5 = 'N' AND OI >= OIP THEN DO;
-                     OISUSP = OI - OIP;
-                     OIRECV = 0;
-                     OIRECC = 0;
-                  END;
-                  IF USER5 = 'N' AND OIP = 0 THEN DO;
-                     OISUSP = OI;
-                     OIRECC = OI - OISUSP;
-                  END;
-                  OUTPUT;
-                  END;
-                  *** TURN PERFORMING ***;
-                  IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
-                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                        SUSPEND = PSUSPEND;
-                        RECC    = PSUSPEND;
-                        OISUSP  = POISUSP;
-                        OIRECC  = POISUSP;
-                        TOTIIS = IIS + OI;
-                     END;
-                     IF USER5 = 'N' AND IIS < IISP THEN DO;
-                        SUSPEND = 0;
-                        RECOVER = IISP - IIS;
-                        RECC = 0;
-                     END;
-                     IF USER5 = 'N' AND IIS >= IISP THEN DO;
-                        SUSPEND = IIS - IISP;
-                        RECOVER = 0;
-                        RECC = 0;
-                     END;
-                     IF USER5 = 'N' AND IISP = 0 THEN DO;
-                        SUSPEND = IIS;
-                        RECC = IIS - SUSPEND;
-                     END;
-                     IF USER5 = 'N' AND OI < OIP THEN DO;
-                        OISUSP = 0;
-                        OIRECV = OIP - OI;
-                        OIRECC = 0;
-                     END;
-                     IF USER5 = 'N' AND OI >= OIP THEN DO;
-                        OISUSP = OI - OIP;
-                        OIRECV = 0;
-                        OIRECC = 0;
-                     END;
-                     IF USER5 = 'N' AND OIP = 0 THEN DO;
-                        OISUSP = OI;
-                        OIRECC = OI - OISUSP;
-                     END;
-                     OUTPUT;
-                  END;
-                  *** TURN NPL FR PERFORMING ***;
-                  IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
-                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                        RECC = PRECC;
-                        RECOVER = PRECOVER;
-                        SUSPEND = SUM(IIS,IISP,(-1)*RECOVER,RECC);
-                        IF SUSPEND < 0 THEN DO;
-                           RECOVER = SUM(RECOVER,(-1)*SUSPEND);
-                           SUSPEND = 0;
-                           IF RECOVER GT IISP THEN DO;
-                              RECC = SUM(RECC,RECOVER-IISP);
-                           END;
-                        END;
-                        OIRECC = POIRECC;
-                        OIRECV = POIRECV;
-                        OISUSP = SUM(OI,OIP,(-1)*OIRECV,OIRECC);
-                        IF OISUSP < 0 THEN DO;
-                           OIRECV = SUM(OIRECV,(-1)*OISUSP);
-                           OISUSP = 0;
-                           IF OIRECV GT OIP THEN DO;
-                              OIRECC = SUM(OIRECC,OIRECV-OIP);
-                           END;
-                        END;
-                        TOTIIS = IIS + OI;
-                     END;
-                     IF USER5 = 'N' AND IIS < IISP THEN DO;
-                        SUSPEND = 0;
-                        RECOVER = IISP - IIS;
-                        RECC = 0;
-                     END;
-                     IF USER5 = 'N' AND IIS >= IISP THEN DO;
-                        SUSPEND = IIS - IISP;
-                        RECOVER = 0;
-                        RECC = 0;
-                     END;
-                     IF USER5 = 'N' AND IISP = 0 THEN DO;
-                        SUSPEND = IIS;
-                        RECC = IIS - SUSPEND;
-                     END;
-                     IF USER5 = 'N' AND OI < OIP THEN DO;
-                        OISUSP = 0;
-                        OIRECV = OIP - OI;
-                        OIRECC = 0;
-                     END;
-                     IF USER5 = 'N' AND OI >= OIP THEN DO;
-                        OISUSP = OI - OIP;
-                        OIRECV = 0;
-                        OIRECC = 0;
-                     END;
-                     IF USER5 = 'N' AND OIP = 0 THEN DO;
-                        OISUSP = OI;
-                        OIRECC = OI - OISUSP;
-                     END;
-                     OUTPUT;
-                  END;
-                  *** CONTINUE NPL ***;
-                  IF DAYS GE 90 AND PDAYS GE 90 THEN DO;
-                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                        RECOVER = PRECOVER;
-                        RECC = PRECC;
-                        SUSPEND = SUM(IIS,(-1)*IISP,RECOVER,RECC);
-                        IF SUSPEND < 0 THEN DO;
-                           RECOVER = SUM(RECOVER,(-1)*SUSPEND);
-                           SUSPEND = 0;
-                           IF RECOVER GT IISP THEN DO;
-                              RECC = SUM(RECC,RECOVER,(-1)*IISP);
-                           END;
-                        END;
-                        OIRECV = POIRECV;
-                        OIRECC = POIRECC;
-                        OISUSP = SUM(OI,(-1)*OIP,OIRECV, OIRECC);
-                        IF OISUSP < 0 THEN DO;
-                           OIRECV = SUM(OIRECV,(-1)*OISUSP);
-                           OISUSP = 0;
-                           IF OIRECV  GT OIP THEN DO;
-                              OIRECC = SUM(OIRECC,OIRECV,(-1)*OIP);
-                           END;
-                        END;
-                        TOTIIS = IIS + OI;
-                     END;
-                     OUTPUT;
-                  END;
-               END;
-            END;
-         END;
-      RUN;
-      *******************
-      *** CURRENT NPL ***
-      *******************;
-      PROC SORT DATA=NPL.PLOAN&REPTMON OUT=PLOAN
-         (KEEP=ACCTNO NOTENO CURBAL DAYS BORSTAT NTBRCH COSTCTR);
-         BY ACCTNO;
-      RUN;
-      DATA IISPREV;
-         MERGE IISPREV(IN=A) PLOAN(IN=B);
-         BY ACCTNO;
-         IF PIISP EQ 0 AND POIP EQ 0 AND EXIST NE 'Y';
-         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-      RUN;
+import argparse
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any
 
-      PROC SORT DATA=LOAN2; BY ACCTNO NOTENO; RUN;
-      DATA LOAN2(DROP=PDAYS PSUSPEND POISUSP PIISP POIP PRECC
-                 POIRECC PRECOVER POIRECV);
-         MERGE IISPREV(IN=B) LOAN2(IN=A);
-         BY ACCTNO;
-         IF (B AND NOT A) THEN DO;
-            *** A/C SETTLE FOR EXISTING NPL ***;
-               IISP=PIISP;
-               RECOVER=IISP;
-               SUSPEND=PSUSPEND;
-               RECC=SUSPEND;
-               OIP=POIP;
-               OIRECV=OIP;
-               OISUSP=POISUSP;
-               OIRECC=OISUSP;
-               CURBAL=0;
-               NETBAL=0;
-               DAYS=0;
-               OI  = SUM(OIP,OISUSP,(-1)*OIRECV,(-1)*OIRECC,(-1)*OIW);
-              IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,(-1)*RECC,(-1)*IISPW);
-               TOTIIS = IIS + OI;
-               OUTPUT;
-         END;
+import numpy as np
+import pandas as pd
 
-         *** NEW NPL FOR THE MTH ***;
-         IF (A AND NOT B) AND
-            (DAYS GE 90 OR BORSTAT IN ('F','I','R','W') OR USER5='N')
-            THEN OUTPUT;
+from pbblnfmt import put as pbbln_put
 
-         IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN OUTPUT;
-         IF (A AND B) AND BORSTAT NOT IN ('W') THEN DO;
-            *** CONTINUE PERFORMING ***;
-            IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
-               IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                  SUSPEND = PSUSPEND;
-                  RECC    = PSUSPEND;
-                  OISUSP  = POISUSP;
-                  OIRECC  = POISUSP;
-                  TOTIIS = IIS + OI;
-               END;
-               IF USER5 = 'N' AND IIS < IISP THEN DO;
-                  SUSPEND = 0;
-                  RECOVER = IISP - IIS;
-                  RECC = 0;
-               END;
-               IF USER5 = 'N' AND IIS >= IISP THEN DO;
-                  SUSPEND = IIS - IISP;
-                  RECOVER = 0;
-                  RECC = 0;
-               END;
-               IF USER5 = 'N' AND IISP = 0 THEN DO;
-                  SUSPEND = IIS;
-                  RECC = IIS - SUSPEND;
-               END;
-               IF USER5 = 'N' AND OI < OIP THEN DO;
-                  OISUSP = 0;
-                  OIRECV = OIP - OI;
-                  OIRECC = 0;
-               END;
-               IF USER5 = 'N' AND OI >= OIP THEN DO;
-                  OISUSP = OI - OIP;
-                  OIRECV = 0;
-                  OIRECC = 0;
-               END;
-               IF USER5 = 'N' AND OIP = 0 THEN DO;
-                  OISUSP = OI;
-                  OIRECC = OI - OISUSP;
-               END;
-               ELSE DO;
-                  SUSPEND = SUM(SUSPEND,RECC);
-                  OISUSP = SUM(OISUSP,OIRECC);
-               END;
-              OUTPUT;
-            END;
 
-            *** TURN PERFORMING FR NPL ***;
-            IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
-               IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                  SUSPEND = PSUSPEND;
-                  RECC    = PSUSPEND;
-                  OISUSP  = POISUSP;
-                  OIRECC  = POISUSP;
-                  OI  = SUM(OIP,OISUSP,(-1)*OIRECV,
-                            (-1)*OIRECC,(-1)*OIW);
-                  IIS = SUM(IISP,SUSPEND,(-1)*RECOVER,
-                            (-1)*RECC,(-1)*IISPW);
-                  TOTIIS = IIS + OI;
-               END;
-               IF USER5 = 'N' AND IIS < IISP THEN DO;
-                  SUSPEND = 0;
-                  RECOVER = IISP - IIS;
-                  RECC = 0;
-               END;
-               IF USER5 = 'N' AND IIS >= IISP THEN DO;
-                  SUSPEND = IIS - IISP;
-                  RECOVER = 0;
-                  RECC = 0;
-               END;
-               IF USER5 = 'N' AND IISP = 0 THEN DO;
-                  SUSPEND = IIS;
-                  RECC = IIS - SUSPEND;
-               END;
-               IF USER5 = 'N' AND OI < OIP THEN DO;
-                  OISUSP = 0;
-                  OIRECV = OIP - OI;
-                  OIRECC = 0;
-               END;
-               IF USER5 = 'N' AND OI >= OIP THEN DO;
-                  OISUSP = OI - OIP;
-                  OIRECV = 0;
-                  OIRECC = 0;
-               END;
-               IF USER5 = 'N' AND OIP = 0 THEN DO;
-                  OISUSP = OI;
-                  OIRECC = OI - OISUSP;
-               END;
-               OUTPUT;
-            END;
+LOAN_TYPES = {
+    128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
+    700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
+    380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
+    993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
+    720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
+    **{i: "HOUSING LOANS" for i in range(200, 300)},
+}
+ACCRUAL_TYPES = {720, 725}
+PIBB_PROFILE = False
 
-            *** TURN NPL FR PERFORMING ***;
-            IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
-               IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                  RECC    = SUM(RECC,PRECC);
-                  SUSPEND = SUM(SUSPEND,RECC);
-                  OIRECC  = SUM(OIRECC,POIRECC);
-                  OISUSP  = SUM(OISUSP,OIRECC);
-                  TOTIIS = IIS + OI;
-               END;
-               IF USER5 = 'N' AND IIS < IISP THEN DO;
-                  SUSPEND = 0;
-                  RECOVER = IISP - IIS;
-                  RECC = 0;
-               END;
-               IF USER5 = 'N' AND IIS >= IISP THEN DO;
-                  SUSPEND = IIS - IISP;
-                  RECOVER = 0;
-                  RECC = 0;
-               END;
-               IF USER5 = 'N' AND IISP = 0 THEN DO;
-                  SUSPEND = IIS;
-                  RECC = IIS - SUSPEND;
-               END;
-               IF USER5 = 'N' AND OI < OIP THEN DO;
-                  OISUSP = 0;
-                  OIRECV = OIP - OI;
-                  OIRECC = 0;
-               END;
-               IF USER5 = 'N' AND OI >= OIP THEN DO;
-                  OISUSP = OI - OIP;
-                  OIRECV = 0;
-                  OIRECC = 0;
-               END;
-               IF USER5 = 'N' AND OIP = 0 THEN DO;
-                  OISUSP = OI;
-                  OIRECC = OI - OISUSP;
-               END;
-               OUTPUT;
-            END;
+NUMERIC_ZERO = [
+    "IISP", "OIP", "IISPW", "CURBAL", "TERMCHG", "EARNTERM", "NOTETERM",
+    "FEETOT2", "FEEAMTA", "FEEAMT5", "FEEAMT", "FEETOT2", "ACCRUAL",
+    "WSUSPEND", "WOISUSP", "WRECOVER", "WRECC", "WOIRECV", "WOIRECC",
+    "WIISPW", "WOIW", "MARKETVL", "DAYS",
+]
 
-            *** CONTINUE NPL ***;
-            IF DAYS GE 90 AND PDAYS GE 90 THEN DO;
-               IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                  RECC    = SUM(RECC,PRECC);
-                  SUSPEND = SUM(SUSPEND,RECC);
-                  OIRECC  = SUM(OIRECC,POIRECC);
-                  OISUSP  = SUM(OISUSP,OIRECC);
-                  TOTIIS = IIS + OI;
-               END;
-               OUTPUT;
-            END;
-         END;
-      RUN;
-   %END;
-%MEND MONTHLY;
-%MONTHLY;
 
-*------------------------------------------------*
-*  COMBINE EXISTING & CURRENT NPL ACCOUNTS       *
-*------------------------------------------------*;
-DATA LOAN3 NPL.IIS&REPTMON NPL.IIS;
-   SET LOAN1 LOAN2;
-   LENGTH RISK $13;
-   IF DAYS > 364 OR BORSTAT = 'W' THEN RISK = 'BAD';
-   ELSE IF DAYS > 273 THEN RISK = 'DOUBTFUL';
-   ELSE IF DAYS > 182 THEN RISK = 'SUBSTANDARD 2';
-   ELSE IF DAYS < 90 AND USER5='N' THEN RISK = 'SUBSTANDARD-1';
-   ELSE RISK = 'SUBSTANDARD-1';
-   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
-          COSTCTR NOT IN (4043,4048) AND
-          COSTCTR NE .;
-RUN;
-PROC SORT DATA=LOAN3 NODUPKEY;BY ACCTNO NOTENO;RUN;
-PROC SORT DATA=NPL.IIS&REPTMON NODUPKEY;BY ACCTNO NOTENO;RUN;
-PROC SORT DATA=NPL.IIS NODUPKEY;BY ACCTNO NOTENO;RUN;
-*------------------------------------------------*
-*  PRODUCE REPORTS                               *
-*------------------------------------------------*;
-OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
-%LET TBL1=(EXISTING);
-%LET TBL2=(CURRENT);
-%LET TBL3=(EXISTING AND CURRENT);
-%LET TTL=MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH ENDING;
-*;
-%MACRO TBLS;
-   %DO I = 3 %TO 3;
-      PROC TABULATE DATA=LOAN&I FORMAT=COMMA15.2 MISSING NOSEPS;
-         CLASS LOANTYP RISK BRANCH;
-         VAR CURBAL UHC NETBAL IISP SUSPEND RECOVER RECC IISPW IIS
-             OIP OISUSP OIRECV OIRECC OIW OI TOTIIS;
-         TABLE LOANTYP=' ',
-               RISK=' '*(BRANCH=' ' ALL='SUB-TOTAL') ALL='TOTAL',
-               N='NO OF ACCOUNT'*F=COMMA7.
-               SUM=' '*
-               (CURBAL='CURRENT BAL (A)'
-                UHC='UNEARNED HIRING CHARGES (B)'
-                NETBAL='NET BAL (A-B=C)')
-               SUM='MOVEMENTS OF INTEREST IN SUSPENSE'*
-               (IISP='OPENING BAL FOR FINANCIAL YEAR (D)'
-                SUSPEND='INTEREST SUSPENDED DURING THE PERIOD (E)'
-                RECOVER='WRITTEN BACK TO PROFIT & LOSS (F)'
-                RECC='REVERSAL OF CURRENT YEAR IIS (G)'
-                IISPW='WRITTEN OFF (H)'
-                IIS='IIS CLOSING BAL (D+E-F-G-H=I)')
-               SUM='MOVEMENTS OF OVERDUE INTEREST'*
-               (OIP='OPENING BAL FOR FINANCIAL YEAR (J)'
-                OISUSP='OI SUSPENDED DURING THE PERIOD (K)'
-                OIRECV='WRITTEN BACK TO PROFIT & LOSS (L)'
-                OIRECC='REVERSAL OF CURRENT YEAR OI (M)'
-                OIW='WRITTEN OFF (N)'
-                OI='OI CLOSING BAL (J+K-L-M-N=O)')
-               SUM=' '*TOTIIS='TOTAL CLOSING BAL AS AT RPT DATE (I+O)'
-               / BOX='RISK        BRANCH' RTS=29;
-         TABLE LOANTYP=' ', BRANCH=' ' ALL='TOTAL',
-               N='NO OF ACCOUNT'*F=COMMA7.
-               SUM=' '*
-               (CURBAL='CURRENT BAL (A)'
-                UHC='UNEARNED HIRING CHARGES (B)'
-                NETBAL='NET BAL (A-B=C)')
-               SUM='MOVEMENTS OF INTEREST IN SUSPENSE'*
-               (IISP='OPENING BAL FOR FINANCIAL YEAR (D)'
-                SUSPEND='INTEREST SUSPENDED DURING THE PERIOD (E)'
-                RECOVER='WRITTEN BACK TO PROFIT & LOSS (F)'
-                RECC='REVERSAL OF CURRENT YEAR IIS (G)'
-                IISPW='WRITTEN OFF (H)'
-                IIS='IIS CLOSING BAL (D+E-F-G-H=I)')
-               SUM='MOVEMENTS OF OVERDUE INTEREST'*
-               (OIP='OPENING BAL FOR FINANCIAL YEAR (J)'
-                OISUSP='OI SUSPENDED DURING THE PERIOD (K)'
-                OIRECV='WRITTEN BACK TO PROFIT & LOSS (L)'
-                OIRECC='REVERSAL OF CURRENT YEAR OI (M)'
-                OIW='WRITTEN OFF (N)'
-                OI='OI CLOSING BAL (J+K-L-M-N=O)')
-               SUM=' '*TOTIIS='TOTAL CLOSING BAL AS AT RPT DATE (I+O)'
-               / BOX='BRANCH' RTS=9;
-         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
-         TITLE2 &TTL &RDATE &&TBL&I;
-   %END;
-%MEND TBLS;
-*;
-%MACRO DTLS;
-   %DO I = 3 %TO 3;
-      PROC SORT DATA=LOAN&I;
-         BY LOANTYP BRANCH RISK DAYS ACCTNO;
-*;
-        PROC PRINT LABEL N;
+def read_sas(path: Path) -> pd.DataFrame:
+    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    df.columns = [str(c).upper() for c in df.columns]
+    for col in df.select_dtypes(include=["object"]).columns:
+        df[col] = df[col].map(
+            lambda x: x.decode("latin1").rstrip() if isinstance(x, bytes)
+            else (x.rstrip() if isinstance(x, str) else x)
+        )
+    return df
 
-         FORMAT NETPROC CURBAL UHC NETBAL IISP SUSPEND RECOVER
-                RECC IISPW IIS OIP OISUSP OIRECV OIRECC OIW OI
-                TOTIIS COMMA15.2;
-         LABEL ACCTNO  = 'MNI ACCOUNT NO'
-               DAYS    = 'NO OF DAYS PAST DUE'
-               BORSTAT = 'BORROWER''S STATUS'
-               NETPROC = 'LIMIT'
-               CURBAL  = 'CURRENT BAL (A)'
-               UHC     = 'UNEARNED HIRING CHARGES (B)'
-               NETBAL  = 'NET BAL (A-B=C)'
-               IISP    = 'OPENING BAL FOR FINANCIAL YEAR (D)'
-               SUSPEND = 'INTEREST SUSPENDED DURING THE PERIOD (E)'
-               RECOVER = 'WRITTEN BACK TO PROFIT & LOSS (F)'
-               RECC    = 'REVERSAL OF CURRENT YEAR IIS (G)'
-               IISPW   = 'WRITTEN OFF (H)'
-               IIS     = 'IIS CLOSING BAL (D+E-F-G-H=I)'
-               OIP     = 'OPENING BAL FOR FINANCIAL YEAR (J)'
-               OISUSP  = 'OI SUSPENDED DURING THE PERIOD (K)'
-               OIRECV  = 'WRITTEN BACK TO PROFIT & LOSS (L)'
-               OIRECC  = 'REVERSAL OF CURRENT YEAR OI (M)'
-               OIW     = 'WRITTEN OFF (N)'
-               OI      = 'OI CLOSING BAL (J+K-L-M-N=O)'
-               TOTIIS  = 'TOTAL CLOSING BAL AS AT RPT DATE (I+O)';
-         VAR ACCTNO NAME DAYS BORSTAT NETPROC CURBAL UHC NETBAL
-             IISP SUSPEND RECOVER RECC IISPW IIS OIP OISUSP OIRECV
-             OIRECC OIW OI TOTIIS;
-         BY LOANTYP BRANCH RISK;
-         PAGEBY BRANCH;
-         SUMBY RISK;
-         SUM NETPROC CURBAL UHC NETBAL IISP SUSPEND RECOVER
-             RECC IISPW IIS OIP OISUSP OIRECV OIRECC OIW OI TOTIIS;
-         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
-         TITLE2 &TTL &RDATE &&TBL&I;
-   %END;
-%MEND DTLS;
-*;
-%TBLS;
-    /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS */
-%DTLS;
+
+def sas_sum(*values: Any) -> float:
+    a = pd.to_numeric(pd.Series(values), errors="coerce")
+    return float(a.sum(skipna=True))
+
+
+def sas_date(value: Any) -> pd.Timestamp:
+    """Convert a SAS date (days since 1960-01-01) or date-like value."""
+    if pd.isna(value):
+        return pd.NaT
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return pd.to_datetime(value, unit="D", origin="1960-01-01")
+    return pd.to_datetime(value)
+
+
+def val(row: pd.Series, name: str, default: Any = 0) -> Any:
+    x = row.get(name, default)
+    return default if pd.isna(x) else x
+
+
+def branch_label(ntbrch: Any, branch_map: dict[int, str]) -> str:
+    try:
+        code = int(ntbrch)
+    except (TypeError, ValueError):
+        return ""
+    description = branch_map.get(code)
+    if description is None:
+        try:
+            description = pbbln_put(code, "BRCHCD.", "")
+        except KeyError:
+            description = ""
+    return f"{description} {code:03d}".strip()
+
+
+def remaining_months(date: pd.Timestamp, issue: pd.Timestamp, term: float) -> float:
+    if pd.isna(date) or pd.isna(issue):
+        return np.nan
+    return term - ((date.year - issue.year) * 12 + date.month - issue.month + 1)
+
+
+def initialize_row(row: pd.Series) -> pd.Series:
+    for c in NUMERIC_ZERO:
+        if c not in row or pd.isna(row[c]):
+            row[c] = 0.0
+    if val(row, "EARNTERM") == 0:
+        row["EARNTERM"] = val(row, "NOTETERM")
+    row["WRITEOFF"] = val(row, "WRITEOFF", "N")
+    row["WDOWNIND"] = val(row, "WDOWNIND", "N")
+    row["RESCHEIND"] = val(row, "RESCHEIND", "N")
+    row["USER5"] = val(row, "USER5", "")
+    row["BORSTAT"] = val(row, "BORSTAT", "")
+    return row
+
+
+def rule78_sum(rem1: float, rem2: float, charge: float, term: float) -> float:
+    if any(pd.isna(x) for x in (rem1, rem2)) or term <= 0 or rem1 < rem2:
+        return 0.0
+    months = np.arange(int(rem1), int(rem2) - 1, -1)
+    return float((2 * (months + 1) * charge / (term * (term + 1))).sum())
+
+
+def written_off(row: pd.Series) -> pd.Series:
+    if row["WRITEOFF"] != "Y":
+        return row
+    row["SUSPEND"], row["OISUSP"] = val(row, "WSUSPEND"), val(row, "WOISUSP")
+    if row["WDOWNIND"] != "Y":
+        row["RECOVER"], row["RECC"] = val(row, "WRECOVER"), val(row, "WRECC")
+        row["OIRECV"], row["OIRECC"] = val(row, "WOIRECV"), val(row, "WOIRECC")
+        row["IIS"] = row["OI"] = 0.0
+        row["IISPW"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"])
+        row["OIW"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"])
+    else:
+        row["IISPW"], row["OIW"] = val(row, "WIISPW"), val(row, "WOIW")
+        row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -val(row, "RECOVER"), -val(row, "RECC"), -row["IISPW"])
+        if row["IIS"] < 0:
+            row["RECOVER"] = 0.0
+            row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -val(row, "RECC"), -row["IISPW"])
+        row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -val(row, "OIRECV"), -val(row, "OIRECC"), -row["OIW"])
+        if row["OI"] < 0:
+            row["OIRECV"] = row["OIRECC"] = 0.0
+            row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIW"])
+    return row
+
+
+def rescheduled(row: pd.Series) -> pd.Series:
+    if row["RESCHEIND"] == "Y":
+        for target, source in [("SUSPEND", "WSUSPEND"), ("OISUSP", "WOISUSP"),
+                               ("RECOVER", "WRECOVER"), ("RECC", "WRECC"),
+                               ("OIRECV", "WOIRECV"), ("OIRECC", "WOIRECC")]:
+            row[target] = val(row, source)
+        row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"], -val(row, "IISPW"))
+        row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"], -val(row, "OIW"))
+    row["TOTIIS"] = sas_sum(row["IIS"], row["OI"])
+    return row
+
+
+def calculate_existing(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
+    row = initialize_row(row.copy())
+    for c in ["IIS", "SUSPEND", "UHC", "OI", "OISUSP", "RECOVER", "OIRECV", "OIRECC", "OIW", "RECC"]:
+        row[c] = 0.0
+    lt, days = int(val(row, "LOANTYPE", 0)), val(row, "DAYS")
+    if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y":
+        row["BORSTAT"] = "W"
+    nonperforming = days > 89 or row["BORSTAT"] in {"F", "R", "I"} or (row["USER5"] == "N" and lt not in {983, 993})
+    bl, issue, term, charge = sas_date(row.get("BLDATE")), sas_date(row.get("ISSDTE")), row["EARNTERM"], row["TERMCHG"]
+    if pd.notna(bl) and charge > 0 and nonperforming:
+        rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
+        rem2 = max(0, remaining_months(report_date, issue, term))
+        rems = remaining_months(pd.Timestamp(report_date.year, 1, 1), issue, term)
+        row["IIS"] = rule78_sum(rem1, rem2, charge, term)
+        row["SUSPEND"] = rule78_sum(rems, rem2, charge, term)
+        row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+        if lt not in {128, 130}:
+            row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
+        if rem2 > 0 and term > 0:
+            row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
+    elif nonperforming:
+        row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+        row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
+    row["NETBAL"] = row["CURBAL"] - row["UHC"]
+    if row["NETBAL"] <= row["IISP"] and (nonperforming or row["USER5"] == "N"):
+        row["IIS"] = row["NETBAL"]
+    if row["BORSTAT"] == "W":
+        row["IISPW"], row["OIW"] = row["IISP"], row["OIP"]
+    else:
+        row["RECOVER"] = row["IISP"] + row["SUSPEND"] - row["IIS"]
+        if row["RECOVER"] < 0:
+            row["SUSPEND"] -= row["RECOVER"]; row["RECOVER"] = 0.0
+        if row["RECOVER"] > row["IISP"]:
+            row["RECC"] = row["RECOVER"] - row["IISP"]; row["RECOVER"] = row["IISP"]
+        if lt not in {128, 130}:
+            row["OIRECV"] = row["OIP"] - row["OI"]
+            if row["OIRECV"] < 0:
+                row["OISUSP"] -= row["OIRECV"]; row["OIRECV"] = 0.0
+            if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
+            if row["OIRECV"] > row["OIP"]:
+                row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
+    if charge == 0:
+        netexp = row["CURBAL"] - row["IISP"] - (row["MARKETVL"] if row["BORSTAT"] == "R" else 0)
+        if (netexp > 0 and days > 89) or row["BORSTAT"] == "R":
+            row["IIS"], row["RECOVER"] = row["RECOVER"], 0.0
+            row["OI"], row["OIRECV"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"]), 0.0
+    if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
+    row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
+    if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
+    if row["OIRECV"] > row["OIP"]:
+        row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
+    row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
+    return rescheduled(written_off(row))
+
+
+def calculate_current(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
+    row = initialize_row(row.copy())
+    for c in ["IIS", "UHC", "OI", "RECOVER", "RECC", "OIRECV", "OIRECC", "IISPW", "OIW"]:
+        row[c] = 0.0
+    lt = int(val(row, "LOANTYPE", 0))
+    if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y": row["BORSTAT"] = "W"
+    issue, bl = sas_date(row.get("ISSDTE")), sas_date(row.get("BLDATE"))
+    term, charge = row["EARNTERM"], row["TERMCHG"]
+    condition = (pd.notna(bl) and charge > 0) or (row["USER5"] == "N" and lt not in {983, 993})
+    rem2 = max(0, remaining_months(report_date, issue, term)) if pd.notna(issue) else 0
+    if condition:
+        rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
+        row["IIS"] = rule78_sum(rem1, rem2, charge, term)
+    if rem2 > 0 and term > 0: row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
+    row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+    if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
+    row["SUSPEND"], row["OISUSP"] = row["IIS"], row["OI"]
+    row["NETBAL"] = row["CURBAL"] - row["UHC"]
+    return rescheduled(written_off(row))
+
+
+def apply_nplntb(previous: pd.DataFrame) -> pd.DataFrame:
+    """Match PGM(NPLNTB), whose supplied transformation rules are commented."""
+    return previous
+
+
+def risk(row: pd.Series) -> str:
+    if val(row, "DAYS") > 364 or val(row, "BORSTAT", "") == "W": return "BAD"
+    if val(row, "DAYS") > 273: return "DOUBTFUL"
+    if val(row, "DAYS") > 182: return "SUBSTANDARD 2"
+    return "SUBSTANDARD-1"
+
+
+def load_branch_map(path: Path | None) -> dict[int, str]:
+    if not path: return {}
+    m = pd.read_csv(path)
+    m.columns = [c.upper() for c in m.columns]
+    return dict(zip(m["NTBRCH"].astype(int), m["BRANCH"].astype(str)))
+
+
+def write_reports(df: pd.DataFrame, output: Path) -> None:
+    measures = ["CURBAL", "UHC", "NETBAL", "IISP", "SUSPEND", "RECOVER", "RECC",
+                "IISPW", "IIS", "OIP", "OISUSP", "OIRECV", "OIRECC", "OIW", "OI", "TOTIIS"]
+    for c in measures:
+        if c not in df: df[c] = 0.0
+    summary = df.groupby(["LOANTYP", "RISK", "BRANCH"], dropna=False).agg(
+        NO_OF_ACCOUNT=("ACCTNO", "size"), **{c: (c, "sum") for c in measures}
+    ).reset_index()
+    detail_cols = [c for c in ["LOANTYP", "BRANCH", "RISK", "ACCTNO", "NOTENO", "NAME", "DAYS", "BORSTAT", "NETPROC"] + measures if c in df]
+    summary.to_csv(output / "eifmnp03_summary.csv", index=False)
+    df.sort_values([c for c in ["LOANTYP", "BRANCH", "RISK", "DAYS", "ACCTNO"] if c in df])[detail_cols].to_csv(output / "eifmnp03_detail.csv", index=False)
+
+
+IIS_REPORT_LABELS = {
+    "ACCTNO":"MNI ACCOUNT NO", "DAYS":"NO OF DAYS PAST DUE",
+    "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
+    "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)",
+    "IISP":"OPENING BAL FOR FINANCIAL YEAR (D)",
+    "SUSPEND":"INTEREST SUSPENDED DURING THE PERIOD (E)",
+    "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (F)",
+    "RECC":"REVERSAL OF CURRENT YEAR IIS (G)", "IISPW":"WRITTEN OFF (H)",
+    "IIS":"IIS CLOSING BAL (D+E-F-G-H=I)",
+    "OIP":"OPENING BAL FOR FINANCIAL YEAR (J)",
+    "OISUSP":"OI SUSPENDED DURING THE PERIOD (K)",
+    "OIRECV":"WRITTEN BACK TO PROFIT & LOSS (L)",
+    "OIRECC":"REVERSAL OF CURRENT YEAR OI (M)", "OIW":"WRITTEN OFF (N)",
+    "OI":"OI CLOSING BAL (J+K-L-M-N=O)",
+    "TOTIIS":"TOTAL CLOSING BAL AS AT RPT DATE (I+O)",
+}
+
+
+def write_original_listing(df: pd.DataFrame, report_date: pd.Timestamp, output: Path) -> str:
+    """Render both PROC TABULATE tables and the original PROC PRINT listing."""
+    measures=["CURBAL","UHC","NETBAL","IISP","SUSPEND","RECOVER","RECC","IISPW","IIS","OIP","OISUSP","OIRECV","OIRECC","OIW","OI","TOTIIS"]
+    for column in measures:
+        if column not in df: df[column]=0.0
+    title1="PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW"
+    title2=f"MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH ENDING {report_date.strftime('%d %B %Y').upper()} (EXISTING AND CURRENT)"
+    fmt=lambda value:f"{value:,.2f}"
+    risk_branch=df.groupby(["LOANTYP","RISK","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
+    branch=df.groupby(["LOANTYP","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
+    rename={**IIS_REPORT_LABELS,"NO_OF_ACCOUNT":"NO OF ACCOUNT"}
+    lines=[title1,title2,"","SUMMARY BY RISK AND BRANCH",
+           risk_branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
+           "","SUMMARY BY BRANCH",
+           branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
+           "","DETAILED LISTING"]
+    ordered=df.sort_values(["LOANTYP","BRANCH","RISK","DAYS","ACCTNO"])
+    detail_cols=["ACCTNO","NAME","DAYS","BORSTAT","NETPROC",*measures]
+    for (loan_type,branch_name,risk_name),group in ordered.groupby(["LOANTYP","BRANCH","RISK"],dropna=False,sort=False):
+        lines.extend(["",f"LOAN TYPE: {loan_type}    BRANCH: {branch_name}    RISK: {risk_name}"])
+        display=group[[c for c in detail_cols if c in group]].rename(columns=IIS_REPORT_LABELS)
+        lines.append(display.to_string(index=False,formatters={IIS_REPORT_LABELS[c]:fmt for c in measures if c in group}))
+        totals=group[measures].sum()
+        lines.append("TOTAL: "+" | ".join(f"{IIS_REPORT_LABELS[c]}={totals[c]:,.2f}" for c in measures))
+    report="\n".join(lines)+"\n"
+    (output/"eifmnp03_report.lst").write_text(report,encoding="utf-8")
+    (output/"eifmnp03_report.txt").write_text(report,encoding="utf-8")
+    return report
+
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--input-dir", type=Path, required=True)
+    p.add_argument("--output-dir", type=Path, required=True)
+    p.add_argument("--loan-pattern", default="loan{mm}.sas7bdat")
+    p.add_argument("--wiis-file", default="wiis.sas7bdat")
+    p.add_argument("--previous-pattern", default="iis{mm}.sas7bdat")
+    p.add_argument("--ploan-pattern", default="ploan{mm}.sas7bdat")
+    p.add_argument("--branch-map", type=Path)
+    p.add_argument("--no-console-report", action="store_true")
+    args = p.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    # Replacement for NPL.REPTDATE: process as at yesterday's calendar date.
+    report_date = pd.Timestamp(date.today() - timedelta(days=1))
+    mm, prev = f"{report_date.month:02d}", f"{(report_date.month - 2) % 12 + 1:02d}"
+    loan = read_sas(args.input_dir / args.loan_pattern.format(mm=mm))
+    wiis = read_sas(args.input_dir / args.wiis_file).drop(columns=["NOTENO", "NTBRCH"], errors="ignore")
+    wiis["_WIIS"] = True
+    loan = loan.merge(wiis, on="ACCTNO", how="left", suffixes=("", "_WIIS"))
+    loan["WRITEOFF"] = np.where(loan["_WIIS"].fillna(False), "Y", "N")
+    if "LOANTYPE" in loan:
+        loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEEAMT"] = loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEETOT2"]
+        loan.loc[loan["LOANTYPE"].isin([983, 993]), "WDOWNIND"] = "N"
+    bmap = load_branch_map(args.branch_map)
+    existing = loan[loan.get("EXIST", "") == "Y"].apply(calculate_existing, axis=1, report_date=report_date)
+    current = loan[loan.get("EXIST", "") != "Y"].apply(calculate_current, axis=1, report_date=report_date)
+    for df in (existing, current):
+        df["BRANCH"] = df["NTBRCH"].map(lambda x: branch_label(x, bmap))
+        df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
+    if mm == "01":
+        for df in (existing, current): df[["IISPCUM", "OIPCUM", "POI"]] = 0.0
+    else:
+        previous_path = args.input_dir / args.previous_pattern.format(mm=prev)
+        if previous_path.exists():
+            previous = apply_nplntb(read_sas(previous_path))
+            # Retain prior columns for audit and downstream reconciliation.
+            ren = {"DAYS": "PDAYS", "SUSPEND": "PSUSPEND", "OISUSP": "POISUSP", "IISP": "PIISP", "OIP": "POIP", "OI": "POI", "RECC": "PRECC", "OIRECC": "POIRECC", "RECOVER": "PRECOVER", "OIRECV": "POIRECV"}
+            previous = previous.rename(columns=ren).drop_duplicates(["ACCTNO", "NOTENO"])
+            existing = existing.merge(previous[[c for c in previous if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]], on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV"))
+            # SAS uses PLOANMM to retain prior current-NPL accounts which are
+            # absent from the current LOANMM extract (settled-account path).
+            ploan_path = args.input_dir / args.ploan_pattern.format(mm=mm)
+            if ploan_path.exists():
+                ploan_cols = ["ACCTNO", "NOTENO", "CURBAL", "DAYS", "BORSTAT", "NTBRCH", "COSTCTR"]
+                ploan = read_sas(ploan_path)[ploan_cols].drop_duplicates(["ACCTNO", "NOTENO"])
+                eligible = previous.copy()
+                piisp = pd.to_numeric(eligible.get("PIISP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
+                poip = pd.to_numeric(eligible.get("POIP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
+                exist = eligible.get("EXIST", pd.Series("", index=eligible.index)).fillna("")
+                eligible = eligible[(piisp == 0) & (poip == 0) & (exist != "Y")]
+                eligible = eligible.merge(ploan, on=["ACCTNO", "NOTENO"], how="left", suffixes=("", "_PLOAN"))
+            else:
+                eligible = previous
+            current = current.merge(
+                eligible[[c for c in eligible if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]],
+                on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV")
+            )
+    combined = pd.concat([existing, current], ignore_index=True, sort=False)
+    if PIBB_PROFILE:
+        # EIIMNP03: Islamic cost centres plus the two explicitly included centres.
+        combined = combined[
+            ((combined["COSTCTR"] >= 3000) & (combined["COSTCTR"] <= 3999))
+            | combined["COSTCTR"].isin([4043, 4048])
+        ]
+    else:
+        # EIFMNP03: PBB excludes Islamic cost centres and 4043/4048.
+        combined = combined[
+            ((combined["COSTCTR"] < 3000) | (combined["COSTCTR"] > 3999))
+            & ~combined["COSTCTR"].isin([4043, 4048])
+            & combined["COSTCTR"].notna()
+        ]
+    combined["RISK"] = combined.apply(risk, axis=1)
+    combined = combined.drop_duplicates(["ACCTNO", "NOTENO"])
+    combined.to_csv(args.output_dir / f"iis{mm}.csv", index=False)
+    write_reports(combined, args.output_dir)
+    report = write_original_listing(combined, report_date, args.output_dir)
+    print(f"Processed {len(combined):,} rows for {report_date.date()} into {args.output_dir}")
+    if not args.no_console_report:
+        print(report, end="")
+
+
+if __name__ == "__main__":
+    main()
 
 
 
@@ -898,997 +396,310 @@ OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
 
 
 
-*+--------------------------------------------------------------+
- |  PROGRAM : EIFMNP06                                          |
- |  DATE    : 18.03.98                                          |
- |  MODIFY  : ESMR 2004-720, 2004-579, 2006-1048, 2006-1281     |
- |  REPORT  : MOVEMENTS OF SPECIFIC PROVISION FOR THE MONTH     |
- |            ENDING (BASED ON DEPRECIATED PURCHASE PRICE       |
- |            FOR UNSCHEDULED GOODS)                            |
- +--------------------------------------------------------------+;
-OPTIONS YEARCUTOFF=1950;
-*;
-%INC PGM(PBBLNFMT);
-%INC PGM(PBBELF);
-*;
-PROC FORMAT;
-   VALUE LNTYP 128,130,983             = 'HPD AITAB'
-               700,705,993,996,380,381,
-               720,725                 = 'HPD CONVENTIONAL'
-               200-299                 = 'HOUSING LOANS'
-               OTHER   = 'OTHERS';
-*;
-DATA REPTDATE;
-   SET NPL.REPTDATE;
-   IF MONTH(REPTDATE) = 1 THEN MM1 = 12;
-   ELSE MM1 = MONTH(REPTDATE)-1;
-   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
-   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-   CALL SYMPUT('PREVMON',PUT(MM1,Z2.));
-RUN;
-*------------------------------------------------*
-*  MERGE WITH WRITTEN OFF ACCOUNT                *
-*------------------------------------------------*;
-PROC SORT DATA=NPL.LOAN&REPTMON;BY ACCTNO;
-PROC SORT DATA=NPL.WSP2;BY ACCTNO;
-PROC SORT DATA=NPL.IIS&REPTMON (KEEP=ACCTNO IIS) OUT=IIS;
-   BY ACCTNO;
-DATA LOANWOFF;
-   MERGE NPL.LOAN&REPTMON NPL.WSP2 (IN=AA DROP=NOTENO NTBRCH);
-   BY ACCTNO;
-   IF LOANTYPE IN (983,993) THEN WDOWNIND = 'N';
- /*  IF BB THEN HARDCODE = 'N';ELSE HARDCODE = 'N'; */
-   IF AA THEN WRITEOFF='Y'; ELSE WRITEOFF='N';
-   IF EARNTERM IN (0,.) THEN EARNTERM = NOTETERM;
-*;
-DATA LOANWOFF;
-   MERGE LOANWOFF(IN=A) IIS;
-   BY ACCTNO;
-   IF A;
-RUN;
-*;
-
-*------------------------------------------------*
-*  CALCULATE SP FOR EXISTING NPL ACCOUNTS        *
-*------------------------------------------------*;
-DATA LOAN1;
-   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME DAYS BORSTAT NETPROC CURBAL
-        UHC NETBAL IIS OSPRIN MARKETVL NETEXP SPP2 SPPL RECOVER
-        SPPW SP LOANTYP VINNO CENSUS7 OTHERFEE EXIST COSTCTR USER5
-        PENDBRH WDOWNIND RESCHEIND;
-   LENGTH LOANTYP $20;
-   RETAIN STMTH 1 STYR;
-   SET LOANWOFF;
- * SET NPL.LOAN&REPTMON;
-   IF _N_ = 1 THEN DO;
-      SET REPTDATE;
-      STYR = YEAR(REPTDATE);
-   END;
-   IF EXIST = 'Y';
-   UHC = 0;
-   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
-   IF BLDATE > 0 & TERMCHG > 0 THEN DO;
-      IF DAYS > 89 | BORSTAT IN ('F','R','I') OR USER5 = 'N' THEN DO;
-         REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
-                   MONTH(BLDATE) - MONTH(ISSDTE) + 1);
-         REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                   MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-         REMMTHS = EARNTERM - ((STYR - YEAR(ISSDTE))*12 +
-                   STMTH - MONTH(ISSDTE) + 1);
-         IF REMMTH2 < 0 THEN REMMTH2 = 0;
-         IF LOANTYPE IN (128,130) THEN
-              REMMTH1 = REMMTH1 - 3;
-         ELSE REMMTH1 = REMMTH1 - 1;
-   /*    IF REMMTH1 >= REMMTH2 THEN
-            DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
-               IS = 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-               IF REMMTH > REMMTHS THEN IISPREV + IS;
-               ELSE IIS + IS;
-            END;    */
-         IF REMMTH2 > 0 THEN
-            UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-      END;
-   END;
- *  IF TERMCHG = 0 THEN IISPREV = IISP;
-   IF CURBAL = . THEN CURBAL = 0;
-   NETBAL = CURBAL - UHC;
-   OSPRIN = CURBAL - UHC - IIS;
-   IF LOANTYPE IN (380,381) THEN OTHERFEE = SUM(FEEAMT,(-1)*FEETOT2);
-   ELSE OTHERFEE = SUM(FEEAMT8,(-1)*FEETOT2,FEEAMTA,(-1)*FEEAMT5);
-   IF OTHERFEE < 0 THEN OTHERFEE = 0;
-   IF LOANTYPE IN (983,993) THEN OTHERFEE = 0;
-   IF APPVALUE > 0 & (LOANTYPE IN (705,128,700,130,380,381,720,725)
-      | CENSUS7 = '9') &
-      (DAYS > 89 OR USER5 = 'N') &
-      BORSTAT NOT IN ('F','R','I','Y','W')
-      AND LOANTYPE NOT IN (983,993) THEN DO;
-      AGE = INT(YEAR(REPTDATE) - YEAR(ISSDTE) +
-            (MONTH(REPTDATE) - MONTH(ISSDTE)) / 12);
-      IF CENSUS7 ^='9' THEN
-         MARKETVL = APPVALUE - APPVALUE * AGE * 0.2;
-      IF HARDCODE = 'Y' THEN DO;
-         MARKETVL = WREALVL;
-      END;
-      IF MARKETVL < 0 THEN MARKETVL = 0;
-      IF DAYS > 273 THEN NETEXP = OSPRIN + OTHERFEE;
-      ELSE NETEXP = OSPRIN + OTHERFEE - MARKETVL;
-  /*  IF LOANTYPE IN (128,130) THEN NETEXP = OSPRIN - MARKETVL;
-      ELSE DO;
-         IF DAYS > 273 THEN NETEXP = OSPRIN;
-         ELSE NETEXP = OSPRIN - MARKETVL;
-      END; */
-      SELECT;
-         WHEN (DAYS>364) SP = NETEXP;
-         WHEN (DAYS>273) SP = NETEXP / 2;
-         WHEN (DAYS> 89) SP = NETEXP * 0.2;
-         WHEN (DAYS< 90) SP = NETEXP * 0.2;
-         OTHERWISE SP = 0;
-      END;
-   END;
-   ELSE DO;
-      IF BORSTAT NOT IN ('R') THEN MARKETVL = 0;
-      IF HARDCODE = 'Y' THEN DO;
-         MARKETVL = WREALVL;
-      END;
-      NETEXP = OSPRIN + OTHERFEE - MARKETVL;
-      IF DAYS > 364 OR BORSTAT IN ('F','R','I','W') THEN
-         SP = NETEXP;
-      ELSE IF DAYS > 273 THEN SP = NETEXP / 2;
-      ELSE IF DAYS > 89 AND BORSTAT = 'Y' THEN SP = NETEXP / 5;
-      ELSE SP = 0;
-   END;
-   IF SP < 0 THEN SP = 0;
-   SPPL = SP - SPP2;
-   IF SPPL < 0 THEN SPPL = 0;
-   IF HARDCODE = 'Y' THEN DO;
-      IF WSPPL NE . THEN SPPL = WSPPL;
-      IF WSP NE . THEN SP = WSP;
-   END;
-   IF BORSTAT = 'W' THEN DO;
-      SPPW = SPP2;
-      SP   = 0;
-      MARKETVL = 0;
-   END;
-   ELSE RECOVER = SPP2 - SP;
-   IF RECOVER < 0 THEN RECOVER = 0;
-   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-   LOANTYP = PUT(LOANTYPE,LNTYP.);
-   IF WRITEOFF = 'Y' THEN DO;
-      SPPL = WSPPL;
-      OTHERFEE = 0;
-      IF WDOWNIND ^= 'Y' THEN DO;
-         RECOVER = WRECOVER;
-         SP   = 0;
-         SPPW = SUM(SPP2,SPPL,(-1)*RECOVER);
-      END;
-      ELSE DO;
-         SPPW = WSPPW;
-         IF NETEXP <= 0 THEN RECOVER = 0;
-         SP = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
-         IF NETEXP <=0 AND SP > 0 THEN DO;
-            RECOVER = SP;
-            SP = 0;
-         END;
-      END;
-   END;
- IF RESCHEIND = 'Y' THEN DO;
-      SPLL    = WSPLL;
-      RECOVER = WRECOVER;
-      SPPW    = WSPPW;
-      SP      = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
-      END;
-*;
-*------------------------------------------------*
-*  CALCULATE SP FOR CURRENT NPL ACCOUNTS         *
-*------------------------------------------------*;
-DATA LOAN2;
-   KEEP BRANCH NTBRCH ACCTNO NOTENO NAME DAYS BORSTAT NETPROC CURBAL
-        UHC NETBAL IIS OSPRIN MARKETVL NETEXP SPP2 SPPL RECOVER
-        SPPW SP LOANTYP VINNO CENSUS7 OTHERFEE EXIST COSTCTR USER5
-        PENDBRH WDOWNIND RESCHEIND;
-   LENGTH LOANTYP $20;
-   RETAIN STMTH 1 STYR;
-   SET LOANWOFF;
- * SET NPL.LOAN&REPTMON;
-   IF _N_ = 1 THEN DO;
-      SET REPTDATE;
-      STYR = YEAR(REPTDATE);
-   END;
-   IF EXIST ^= 'Y';
- * IF DAYS > 182 OR BORSTAT NOT IN (' ','S');
-   UHC = 0;
-   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
-   IF BLDATE > 0 & TERMCHG > 0 THEN DO;
-      REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
-                MONTH(BLDATE) - MONTH(ISSDTE) + 1);
-      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-      REMMTHS = EARNTERM - ((STYR - YEAR(ISSDTE))*12 +
-                STMTH - MONTH(ISSDTE) + 1);
-      IF REMMTH2 < 0 THEN REMMTH2 = 0;
-      IF LOANTYPE IN (128,130) THEN
-           REMMTH1 = REMMTH1 - 3;
-      ELSE REMMTH1 = REMMTH1 - 1;
-  /*    IF REMMTH1 >= REMMTH2 THEN
-         DO REMMTH = REMMTH1 TO REMMTH2 BY -1;
-            IS = 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-            IF REMMTH > REMMTHS THEN IISPREV + IS;
-            ELSE IIS + IS;
-         END;      */
-      IF REMMTH2 > 0 THEN
-         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-   END;
-   ELSE DO;
-      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-      IF REMMTH2 < 0 THEN REMMTH2 = 0;
-      IF REMMTH2 > 0 THEN
-         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-   END;
-   NETBAL = CURBAL - UHC;
-   OSPRIN = CURBAL - UHC - IIS;
-   IF LOANTYPE IN (380,381) THEN OTHERFEE = SUM(FEEAMT,(-1)*FEETOT2);
-   ELSE OTHERFEE = SUM(FEEAMT8,(-1)*FEETOT2,FEEAMTA,(-1)*FEEAMT5);
-   IF OTHERFEE < 0 THEN OTHERFEE = 0;
-   IF LOANTYPE IN (983,993) THEN OTHERFEE = 0;
-   IF APPVALUE > 0 & (LOANTYPE IN (705,130,700,128,380,381,720,725) |
-      CENSUS7 = '9') &
-      (DAYS > 89 OR USER5 = 'N') &
-      BORSTAT NOT IN ('F','R','I','Y','W')
-      AND LOANTYPE NOT IN (983,993) THEN DO;
-      AGE = INT(YEAR(REPTDATE) - YEAR(ISSDTE) +
-            (MONTH(REPTDATE) - MONTH(ISSDTE)) / 12);
-      IF CENSUS7 ^= '9' THEN
-         MARKETVL = APPVALUE - APPVALUE * AGE * 0.2;
-      IF HARDCODE = 'Y' THEN DO;
-         MARKETVL = WREALVL;
-      END;
-      IF MARKETVL < 0 THEN MARKETVL = 0;
-      IF DAYS > 273 THEN NETEXP = OSPRIN + OTHERFEE;
-      ELSE NETEXP = OSPRIN + OTHERFEE - MARKETVL;
- /*   IF LOANTYPE IN (705,130) THEN NETEXP = OSPRIN - MARKETVL;
-      ELSE DO;
-         IF DAYS > 273 THEN NETEXP = OSPRIN;
-         ELSE NETEXP = OSPRIN - MARKETVL;
-      END; */
-      SELECT;
-         WHEN (DAYS>364) SP = NETEXP;
-         WHEN (DAYS>273) SP = NETEXP / 2;
-         WHEN (DAYS> 89) SP = NETEXP * 0.2;
-         WHEN (DAYS< 90) SP = NETEXP * 0.2;
-         OTHERWISE SP = 0;
-      END;
-   END;
-   ELSE DO;
-      IF BORSTAT NOT IN ('R') THEN MARKETVL = 0;
-      IF HARDCODE = 'Y' THEN DO;
-         MARKETVL = WREALVL;
-      END;
-      NETEXP = OSPRIN + OTHERFEE - MARKETVL;
-      IF DAYS > 364 OR BORSTAT IN ('F','R','I','W') THEN
-         SP = NETEXP;
-      ELSE IF DAYS > 273 THEN SP = NETEXP / 2;
-      ELSE IF DAYS > 89 AND BORSTAT = 'Y' THEN SP = NETEXP / 5;
-      ELSE SP = 0;
-   END;
-   IF SP < 0 THEN SP = 0;
-   SPPL = SP;
-   IF HARDCODE = 'Y' THEN DO;
-      IF WSPPL NE . THEN SPPL = WSPPL;
-      IF WSP NE . THEN SP = WSP;
-   END;
-   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-   LOANTYP = PUT(LOANTYPE,LNTYP.);
-   IF WRITEOFF = 'Y' THEN DO;
-      SPPL = WSPPL;
-      OTHERFEE = 0;
-      IF WDOWNIND ^= 'Y' THEN DO;
-         RECOVER = WRECOVER;
-         SP   = 0;
-         SPPW = SUM(SPP2,SPPL,(-1)*RECOVER);
-      END;
-      ELSE DO;
-         SPPW = WSPPW;
-         IF NETEXP <= 0 THEN RECOVER = 0;
-         SP = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
-         IF NETEXP <=0 AND SP > 0 THEN DO;
-            RECOVER = SP;
-            SP = 0;
-         END;
-      END;
-   END;
-
- IF RESCHEIND = 'Y' THEN DO;
-      SPLL    = WSPLL;
-      RECOVER = WRECOVER;
-      SPPW    = WSPPW;
-      SP      = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
-      END;
-*;
-*------------------------------------------------*
-*  COMPARE PREVIOUS MONTH NPL ACCOUNTS (JUL 05)  *
-*------------------------------------------------*;
-%MACRO MONTHLY;
-   %IF "&REPTMON" EQ "01" %THEN %DO;
-      DATA LOAN1;
-         SET LOAN1;
-         SPPLCUM = 0;
-      RUN;
-      DATA LOAN2;
-         SET LOAN2;
-         SPPLCUM = 0;
-      RUN;
-   %END;
-   %ELSE %DO;
-      PROC SORT DATA=NPL.SP2&PREVMON
-         (RENAME=(DAYS=PDAYS SPP2=PSPP2 SPPL=PSPPL SP=PSP
-                  RECOVER=PRECOVER BORSTAT=PBORSTAT))
-         OUT=SP2PREV NODUPKEY;
-      BY ACCTNO NOTENO; RUN;
-
-      DATA SP2PREV;
-         SET SP2PREV;
-             IF LOANTYPE IN (128,130,131,132,380,381,390,
-                             700,705,720,725,983,993,996)
-             AND PAIDIND='P' THEN DO;
-             %INC PGM(NPLNTB);
-             END;
-         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-         IF PDAYS = . THEN PDAYS = 0;
-         IF PSPP2 = . THEN PSPP2 = 0;
-         IF PSPPL = . THEN PSPPL = 0;
-         IF PSP = . THEN PSP = 0;
-         IF PRECOVER = . THEN PRECOVER = 0;
-      RUN;
-      ********************
-      *** EXISTING NPL ***
-      ********************;
-      PROC SORT DATA=LOAN1; BY ACCTNO; RUN;
-      DATA LOAN1(DROP=PDAYS PSPPL PSP PSPP2 PRECOVER PBORSTAT);
-         MERGE SP2PREV(IN=B) LOAN1(IN=A);
-         BY ACCTNO;
-         IF ((A AND B) OR (B AND NOT A)) AND EXIST = 'Y';
-
-         *** A/C SETTLE FOR EXISTING NPL ***;
-         IF ((B AND NOT A) OR (CURBAL LE 0 AND PSP LE 0)) AND
-            BORSTAT NOT IN ('F','I','R','W','S') THEN DO;
-            SPPL=PSPPL;
-            RECOVER=SUM(PSPP2,PSPPL);
-            CURBAL=0;
-            NETBAL=0;
-            UHC=0;
-            IIS=0;
-            MARKETVL=0;
-            OSPRIN = SUM(CURBAL,(-1)*UHC,(-1)*IIS);
-            NETEXP = SUM(OSPRIN,(-1)*MARKETVL);
-            DAYS=0;
-            SP = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
-            OUTPUT;
-         END;
-         ELSE DO;
-            IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN DO;
-               OUTPUT;
-            END;
-            ELSE DO;
-               IF (A AND B) THEN DO;
-                  *** CONTINUE PERFORMING ***;
-                  IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
-                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                        SPPL=PSPPL;
-                        RECOVER=SUM(PSPP2,PSPPL);
-                     END;
-                     IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
-                        SPPL=0;
-                        RECOVER = SPP2 - SP;
-                     END;
-                     IF USER5 = 'N' AND SPP2 < SP THEN DO;
-                        SPPL = SP-SPP2;
-                        RECOVER = 0;
-                     END;
-                     OUTPUT;
-                  END;
-                  *** TURN PERFORMING ***;
-                  IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
-                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                        IIS=0;
-                        IF USER5 NE 'N' THEN MARKETVL=0;
-                        OSPRIN = SUM(CURBAL,(-1)*UHC,(-1)*IIS);
-                        NETEXP = SUM(OSPRIN,(-1)*MARKETVL);
-                        SPPL = PSPPL;
-                        RECOVER = SUM(PSPP2,PSPPL);
-                     END;
-                     IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
-                        SPPL=0;
-                        RECOVER = SPP2 - SP;
-                     END;
-                     IF USER5 = 'N' AND SPP2 < SP THEN DO;
-                        SPPL = SP-SPP2;
-                        RECOVER = 0;
-                     END;
-                     OUTPUT;
-                  END;
-                  *** TURN NPL FR PERFORMING ***;
-                  IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
-                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                        SPPL = SUM(SP,PSPPL);
-                        RECOVER = SUM(PSPPL,PSPP2);
-                     END;
-                     IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
-                        SPPL=0;
-                        RECOVER = SPP2 - SP;
-                     END;
-                     IF USER5 = 'N' AND SPP2 < SP THEN DO;
-                        SPPL = SP-SPP2;
-                        RECOVER = 0;
-                     END;
-                     OUTPUT;
-                  END;
-                  *** CONTINUE NPL ***;
-                  IF DAYS GE 90 AND PDAYS GE 90 THEN DO;
-                     IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                        SPPL = SUM(SP,(-1)*PSPP2);
-                        IF SPPL LT 0 THEN DO;
-                           RECOVER = SPPL*(-1);
-                           SPPL = 0;
-                        END;
-                     END;
-                     OUTPUT;
-                  END;
-               END;
-            END;
-         END;
-      RUN;
-      *******************
-      *** CURRENT NPL ***
-      *******************;
-      PROC SORT DATA=NPL.PLOAN&REPTMON OUT=PLOAN
-         (KEEP=ACCTNO NOTENO CURBAL DAYS BORSTAT NTBRCH COSTCTR);
-         BY ACCTNO;
-      RUN;
-      DATA SP2PREV;
-         MERGE SP2PREV(IN=A) PLOAN(IN=B);
-         BY ACCTNO;
-         IF PSPP2 EQ 0 AND EXIST NE 'Y' ;
-         BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-      RUN;
-
-      PROC SORT DATA=LOAN2; BY ACCTNO NOTENO; RUN;
-      DATA LOAN2(DROP=PDAYS PSPPL PSP PSPP2 PRECOVER PBORSTAT);
-         MERGE SP2PREV(IN=B) LOAN2(IN=A);
-         BY ACCTNO;
-
-         IF (B AND NOT A) THEN DO;
-            *** A/C SETTLE FOR EXISTING NPL ***;
-               SPPL=PSPPL;
-               RECOVER=SUM(PSPP2,PSPPL);
-               CURBAL=0;
-               NETBAL=0;
-               UHC=0;
-               IIS=0;
-               MARKETVL=0;
-               OSPRIN = SUM(CURBAL,(-1)*UHC,(-1)*IIS);
-               NETEXP = SUM(OSPRIN,(-1)*MARKETVL);
-               DAYS=0;
-               SP = SUM(SPP2,SPPL,(-1)*RECOVER,(-1)*SPPW);
-               OUTPUT;
-            END;
-
-         *** NEW NPL FOR THE MTH ***;
-         IF (A AND NOT B) AND
-            (DAYS GE 90 OR BORSTAT IN ('F','I','R','W') OR USER5='N')
-            THEN OUTPUT;
-
-         IF (A AND B) THEN DO;
-            IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN DO;
-               OUTPUT;
-            END;
-            ELSE DO;
-               *** CONTINUE PERFORMING ***;
-               IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
-                  IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                     SPPL=PSPPL;
-                     RECOVER=PRECOVER;
-                  END;
-                  IF BORSTAT IN ('F','I','R') THEN DO;
-                     RECOVER = PRECOVER;
-                     SPPL = SUM(SP,RECOVER);
-                  END;
-                  IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
-                     SPPL=0;
-                     RECOVER = SPP2 - SP;
-                  END;
-                  IF USER5 = 'N' AND SPP2 < SP THEN DO;
-                     SPPL = SP-SPP2;
-                     RECOVER = 0;
-                  END;
-                  OUTPUT;
-               END;
-
-               *** TURN PERFORMING ***;
-               IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
-                  IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                     IIS=0;
-                     MARKETVL=0;
-                     OSPRIN = SUM(CURBAL,(-1)*UHC,(-1)*IIS);
-                     NETEXP = SUM(OSPRIN,(-1)*MARKETVL);
-                     SPPL    = PSPPL;
-                     RECOVER = PSPPL;
-                  END;
-                  IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
-                     SPPL=0;
-                     RECOVER = SPP2 - SP;
-                  END;
-                  IF USER5 = 'N' AND SPP2 < SP THEN DO;
-                     SPPL = SP-SPP2;
-                     RECOVER = 0;
-                  END;
-                  OUTPUT;
-               END;
-
-               *** TURN NPL FR PERFORMING ***;
-               IF DAYS GE 90 AND PDAYS LT 90 THEN DO;
-                  IF BORSTAT NOT IN ('F','I','R') THEN DO;
-                     SPPL = SUM(SP,PSPPL);
-                     RECOVER = PSPPL;
-                  END;
-                  IF USER5 = 'N' AND  SPP2 >= SP THEN DO;
-                     SPPL=0;
-                     RECOVER = SPP2 - SP;
-                  END;
-                  IF USER5 = 'N' AND SPP2 < SP THEN DO;
-                     SPPL = SP-SPP2;
-                     RECOVER = 0;
-                  END;
-                  OUTPUT;
-               END;
-
-               *** CONTINUE NPL ***;
-               IF (DAYS GE 90 AND PDAYS GE 90) THEN DO;
-                  RECOVER = PRECOVER;
-                  SPPL = SUM(SP,RECOVER);
-                  OUTPUT;
-               END;
-            END;
-         END;
-      RUN;
-   %END;
-%MEND MONTHLY;
-%MONTHLY;
-*------------------------------------------------*
-*  COMBINE EXISTING & CURRENT NPL ACCOUNTS       *
-*------------------------------------------------*;
-DATA LOAN3 NPL.SP2&REPTMON NPL.SP2;
-   SET LOAN1 LOAN2;
-   LENGTH RISK $13;
-   IF DAYS > 364 OR BORSTAT = 'W' THEN RISK = 'BAD';
-   ELSE IF DAYS > 273 THEN RISK = 'DOUBTFUL';
-   ELSE IF DAYS > 182 THEN RISK = 'SUBSTANDARD 2';
-   ELSE IF DAYS < 90 AND USER5 ='N' THEN RISK = 'SUBSTANDARD-1';
-   ELSE RISK = 'SUBSTANDARD-1';
-   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
-          COSTCTR NOT IN (4043,4048) AND
-          COSTCTR NE .;
-
-RUN;
-PROC SORT DATA=LOAN3 NODUPKEY;BY ACCTNO NOTENO;RUN;
-*------------------------------------------------*
-*  PRODUCE REPORTS                               *
-*------------------------------------------------*;
-OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
-%LET TBL1=(EXISTING);
-%LET TBL2=(CURRENT);
-%LET TBL3=(EXISTING AND CURRENT);
-%LET TTL=MOVEMENTS OF SPECIFIC PROVISION FOR THE MONTH ENDING;
-*;
-%MACRO TBLS;
-   %DO I = 3 %TO 3;
-      PROC TABULATE DATA=LOAN&I FORMAT=COMMA14.2 MISSING NOSEPS;
-         CLASS LOANTYP RISK BRANCH;
-         VAR CURBAL UHC NETBAL IIS OSPRIN MARKETVL NETEXP
-             SPP2 SPPL RECOVER SPPW SP OTHERFEE;
-         TABLE LOANTYP=' ',
-               RISK=' '*(BRANCH=' ' ALL='SUB-TOTAL') ALL='TOTAL',
-               N='NO OF ACCOUNT'*F=COMMA7.
-               SUM=' '*(CURBAL='CURRENT BAL (A)'
-                        UHC='UNEARNED HIRING CHARGES (B)'
-                        NETBAL='NET BAL (A-B=C)'
-                        IIS='IIS (E)'
-                        OSPRIN='PRINCIPAL OUTSTANDING (C-E=F)'
-                        OTHERFEE = 'OTHER FEES'
-                        MARKETVL='REALISABLE VALUE (G)'
-                        NETEXP='NET EXPOSURE (F-G=H)'
-                        SPP2='OPENING BAL FOR FINANCIAL YEAR (I)'
-                        SPPL='PROVISION MADE AGAINST PROFIT & LOSS (J)'
-                        RECOVER='WRITTEN BACK TO PROFIT & LOSS (K)'
-                        SPPW='WRITTEN OFF AGAINST PROVISION (L)'
-                        SP='CLOSING BAL AS AT RPT DATE (I+J-K-L)')
-               / BOX='RISK        BRANCH' RTS=29;
-         TABLE LOANTYP=' ', BRANCH=' ' ALL='TOTAL',
-               N='NO OF ACCOUNT'*F=COMMA7.
-               SUM=' '*(CURBAL='CURRENT BAL (A)'
-                        UHC='UNEARNED HIRING CHARGES (B)'
-                        NETBAL='NET BAL (A-B=C)'
-                        IIS='IIS (E)'
-                        OSPRIN='PRINCIPAL OUTSTANDING (C-E=F)'
-                        OTHERFEE = 'OTHER FEES'
-                        MARKETVL='REALISABLE VALUE (G)'
-                        NETEXP='NET EXPOSURE (F-G=H)'
-                        SPP2='OPENING BAL FOR FINANCIAL YEAR (I)'
-                        SPPL='PROVISION MADE AGAINST PROFIT & LOSS (J)'
-                        RECOVER='WRITTEN BACK TO PROFIT & LOSS (K)'
-                        SPPW='WRITTEN OFF AGAINST PROVISION (L)'
-                        SP='CLOSING BAL AS AT RPT DATE (I+J-K-L)')
-               / BOX='BRANCH' RTS=9;
-         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
-         TITLE2 &TTL &RDATE &&TBL&I;
-         ** TITLE3 '(BASED ON DEPRECIATED PP FOR UNSCHEDULED GOODS)';
-   %END;
-%MEND TBLS;
-*;
-%MACRO DTLS;
-   %DO I = 3 %TO 3;
-      PROC SORT DATA=LOAN&I;
-         BY LOANTYP BRANCH RISK DAYS ACCTNO;
-*;
-      PROC PRINT LABEL N;
-         FORMAT NETPROC CURBAL UHC NETBAL IIS OSPRIN MARKETVL
-                NETEXP SPP2 SPPL RECOVER SPPW SP OTHERFEE COMMA14.2;
-         LABEL ACCTNO   = 'MNI ACCOUNT NO'
-               VINNO    = 'AA NUMBER'
-               DAYS     = 'NO OF DAYS PAST DUE'
-               BORSTAT  = 'BORROWER''S STATUS'
-               NETPROC  = 'LIMIT'
-               CURBAL   = 'CURRENT BAL (A)'
-               UHC      = 'UNEARNED HIRING CHARGES (B)'
-               NETBAL   = 'NET BAL (A-B=C)'
-               IIS      = 'IIS (E)'
-               OSPRIN   = 'PRINCIPAL OUTSTANDING (C-E=F)'
-               OTHERFEE = 'OTHER FEES'
-               MARKETVL = 'REALISABLE VALUE (G)'
-               NETEXP   = 'NET EXPOSURE (F-G=H)'
-               SPP2     = 'OPENING BAL FOR FINANCIAL YEAR (I)'
-               SPPL     = 'PROVISION MADE AGAINST PROFIT & LOSS (J)'
-               RECOVER  = 'WRITTEN BACK TO PROFIT & LOSS (K)'
-               SPPW     = 'WRITTEN OFF AGAINST PROVISION (L)'
-               SP       = 'CLOSING BAL AS AT RPT DATE (I+J-K-L)';
-         VAR ACCTNO NAME VINNO DAYS BORSTAT NETPROC CURBAL UHC
-             NETBAL OTHERFEE
-             IIS OSPRIN MARKETVL NETEXP SPP2 SPPL RECOVER SPPW SP;
-         BY LOANTYP BRANCH RISK;
-         PAGEBY BRANCH;
-         SUMBY RISK;
-         SUM NETPROC CURBAL UHC NETBAL IIS OSPRIN MARKETVL
-             NETEXP SPP2 SPPL RECOVER SPPW SP OTHERFEE;
-         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
-         TITLE2 &TTL &RDATE &&TBL&I;
-         ** TITLE3 '(BASED ON DEPRECIATED PP FOR UNSCHEDULED GOODS)';
-   %END;
-%MEND DTLS;
-*;
-%TBLS;
-  /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS */
-%DTLS;
 
 
 
 
-*+--------------------------------------------------------------+
- |  PROGRAM : EIFMNP07                                          |
- |  DATE    : 03.04.98                                          |
- |  MODIFY  : ESMR 2004-720, 2004-579, 2006-1048                |
- |  REPORT  : STATISTICS ON ASSET QUALITY - MOVEMENTS IN NPL    |
- +--------------------------------------------------------------+;
-OPTIONS YEARCUTOFF=1950;
-*;
-%INC PGM(PBBLNFMT);
-%INC PGM(PBBELF);
-*;
-PROC FORMAT;
-   VALUE LNTYP 128,130,983             = 'HPD AITAB'
-               700,705,993,996,380,381,
-               720,725                 = 'HPD CONVENTIONAL'
-               200-299                 = 'HOUSING LOANS'
-               OTHER   = 'OTHERS';
-*;
-*------------------------------------------------*
-*  MACRO FOR CALCULATING NEXT BLDATE             *
-*------------------------------------------------*;
-%MACRO DCLVAR;
-   RETAIN D1-D12 31 D4 D6 D9 D11 30;
-   ARRAY LDAY D1-D12;
-%MEND DCLVAR;
-*;
-%MACRO NXTBLDT;
-   DD = DAY(ISSDTE);
-   MM = MONTH(BLDATE) + 1;
-   YY = YEAR(BLDATE);
-   IF MM > 12 THEN DO;
-      MM = 1; YY + 1;
-   END;
-   IF MM = 2 THEN
-      IF MOD(YY,4) = 0 THEN D2 = 29;
-      ELSE D2 = 28;
-   IF DD > LDAY(MM) THEN DD = LDAY(MM);
-   BLDATE = MDY(MM,DD,YY);
-%MEND NXTBLDT;
-*;
-*------------------------------------------------*
-*  GET REPTDATE                                  *
-*------------------------------------------------*;
-DATA REPTDATE;
-   SET NPL.REPTDATE;
-   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
-   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-RUN;
-*;
-*------------------------------------------------*
-*  MERGE WITH WRITTEN OFF ACCOUNT                *
-*------------------------------------------------*;
-PROC SORT DATA=NPL.LOAN&REPTMON;BY ACCTNO;
-PROC SORT DATA=NPL.WAQ;BY ACCTNO;
-DATA LOANWOFF;
-   MERGE NPL.LOAN&REPTMON NPL.WAQ (IN=AA DROP=NOTENO NTBRCH);
-   BY ACCTNO;
-   IF AA THEN WRITEOFF = 'Y';ELSE WRITEOFF = 'N';
-   IF LOANTYPE IN (983,993) THEN WDOWNIND = 'N';
-   IF EARNTERM IN (0,.) THEN EARNTERM = NOTETERM;
-*;
-*------------------------------------------------*
-*  CAL STATISTICS FOR EXISTING NPL ACCOUNTS      *
-*------------------------------------------------*;
-DATA LOAN1;
-   KEEP BRANCH ACCTNO NOTENO NAME DAYS CURBALP CURBAL NETBALP NEWNPL
-        ACCRINT RECOVER PL NPLW NPL LOANTYPE LOANTYP OIP ADJUST USER5
-        BORSTAT COSTCTR PENDBRH;
-   LENGTH LOANTYP $20;
-   RETAIN NEWNPL 0 STMTH 1 ENMTH 12 STYR ENYR;
-   %DCLVAR
-   SET LOANWOFF;
- * SET NPL.LOAN&REPTMON;
-   IF _N_ = 1 THEN DO;
-      SET REPTDATE;
-      STYR = YEAR(REPTDATE);
-      ENYR = STYR - 1;
-   END;
-   IF EXIST = 'Y';
-   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
-   IF CURBAL = . THEN CURBAL = 0;
-   ACCRINT = 0; UHC = 0; OI = 0; RECOVER = 0; PL = 0;
-   REMMTH1=0;REMMTH2=0;REMMTHS=0;
-   * IF LOANTYPE IN (380,381) THEN ADJUST = FEEAMT - FEETOT2;
-   * ELSE ADJUST = FEEAMT8 - FEETOT2;
-   ADJUST = FEEAMT - FEETOT2;
-   IF DAYS <  90 & BORSTAT IN (' ','A','C','S','T','Y') & CURBAL >= 0
-      & USER5 NE 'N' OR LOANTYPE IN (983,993) THEN DO;
-      PL = NETBALP;
-      IF DAYS = 0 AND CURBAL = 0 THEN DO;
-         RECOVER = NETBALP;
-         PL = 0;
-      END;
-   END;
-   ELSE DO;
-      IF LOANTYPE IN (380,381) THEN OI = FEEAMT;
-      ELSE OI = FEEAMT;
-      ACCRINT = FEEYTD;
-      IF BORSTAT = 'F' THEN CURBALP = CURBALP - UHCP;
-      IF TERMCHG > 0 OR (USER5 = 'N'
-      AND LOANTYPE NOT IN (983,993)) THEN DO;
-         REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
-                   MONTH(BLDATE) - MONTH(ISSDTE) + 1);
-         REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                   MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-         REMMTHS = EARNTERM - ((STYR - YEAR(ISSDTE))*12 +
-                   STMTH - MONTH(ISSDTE) + 1);
-         IF REMMTH2 < 0 THEN REMMTH2 = 0;
-         REMMTH1 = REMMTH1 - 1;
-         IF REMMTHS >= REMMTH2 THEN
-            DO REMMTH = REMMTHS TO REMMTH2 BY -1;
-               ACCRINT + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-            END;
-         IF REMMTH2 > 0 THEN
-            UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-      END;
-      IF BORSTAT = 'W' THEN NPLW = NETBALP;
-      ELSE RECOVER = CURBALP - CURBAL + FEEPDYTD;
-      IF RECOVER < 0 THEN DO;
-         CURBALP = CURBALP - RECOVER;
-         RECOVER = 0;
-      END;
-      NPL = CURBAL - UHC + OI;
-      IF BORSTAT = 'W' THEN NPL = 0;
-   END;
-   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-   LOANTYP = PUT(LOANTYPE,LNTYP.);
-   IF WRITEOFF = 'Y' OR LOANTYPE IN (983,993)THEN DO;
-      ACCRINT = WACCRINT;
-      NEWNPL = WNEWNPL;
-      ADJUST = 0;
-      IF WDOWNIND ^= 'Y' THEN DO;
-         RECOVER = WRECOVER;
-         PL = 0;
-         NPL = 0;
-         NPLW = SUM(NETBALP,NEWNPL,ACCRINT,(-1)*RECOVER,(-1)*PL);
-      END;
-      ELSE DO;
-         NPLW = WNPLW;
-         NPL  = SUM(NETBALP,NEWNPL,ACCRINT,(-1)*RECOVER,
-                   (-1)*NPLW,(-1)*PL);
-      END;
-   END;
-*;
-*------------------------------------------------*
-*  CAL STATISTICS FOR CURRENT NPL ACCOUNTS       *
-*------------------------------------------------*;
-DATA LOAN2;
-   KEEP BRANCH ACCTNO NOTENO NAME DAYS CURBALP CURBAL NETBALP NEWNPL
-        ACCRINT RECOVER PL NPLW NPL LOANTYPE LOANTYP OIP ADJUST USER5
-        BORSTAT COSTCTR PENDBRH;
-   LENGTH LOANTYP $20;
-   RETAIN STMTH 1 ENMTH 12 STYR ENYR;
-   %DCLVAR
-   SET LOANWOFF;
- * SET NPL.LOAN&REPTMON;
-   IF _N_ = 1 THEN DO;
-      SET REPTDATE;
-      STYR = YEAR(REPTDATE);
-      ENYR = STYR - 1;
-   END;
-   REMMTH1=0;REMMTH2=0;
-   IF EXIST ^= 'Y';
-   UHC = 0; OI = 0;
-   ADJUST = 0;
-   /* IF LOANTYPE IN (380,381) THEN ADJUST = FEEAMT - FEETOT2;
-   ELSE ADJUST = FEEAMT8 - FEETOT2; */
-   IF WRITEOFF = 'Y' AND WDOWNIND ^= 'Y' THEN BORSTAT ='W';
-   IF BLDATE > 0 & TERMCHG > 0 OR USER5 = 'N' THEN DO;
-      REMMTH1 = EARNTERM - ((YEAR(BLDATE) - YEAR(ISSDTE))*12 +
-                MONTH(BLDATE) - MONTH(ISSDTE) + 1);
-      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-      IF REMMTH2 < 0 THEN REMMTH2 = 0;
-      REMMTH1 = REMMTH1 - 1;
-      IF REMMTH2 > 0 THEN
-         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-   END;
-   ELSE DO;
-      REMMTH2 = EARNTERM - ((YEAR(REPTDATE) - YEAR(ISSDTE))*12 +
-                MONTH(REPTDATE) - MONTH(ISSDTE) + 1);
-      IF REMMTH2 > 0 THEN
-         UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
-   END;
-   IF LOANTYPE IN (380,381) THEN OI = FEEAMT;
-   ELSE OI = FEEAMT;
-   NEWNPL = CURBAL - UHC + OI;
-   NPL = NEWNPL;
-   BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
-   LOANTYP = PUT(LOANTYPE,LNTYP.);
-   IF WRITEOFF = 'Y' OR LOANTYPE IN (983,993)THEN DO;
-      ACCRINT = WACCRINT;
-      NEWNPL = WNEWNPL;
-      ADJUST = 0;
-      IF WDOWNIND ^= 'Y' THEN DO;
-         RECOVER = WRECOVER;
-         PL = 0;
-         NPL = 0;
-         NPLW = SUM(NETBALP,NEWNPL,ACCRINT,(-1)*RECOVER,(-1)*PL);
-      END;
-      ELSE DO;
-         NPLW = WNPLW;
-         NPL  = SUM(NETBALP,NEWNPL,ACCRINT,(-1)*RECOVER,
-                   (-1)*NPLW,(-1)*PL);
-      END;
-   END;
-*;
-*------------------------------------------------*
-*  COMBINE EXISTING & CURRENT NPL ACCOUNTS       *
-*  CREATE VALUE TO CHECK DISCREPANCIES           *
-*------------------------------------------------*;
-DATA LOAN NPL.AQ;
-   ARRAY VBL NETBALP NEWNPL ACCRINT RECOVER PL NPLW NPL;
-   SET LOAN1 LOAN2;
-   LENGTH RISK $13;
-   IF DAYS > 364 OR BORSTAT = 'W' THEN RISK = 'BAD';
-   ELSE IF DAYS > 273 THEN RISK = 'DOUBTFUL';
-   ELSE IF DAYS > 182 THEN RISK = 'SUBSTANDARD 2';
-   ELSE IF DAYS < 90 AND USER5='N' THEN RISK = 'SUBSTANDARD-1';
-   ELSE RISK = 'SUBSTANDARD-1';
-   DO OVER VBL;
-      IF VBL = . THEN VBL = 0;
-   END;
-   CHKNPL = NETBALP+NEWNPL+ACCRINT-RECOVER-PL-NPLW;
-   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
-          COSTCTR NOT IN (4043,4048) AND
-          COSTCTR NE .;
-*;
-*------------------------------------------------*
-*  PRODUCE REPORTS                               *
-*------------------------------------------------*;
-OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
 
-PROC TABULATE DATA=LOAN FORMAT=COMMA17.2 MISSING NOSEPS;
-   CLASS LOANTYP RISK BRANCH;
-   VAR CURBALP CURBAL NETBALP NEWNPL PL ACCRINT RECOVER NPLW NPL ADJUST;
-   TABLE LOANTYP=' ',
-         RISK=' '*(BRANCH=' ' ALL='SUB-TOTAL') ALL='TOTAL',
-         N='NO OF ACCOUNT'*F=COMMA7.
-         SUM=' '*(CURBALP='BAL AS AT PREV YEAR (WITH UHC)'
-                  CURBAL='BAL AS AT END OF RPT DATE (WITH UHC)'
-                  NETBALP='NET BAL AS AT PREV YEAR (A)'
-                  NEWNPL='NEW NPL DURING CURRENT YEAR (B)'
-                  ACCRINT='ACCRUED INTEREST (C)'
-                  RECOVER='RECOVERIES (D)'
-                  PL='NPL CLASSIFIED AS PERFORMING (E)'
-                  NPLW='NPL WRITTEN-OFF (F)'
-                  ADJUST='ADJUSTMENT'
-                  NPL='NPL AS AT END OF RPT DATE (A+B+C-D-E-F)')
-         / BOX='RISK        BRANCH' RTS=29;
-   TABLE LOANTYP=' ', BRANCH=' ' ALL='TOTAL',
-         N='NO OF ACCOUNT'*F=COMMA7.
-         SUM=' '*(CURBALP='BAL AS AT PREV YEAR (WITH UHC)'
-                  CURBAL='BAL AS AT END OF RPT DATE (WITH UHC)'
-                  NETBALP='NET BAL AS AT PREV YEAR (A)'
-                  NEWNPL='NEW NPL DURING CURRENT YEAR (B)'
-                  ACCRINT='ACCRUED INTEREST (C)'
-                  RECOVER='RECOVERIES (D)'
-                  PL='NPL CLASSIFIED AS PERFORMING (E)'
-                  NPLW='NPL WRITTEN-OFF (F)'
-                  ADJUST='ADJUSTMENT'
-                  NPL='NPL AS AT END OF RPT DATE (A+B+C-D-E-F)')
-         / BOX='BRANCH' RTS=10;
-   TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE)';
-   TITLE2 'STATISTICS ON ASSET QUALITY - MOVEMENTS IN NPL' &RDATE;
-*;
 
-PROC SORT DATA=LOAN;
-   BY LOANTYP BRANCH RISK DAYS ACCTNO;
-*;
-PROC PRINT LABEL N;
-   FORMAT CURBALP CURBAL NETBALP NEWNPL ACCRINT RECOVER PL NPLW NPL
-          COMMA14.2;
-   LABEL ACCTNO  = 'MNI ACCOUNT NO'
-         DAYS    = 'NO OF DAYS PAST DUE'
-         CURBALP = 'BAL AS AT PREV YEAR (WITH UHC)'
-         CURBAL  = 'BAL AS AT END OF RPT DATE (WITH UHC)'
-         NETBALP = 'NET BAL AS AT PREV YEAR (A)'
-         NEWNPL  = 'NEW NPL DURING CURRENT YEAR (B)'
-         ACCRINT = 'ACCRUED INTEREST (C)'
-         RECOVER = 'RECOVERIES (D)'
-         PL      = 'NPL CLASSIFIED AS PERFORMING (E)'
-         NPLW    = 'NPL WRITTEN-OFF (F)'
-         ADJUST  = 'ADJUSTMENT'
-         NPL     = 'NPL AS AT END OF RPT DATE (A+B+C-D-E-F)';
-   VAR ACCTNO NAME DAYS CURBALP CURBAL NETBALP NEWNPL ACCRINT RECOVER
-       PL NPLW NPL ADJUST;
-   BY LOANTYP BRANCH RISK;
-   PAGEBY BRANCH;
-   SUMBY RISK;
-   SUM CURBALP CURBAL NETBALP NEWNPL ACCRINT RECOVER PL NPLW NPL ADJUST;
-*;
-*------------------------------------------------*
-*  PRODUCE DISCREPANCY REPORT                    *
-*------------------------------------------------*;
-  /*
-PROC PRINT LABEL N;
-   FORMAT CURBALP CURBAL NETBALP NEWNPL ACCRINT RECOVER PL NPLW NPL
-          CHKNPL COMMA14.2;
-   LABEL ACCTNO  = 'MNI ACCOUNT NO'
-         DAYS    = 'NO OF DAYS PAST DUE'
-         CURBALP = 'BAL AS AT PREV YEAR (WITH UHC)'
-         CURBAL  = 'BAL AS AT END OF RPT DATE (WITH UHC)'
-         NETBALP = 'NET BAL AS AT PREV YEAR (A)'
-         NEWNPL  = 'NEW NPL DURING CURRENT YEAR (B)'
-         ACCRINT = 'ACCRUED INTEREST (C)'
-         RECOVER = 'RECOVERIES (D)'
-         PL      = 'NPL CLASSIFIED AS PERFORMING (E)'
-         NPLW    = 'NPL WRITTEN-OFF (F)'
-         NPL     = 'NPL AS AT END OF RPT DATE (A+B+C-D-E-F)'
-         CHKNPL  = '(A+B+C-D-E-F)';
-   VAR ACCTNO NAME DAYS CURBALP CURBAL NETBALP NEWNPL ACCRINT RECOVER
-       PL NPLW NPL CHKNPL;
-   BY LOANTYP BRANCH RISK;
-   WHERE ROUND(CHKNPL,0.01) ^= ROUND(NPL,0.01);
-   TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE)';
-   TITLE2 'STATISTICS ON ASSET QUALITY - MOVEMENTS IN NPL' &RDATE;
-   TITLE3 '(DISCREPANCY REPORT)';    */
+
+
+#!/usr/bin/env python3
+"""PBB EIFMNP06: complete specific-provision job and reports."""
+from __future__ import annotations
+
+import argparse
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from eifmnp03 import branch_label, load_branch_map, read_sas, risk, sas_date, sas_sum, val
+
+
+LNTYP = {
+    128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
+    700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
+    380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
+    720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
+    993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
+    **{i: "HOUSING LOANS" for i in range(200, 300)},
+}
+PIBB_PROFILE = False
+PROGRAM_NAME = "EIFMNP06"
+REPORT_ENTITY = "PUBLIC BANK"
+
+REPORT_LABELS = {
+    "ACCTNO":"MNI ACCOUNT NO", "VINNO":"AA NUMBER", "DAYS":"NO OF DAYS PAST DUE",
+    "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
+    "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)", "IIS":"IIS (E)",
+    "OSPRIN":"PRINCIPAL OUTSTANDING (C-E=F)", "OTHERFEE":"OTHER FEES",
+    "MARKETVL":"REALISABLE VALUE (G)", "NETEXP":"NET EXPOSURE (F-G=H)",
+    "SPP2":"OPENING BAL FOR FINANCIAL YEAR (I)",
+    "SPPL":"PROVISION MADE AGAINST PROFIT & LOSS (J)",
+    "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (K)",
+    "SPPW":"WRITTEN OFF AGAINST PROVISION (L)",
+    "SP":"CLOSING BAL AS AT RPT DATE (I+J-K-L)",
+}
+
+
+def write_original_report(out: pd.DataFrame, report_date: pd.Timestamp, output_dir: Path) -> str:
+    """Render both PROC TABULATE tables and the original PROC PRINT listing."""
+    measures=["CURBAL","UHC","NETBAL","IIS","OSPRIN","MARKETVL","NETEXP","SPP2","SPPL","RECOVER","SPPW","SP","OTHERFEE"]
+    title1=f"{REPORT_ENTITY} - (NPL FROM 3 MONTHS & ABOVE) - NEW"
+    title2=f"MOVEMENTS OF SPECIFIC PROVISION FOR THE MONTH ENDING {report_date.strftime('%d %B %Y').upper()} (EXISTING AND CURRENT)"
+    fmt=lambda value:f"{value:,.2f}"
+    risk_branch=out.groupby(["LOANTYP","RISK","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
+    branch=out.groupby(["LOANTYP","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
+    rename={**REPORT_LABELS,"NO_OF_ACCOUNT":"NO OF ACCOUNT"}
+    lines=[title1,title2,"","SUMMARY BY RISK AND BRANCH",
+           risk_branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
+           "","SUMMARY BY BRANCH",
+           branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
+           "","DETAILED LISTING"]
+    ordered=out.sort_values(["LOANTYP","BRANCH","RISK","DAYS","ACCTNO"])
+    detail_cols=["ACCTNO","NAME","VINNO","DAYS","BORSTAT","NETPROC",*measures]
+    for (loan_type,branch_name,risk_name),group in ordered.groupby(["LOANTYP","BRANCH","RISK"],dropna=False,sort=False):
+        lines.extend(["",f"LOAN TYPE: {loan_type}    BRANCH: {branch_name}    RISK: {risk_name}"])
+        display=group[[c for c in detail_cols if c in group]].rename(columns=REPORT_LABELS)
+        lines.append(display.to_string(index=False,formatters={REPORT_LABELS[c]:fmt for c in measures if c in group}))
+        totals=group[measures].sum()
+        lines.append("TOTAL: "+" | ".join(f"{REPORT_LABELS[c]}={totals[c]:,.2f}" for c in measures))
+    report="\n".join(lines)+"\n"
+    (output_dir/f"{PROGRAM_NAME.lower()}_report.lst").write_text(report,encoding="utf-8")
+    (output_dir/f"{PROGRAM_NAME.lower()}_report.txt").write_text(report,encoding="utf-8")
+    return report
+
+
+def read_table(path: Path) -> pd.DataFrame:
+    if path.suffix.lower() == ".csv":
+        df = pd.read_csv(path)
+        df.columns = [c.upper() for c in df.columns]
+        return df
+    return read_sas(path)
+
+
+def provision(row: pd.Series, report_date: pd.Timestamp, existing: bool) -> pd.Series:
+    row = row.copy()
+    for c in ["CURBAL", "TERMCHG", "EARNTERM", "NOTETERM", "IIS", "FEEAMT", "FEETOT2", "FEEAMT8",
+              "FEEAMTA", "FEEAMT5", "APPVALUE", "MARKETVL", "SPP2", "WREALVL", "WSPPL", "WSP",
+              "WRECOVER", "WSPPW", "DAYS"]:
+        if c not in row or pd.isna(row[c]): row[c] = 0.0
+    if row["EARNTERM"] == 0: row["EARNTERM"] = row["NOTETERM"]
+    lt, days = int(val(row, "LOANTYPE", 0)), row["DAYS"]
+    borstat, user5 = val(row, "BORSTAT", ""), val(row, "USER5", "")
+    written = val(row, "WRITEOFF", "N") == "Y"
+    wdown = val(row, "WDOWNIND", "N")
+    if written and wdown != "Y": borstat = row["BORSTAT"] = "W"
+    issue, bill = sas_date(row.get("ISSDTE")), sas_date(row.get("BLDATE"))
+    uhc = 0.0
+    if pd.notna(issue):
+        rem2 = max(0, row["EARNTERM"] - ((report_date.year-issue.year)*12 + report_date.month-issue.month + 1))
+        if rem2 > 0 and row["EARNTERM"] > 0:
+            uhc = rem2*(rem2+1)*row["TERMCHG"]/(row["EARNTERM"]*(row["EARNTERM"]+1))
+    row["UHC"] = uhc
+    row["NETBAL"] = row["CURBAL"] - uhc
+    row["OSPRIN"] = row["CURBAL"] - uhc - row["IIS"]
+    if lt in {380, 381}:
+        other = sas_sum(row["FEEAMT"], -row["FEETOT2"])
+    else:
+        other = sas_sum(row["FEEAMT8"], -row["FEETOT2"], row["FEEAMTA"], -row["FEEAMT5"])
+    row["OTHERFEE"] = 0.0 if lt in {983, 993} else max(0.0, other)
+    secured = row["APPVALUE"] > 0 and (lt in {705,128,700,130,380,381} or val(row,"CENSUS7","") == "9") \
+              and (days > 89 or user5 == "N") and borstat not in {"F","R","I","Y","W"} and lt not in {983,993}
+    hardcode = val(row, "HARDCODE", "N") == "Y"
+    market = row["MARKETVL"]
+    if secured:
+        age = int(report_date.year-issue.year + (report_date.month-issue.month)/12) if pd.notna(issue) else 0
+        if val(row,"CENSUS7","") != "9": market = row["APPVALUE"] * (1 - age*0.2)
+        if hardcode: market = row["WREALVL"]
+        market = max(0.0, market)
+        netexp = row["OSPRIN"] + row["OTHERFEE"] - (0 if days > 273 else market)
+        sp = netexp if days > 364 else netexp/2 if days > 273 else netexp*0.2
+    else:
+        if borstat != "R": market = 0.0
+        if hardcode: market = row["WREALVL"]
+        netexp = row["OSPRIN"] + row["OTHERFEE"] - market
+        sp = netexp if days > 364 or borstat in {"F","R","I","W"} else netexp/2 if days > 273 else netexp/5 if days > 89 and borstat == "Y" else 0.0
+    row["MARKETVL"], row["NETEXP"], row["SP"] = market, netexp, max(0.0, sp)
+    row["SPPL"] = max(0.0, row["SP"] - row["SPP2"]) if existing else row["SP"]
+    if hardcode:
+        if pd.notna(row.get("WSPPL")): row["SPPL"] = row["WSPPL"]
+        if pd.notna(row.get("WSP")): row["SP"] = row["WSP"]
+    row["RECOVER"], row["SPPW"] = (max(0.0, row["SPP2"]-row["SP"]), 0.0) if existing else (0.0, 0.0)
+    if borstat == "W": row["SPPW"], row["SP"], row["MARKETVL"] = row["SPP2"], 0.0, 0.0
+    if written:
+        row["SPPL"], row["OTHERFEE"] = row["WSPPL"], 0.0
+        if wdown != "Y":
+            row["RECOVER"], row["SP"] = row["WRECOVER"], 0.0
+            row["SPPW"] = sas_sum(row["SPP2"], row["SPPL"], -row["RECOVER"])
+        else:
+            row["SPPW"] = row["WSPPW"]
+            if row["NETEXP"] <= 0: row["RECOVER"] = 0.0
+            row["SP"] = sas_sum(row["SPP2"], row["SPPL"], -row["RECOVER"], -row["SPPW"])
+            if row["NETEXP"] <= 0 and row["SP"] > 0: row["RECOVER"], row["SP"] = row["SP"], 0.0
+    if val(row,"RESCHEIND","") == "Y":
+        row["RECOVER"], row["SPPW"] = val(row,"WRECOVER"), val(row,"WSPPW")
+        row["SP"] = sas_sum(row["SPP2"], row["SPPL"], -row["RECOVER"], -row["SPPW"])
+    return row
+
+
+def main() -> None:
+    p=argparse.ArgumentParser(); p.add_argument("--input-dir",type=Path,required=True); p.add_argument("--output-dir",type=Path,required=True)
+    p.add_argument("--iis-file",type=Path,help="Optional explicit IIS SAS7BDAT path")
+    p.add_argument("--iis-pattern",default="iis{mm}.sas7bdat"); p.add_argument("--loan-pattern",default="loan{mm}.sas7bdat")
+    p.add_argument("--wsp2-file",default="wsp2.sas7bdat"); p.add_argument("--previous-pattern",default="sp2{mm}.sas7bdat"); p.add_argument("--branch-map",type=Path); p.add_argument("--no-console-report",action="store_true")
+    a=p.parse_args(); a.output_dir.mkdir(parents=True,exist_ok=True); rd=pd.Timestamp(date.today()-timedelta(days=1)); mm=f"{rd.month:02d}"; prev=f"{(rd.month-2)%12+1:02d}"
+    loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm)); wsp=read_sas(a.input_dir/a.wsp2_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore"); wsp["_WSP"]=True
+    data=loan.merge(wsp,on="ACCTNO",how="left",suffixes=("","_WSP")); data["WRITEOFF"]=np.where(data["_WSP"].fillna(False),"Y","N")
+    iis_path = a.iis_file if a.iis_file else a.input_dir/a.iis_pattern.format(mm=mm)
+    iis=read_table(iis_path)[["ACCTNO","IIS"]].drop_duplicates("ACCTNO"); data=data.merge(iis,on="ACCTNO",how="left",suffixes=("","_IIS")); data["IIS"]=data.get("IIS_IIS",data.get("IIS",0)).fillna(0)
+    existing=data[data.get("EXIST","")=="Y"].apply(provision,axis=1,report_date=rd,existing=True); current=data[data.get("EXIST","")!="Y"].apply(provision,axis=1,report_date=rd,existing=False)
+    out=pd.concat([existing,current],ignore_index=True,sort=False)
+    if PIBB_PROFILE:
+        out=out[((out["COSTCTR"]>=3000)&(out["COSTCTR"]<=3999))|out["COSTCTR"].isin([4043,4048])]
+    else:
+        out=out[((out["COSTCTR"]<3000)|(out["COSTCTR"]>3999))&~out["COSTCTR"].isin([4043,4048])&out["COSTCTR"].notna()]
+    bm=load_branch_map(a.branch_map); out["BRANCH"]=out["NTBRCH"].map(lambda x:branch_label(x,bm)); out["LOANTYP"]=out["LOANTYPE"].map(LNTYP).fillna("OTHERS"); out["RISK"]=out.apply(risk,axis=1); out=out.drop_duplicates(["ACCTNO","NOTENO"])
+    out.to_csv(a.output_dir/f"sp2{mm}.csv",index=False); measures=["CURBAL","UHC","NETBAL","IIS","OSPRIN","MARKETVL","NETEXP","SPP2","SPPL","RECOVER","SPPW","SP","OTHERFEE"]
+    out.groupby(["LOANTYP","RISK","BRANCH"],dropna=False)[measures].sum().reset_index().to_csv(a.output_dir/f"{PROGRAM_NAME.lower()}_summary.csv",index=False)
+    out.to_csv(a.output_dir/f"{PROGRAM_NAME.lower()}_detail.csv",index=False); report=write_original_report(out,rd,a.output_dir); print(f"{PROGRAM_NAME} processed {len(out):,} rows for {rd.date()}")
+    if not a.no_console_report: print(report,end="")
+
+
+if __name__=="__main__": main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#!/usr/bin/env python3
+"""PBB EIFMNP07: complete asset-quality/NPL movement job and reports."""
+from __future__ import annotations
+
+import argparse
+from datetime import date,timedelta
+from pathlib import Path
+import numpy as np
+import pandas as pd
+from eifmnp03 import branch_label,load_branch_map,read_sas,risk,sas_date,sas_sum,val
+
+LNTYP = {
+    128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
+    700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
+    380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
+    720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
+    993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
+    **{i: "HOUSING LOANS" for i in range(200, 300)},
+}
+PIBB_PROFILE = False
+PROGRAM_NAME = "EIFMNP07"
+REPORT_ENTITY = "PUBLIC BANK"
+
+
+REPORT_LABELS = {
+    "ACCTNO": "MNI ACCOUNT NO", "DAYS": "NO OF DAYS PAST DUE",
+    "CURBALP": "BAL AS AT PREV YEAR (WITH UHC)",
+    "CURBAL": "BAL AS AT END OF RPT DATE (WITH UHC)",
+    "NETBALP": "NET BAL AS AT PREV YEAR (A)",
+    "NEWNPL": "NEW NPL DURING CURRENT YEAR (B)",
+    "ACCRINT": "ACCRUED INTEREST (C)", "RECOVER": "RECOVERIES (D)",
+    "PL": "NPL CLASSIFIED AS PERFORMING (E)", "NPLW": "NPL WRITTEN-OFF (F)",
+    "ADJUST": "ADJUSTMENT", "NPL": "NPL AS AT END OF RPT DATE (A+B+C-D-E-F)",
+}
+
+
+def write_original_report(out: pd.DataFrame, report_date: pd.Timestamp, output_dir: Path) -> str:
+    """Render the two PROC TABULATE tables and PROC PRINT detail listing."""
+    measures = ["CURBALP","CURBAL","NETBALP","NEWNPL","ACCRINT","RECOVER","PL","NPLW","ADJUST","NPL"]
+    detail_cols = ["ACCTNO","NAME","DAYS",*measures]
+    title1 = f"{REPORT_ENTITY} - (NPL FROM 3 MONTHS & ABOVE)"
+    title2 = f"STATISTICS ON ASSET QUALITY - MOVEMENTS IN NPL {report_date.strftime('%d %B %Y').upper()}"
+    number_format = lambda value: f"{value:,.2f}"
+    risk_branch = out.groupby(["LOANTYP","RISK","BRANCH"],dropna=False).agg(
+        NO_OF_ACCOUNT=("ACCTNO","size"), **{c:(c,"sum") for c in measures}
+    ).reset_index()
+    branch = out.groupby(["LOANTYP","BRANCH"],dropna=False).agg(
+        NO_OF_ACCOUNT=("ACCTNO","size"), **{c:(c,"sum") for c in measures}
+    ).reset_index()
+    rename = {**REPORT_LABELS, "NO_OF_ACCOUNT":"NO OF ACCOUNT"}
+    lines = [title1, title2, "", "SUMMARY BY RISK AND BRANCH"]
+    lines.append(risk_branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:number_format for c in measures}))
+    lines.extend(["", "SUMMARY BY BRANCH"])
+    lines.append(branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:number_format for c in measures}))
+    lines.extend(["", "DETAILED LISTING"])
+    ordered = out.sort_values(["LOANTYP","BRANCH","RISK","DAYS","ACCTNO"])
+    for (loan_type, branch_name, risk_name), group in ordered.groupby(["LOANTYP","BRANCH","RISK"],dropna=False,sort=False):
+        lines.extend(["", f"LOAN TYPE: {loan_type}    BRANCH: {branch_name}    RISK: {risk_name}"])
+        display = group[[c for c in detail_cols if c in group]].rename(columns=REPORT_LABELS)
+        lines.append(display.to_string(index=False,formatters={REPORT_LABELS[c]:number_format for c in measures if c in group}))
+        totals = group[measures].sum()
+        lines.append("TOTAL: " + " | ".join(f"{REPORT_LABELS[c]}={totals[c]:,.2f}" for c in measures))
+    report = "\n".join(lines) + "\n"
+    # .lst corresponds to the original SASLIST/PROC PRINT listing output.
+    (output_dir/f"{PROGRAM_NAME.lower()}_report.lst").write_text(report,encoding="utf-8")
+    (output_dir/f"{PROGRAM_NAME.lower()}_report.txt").write_text(report,encoding="utf-8")
+    return report
+
+
+def movement(row:pd.Series,rd:pd.Timestamp,existing:bool)->pd.Series:
+    row=row.copy()
+    for c in ["CURBALP","CURBAL","NETBALP","FEEAMT","FEETOT2","FEEYTD","FEEPDYTD","TERMCHG","EARNTERM","NOTETERM","UHCP","WACCRINT","WNEWNPL","WRECOVER","WNPLW","DAYS"]:
+        if c not in row or pd.isna(row[c]): row[c]=0.0
+    if row["EARNTERM"]==0: row["EARNTERM"]=row["NOTETERM"]
+    lt=int(val(row,"LOANTYPE",0)); bor=val(row,"BORSTAT",""); user5=val(row,"USER5",""); written=val(row,"WRITEOFF","N")=="Y"; wdown=val(row,"WDOWNIND","N")
+    if written and wdown!="Y": bor=row["BORSTAT"]="W"
+    row["ADJUST"]=row["FEEAMT"]-row["FEETOT2"] if existing else 0.0
+    row["NEWNPL"]=row["ACCRINT"]=row["RECOVER"]=row["PL"]=row["NPLW"]=row["NPL"]=0.0; uhc=0.0
+    issue=sas_date(row.get("ISSDTE")); bill=sas_date(row.get("BLDATE"))
+    if pd.notna(issue):
+        rem2=max(0,row["EARNTERM"]-((rd.year-issue.year)*12+rd.month-issue.month+1))
+        if rem2>0 and row["EARNTERM"]>0: uhc=rem2*(rem2+1)*row["TERMCHG"]/(row["EARNTERM"]*(row["EARNTERM"]+1))
+    if existing:
+        performing=(row["DAYS"]<90 and bor in {"","A","C","S","T","Y"} and row["CURBAL"]>=0 and user5!="N") or lt in {983,993}
+        if performing:
+            row["PL"]=row["NETBALP"]
+            if row["DAYS"]==0 and row["CURBAL"]==0: row["RECOVER"],row["PL"]=row["NETBALP"],0.0
+        else:
+            row["ACCRINT"]=row["FEEYTD"]; row["OI"]=row["FEEAMT"]
+            if bor=="F": row["CURBALP"]-=row["UHCP"]
+            row["RECOVER"]=0.0 if bor=="W" else row["CURBALP"]-row["CURBAL"]+row["FEEPDYTD"]
+            if row["RECOVER"]<0: row["CURBALP"]-=row["RECOVER"]; row["RECOVER"]=0.0
+            row["NPLW"]=row["NETBALP"] if bor=="W" else 0.0; row["NPL"]=0.0 if bor=="W" else row["CURBAL"]-uhc+row["OI"]
+    else:
+        row["OI"]=row["FEEAMT"]; row["NEWNPL"]=row["CURBAL"]-uhc+row["OI"]; row["NPL"]=row["NEWNPL"]
+    if written or lt in {983,993}:
+        row["ACCRINT"],row["NEWNPL"],row["ADJUST"]=row["WACCRINT"],row["WNEWNPL"],0.0
+        if wdown!="Y": row["RECOVER"],row["PL"],row["NPL"]=row["WRECOVER"],0.0,0.0; row["NPLW"]=sas_sum(row["NETBALP"],row["NEWNPL"],row["ACCRINT"],-row["RECOVER"])
+        else: row["NPLW"]=row["WNPLW"]; row["NPL"]=sas_sum(row["NETBALP"],row["NEWNPL"],row["ACCRINT"],-row["RECOVER"],-row["NPLW"],-row["PL"])
+    row["CHKNPL"]=sas_sum(row["NETBALP"],row["NEWNPL"],row["ACCRINT"],-row["RECOVER"],-row["PL"],-row["NPLW"]); return row
+
+
+def main():
+    p=argparse.ArgumentParser();p.add_argument("--input-dir",type=Path,required=True);p.add_argument("--output-dir",type=Path,required=True);p.add_argument("--loan-pattern",default="loan{mm}.sas7bdat");p.add_argument("--waq-file",default="waq.sas7bdat");p.add_argument("--branch-map",type=Path);p.add_argument("--no-console-report",action="store_true",help="Save the PROC PRINT listing without echoing it to stdout");a=p.parse_args()
+    a.output_dir.mkdir(parents=True,exist_ok=True);rd=pd.Timestamp(date.today()-timedelta(days=1));mm=f"{rd.month:02d}";loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm));waq=read_sas(a.input_dir/a.waq_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore");waq["_WAQ"]=True
+    data=loan.merge(waq,on="ACCTNO",how="left",suffixes=("","_WAQ"));data["WRITEOFF"]=np.where(data["_WAQ"].fillna(False),"Y","N");ex=data[data.get("EXIST","")=="Y"].apply(movement,axis=1,rd=rd,existing=True);cu=data[data.get("EXIST","")!="Y"].apply(movement,axis=1,rd=rd,existing=False);out=pd.concat([ex,cu],ignore_index=True,sort=False)
+    if PIBB_PROFILE: out=out[((out["COSTCTR"]>=3000)&(out["COSTCTR"]<=3999))|out["COSTCTR"].isin([4043,4048])]
+    else: out=out[((out["COSTCTR"]<3000)|(out["COSTCTR"]>3999))&~out["COSTCTR"].isin([4043,4048])&out["COSTCTR"].notna()]
+    bm=load_branch_map(a.branch_map);out["BRANCH"]=out["NTBRCH"].map(lambda x:branch_label(x,bm));out["LOANTYP"]=out["LOANTYPE"].map(LNTYP).fillna("OTHERS");out["RISK"]=out.apply(risk,axis=1);out.to_csv(a.output_dir/"aq.csv",index=False)
+    measures=["CURBALP","CURBAL","NETBALP","NEWNPL","ACCRINT","RECOVER","PL","NPLW","ADJUST","NPL"];out.groupby(["LOANTYP","RISK","BRANCH"],dropna=False)[measures].sum().reset_index().to_csv(a.output_dir/f"{PROGRAM_NAME.lower()}_summary.csv",index=False);out.to_csv(a.output_dir/f"{PROGRAM_NAME.lower()}_detail.csv",index=False);report=write_original_report(out,rd,a.output_dir);print(f"{PROGRAM_NAME} processed {len(out):,} rows for {rd.date()}");
+    if not a.no_console_report: print(report,end="")
+
+
+if __name__=="__main__":main()
+
+
 
 
