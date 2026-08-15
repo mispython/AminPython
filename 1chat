@@ -1,108 +1,354 @@
-1                                                          The SAS System                            17:39 Saturday, August 15, 2026
+source /sas/python/virt_edw/bin/activate
+/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
+[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
+**********************************************************
+* Job:      EIAWOF13                                     *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Saturday, August 15, 2026, 04:30:13 PM       *
+**********************************************************
+Program start : 2026/08/15 16:30:23
 
-1          ;*';*";*/;quit;run;
-2          OPTIONS PAGENO=MIN;
-3          %LET _CLIENTTASKLABEL='Program';
-4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
-5          %LET _CLIENTPROJECTPATH='';
-6          %LET _CLIENTPROJECTPATHHOST='';
-7          %LET _CLIENTPROJECTNAME='';
-8          %LET _SASPROGRAMFILE='';
-9          %LET _SASPROGRAMFILEHOST='';
-10         
-11         ODS _ALL_ CLOSE;
-12         OPTIONS DEV=SVG;
-13         GOPTIONS XPIXELS=0 YPIXELS=0;
-14         %macro HTML5AccessibleGraphSupported;
-15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
-16         %mend;
-17         FILENAME EGHTML TEMP;
-18         ODS HTML5(ID=EGHTML) FILE=EGHTML
-19             OPTIONS(BITMAP_MODE='INLINE')
-20             %HTML5AccessibleGraphSupported
-21             ENCODING='utf-8'
-22             STYLE=HTMLBlue
-23             NOGTITLE
-24             NOGFOOTNOTE
-25             GPATH=&sasworklocation
-26         ;
-NOTE: Writing HTML5(EGHTML) Body file: EGHTML
-27         
-28         data _null_;
-29                 infile "
-30         cd /sas/python/virt_edw;
-31         source bin/activate;
-32         python /stgsrcsys/host/holding/pas/EIAWOF13.py
-33         " pipe;
-34                 input;
-35                 put _infile_;
-36         run;
-
-NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIAWOF13.py" is:
-      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIAWOF13.py"
-
+1       """Controller for PBB EIAWOF13; keeps EIFMNP03/06/07 separate."""
+2       from __future__ import annotations
+3       import argparse
+4       import os
+5       import subprocess
+6       import sys
+7       from datetime import date, timedelta
+8       from pathlib import Path
+9       SCRIPT_DIR = Path(__file__).resolve().parent
+10      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+11      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+12      SCHEDULED_DAY = 15
+13      def run(
+14      def main() -> None:
+15      if __name__ == "__main__":
+16          main()
+17          today = date.today()
+18          if today.day != SCHEDULED_DAY:
+19          parser = argparse.ArgumentParser(
+20              description="Run separate PBB EIFMNP03/06/07 steps"
+21          parser.add_argument(
+22              "--input-dir",
+23              type=Path,
+24              default=DEFAULT_BASE,
+25          parser.add_argument(
+26              "--output-dir",
+27              type=Path,
+28              default=DEFAULT_OUTPUT_DIR,
+29          parser.add_argument(
+30              "--branch-map",
+31              type=Path,
+32          args = parser.parse_args()
+33          args.input_dir = args.input_dir.resolve()
+34          args.output_dir = args.output_dir.resolve()
+35          if not args.input_dir.is_dir():
+36          args.output_dir.mkdir(parents=True, exist_ok=True)
+37          print(f"EIAWOF13: run date         = {today:%Y-%m-%d}")
 EIAWOF13: run date         = 2026-08-15
+38          print(f"EIAWOF13: process date     = {today - timedelta(days=1):%Y-%m-%d}")
 EIAWOF13: process date     = 2026-08-14
-EIAWOF13: input directory  = /stgsrcsys/host/holding/pas
-EIAWOF13: output directory = /stgsrcsys/host/holding/pas/output
+39          print(f"EIAWOF13: input directory  = {args.input_dir}")
+EIAWOF13: input directory  = /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod
+40          print(f"EIAWOF13: output directory = {args.output_dir}")
+EIAWOF13: output directory = /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output
+41          step03 = args.output_dir / "eifmnp03"
+42          step06 = args.output_dir / "eifmnp06"
+43          step07 = args.output_dir / "eifmnp07"
+44              "XMIS_INPUT_DIR": str(args.input_dir),
+45          base_environment = {
+46          if args.branch_map:
+47          run(
+48              "EIFMNP03",
+49              {
+50                  **base_environment,
+51                  "XMIS_OUTPUT_DIR": str(step03),
+52              SCRIPT_DIR / (program + ".py"),
+53              SCRIPT_DIR / (program.lower() + ".py"),
+54          candidates = [
+55          script = next(
+56              (candidate for candidate in candidates if candidate.is_file()),
+57              None,
+58          if script is None:
+59          print(f"EIAWOF13: starting {program}")
 EIAWOF13: starting EIFMNP03
-/stgsrcsys/host/holding/pas/EIFMNP03.py:333: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of call
-ing `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To
- get a de-fragmented frame, use `newframe = frame.copy()`
-  wiis["_WIIS"] = True
-/stgsrcsys/host/holding/pas/EIFMNP03.py:335: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated
- and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_o
-ption('future.no_silent_downcasting', True)`
-  loan["WRITEOFF"] = np.where(loan["_WIIS"].fillna(False), "Y", "N")
-/stgsrcsys/host/holding/pas/EIFMNP03.py:338: FutureWarning: Setting an item of incompatible dtype is deprecated and will raise an er
-ror in a future version of pandas. Value 'N' has dtype incompatible with float64, please explicitly cast to a compatible dtype first
-.
-  loan.loc[loan["LOANTYPE"].isin([983, 993]), "WDOWNIND"] = "N"
-2                                                          The SAS System                            17:39 Saturday, August 15, 2026
+60          child_environment = os.environ.copy()
+61          if environment:
+62              child_environment.update(environment)
+63          result = subprocess.run(
+64              [sys.executable, str(script)],
+65              env=child_environment,
+66              check=False,
+**********************************************************
+* Job:      EIFMNP03                                     *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Saturday, August 15, 2026, 03:53:01 PM       *
+**********************************************************
+Program start : 2026/08/15 16:30:28
 
-/stgsrcsys/host/holding/pas/EIFMNP03.py:344: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of call
-ing `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To
- get a de-fragmented frame, use `newframe = frame.copy()`
+1       """Python conversion of SAS program EIFMNP03.
+2       from __future__ import annotations
+3       import argparse
+4       from datetime import date, timedelta
+5       from pathlib import Path
+6       from typing import Any
+7       import numpy as np
+8       import pandas as pd
+9       try:
+10          from PBBLNFMT import put as pbbln_put
+11      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+12      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output" / "eifmnp03"
+13          128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
+14          700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
+15          380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
+16          993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
+17          720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
+18      LOAN_TYPES = {
+19          **{i: "HOUSING LOANS" for i in range(200, 300)},
+20      ACCRUAL_TYPES = {720, 725}
+21      PIBB_PROFILE = False
+22      NUMERIC_ZERO = [
+23      def read_sas(path: Path) -> pd.DataFrame:
+24      def sas_sum(*values: Any) -> float:
+25      def sas_date(value: Any) -> pd.Timestamp:
+26      def val(row: pd.Series, name: str, default: Any = 0) -> Any:
+27      def branch_label(ntbrch: Any, branch_map: dict[int, str]) -> str:
+28      def remaining_months(date: pd.Timestamp, issue: pd.Timestamp, term: float) -> float:
+29      def initialize_row(row: pd.Series) -> pd.Series:
+30      def rule78_sum(rem1: float, rem2: float, charge: float, term: float) -> float:
+31      def written_off(row: pd.Series) -> pd.Series:
+32      def rescheduled(row: pd.Series) -> pd.Series:
+33      def calculate_existing(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
+34      def calculate_current(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
+35      def apply_nplntb(previous: pd.DataFrame) -> pd.DataFrame:
+36      def risk(row: pd.Series) -> str:
+37      def load_branch_map(path: Path | None) -> dict[int, str]:
+38      def write_reports(df: pd.DataFrame, output: Path) -> None:
+39          "ACCTNO":"MNI ACCOUNT NO", "DAYS":"NO OF DAYS PAST DUE",
+40          "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
+41          "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)",
+42          "IISP":"OPENING BAL FOR FINANCIAL YEAR (D)",
+43          "SUSPEND":"INTEREST SUSPENDED DURING THE PERIOD (E)",
+44          "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (F)",
+45          "RECC":"REVERSAL OF CURRENT YEAR IIS (G)", "IISPW":"WRITTEN OFF (H)",
+46          "IIS":"IIS CLOSING BAL (D+E-F-G-H=I)",
+47          "OIP":"OPENING BAL FOR FINANCIAL YEAR (J)",
+48          "OISUSP":"OI SUSPENDED DURING THE PERIOD (K)",
+49          "OIRECV":"WRITTEN BACK TO PROFIT & LOSS (L)",
+50          "OIRECC":"REVERSAL OF CURRENT YEAR OI (M)", "OIW":"WRITTEN OFF (N)",
+51          "OI":"OI CLOSING BAL (J+K-L-M-N=O)",
+52          "TOTIIS":"TOTAL CLOSING BAL AS AT RPT DATE (I+O)",
+53      IIS_REPORT_LABELS = {
+54      def write_original_listing(df: pd.DataFrame, report_date: pd.Timestamp, output: Path) -> str:
+55      def main() -> None:
+56      if __name__ == "__main__":
+57          main()
+58          p = argparse.ArgumentParser()
+59          p.add_argument("--input-dir", type=Path, default=DEFAULT_BASE)
+60          p.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+61          p.add_argument("--loan-pattern", default="loan{mm}.sas7bdat")
+62          p.add_argument("--wiis-file", default="wiis.sas7bdat")
+63          p.add_argument("--previous-pattern", default="iis{mm}.sas7bdat")
+64          p.add_argument("--ploan-pattern", default="ploan{mm}.sas7bdat")
+65          p.add_argument("--branch-map", type=Path)
+66          p.add_argument("--no-console-report", action="store_true")
+67          args = p.parse_args()
+68          args.output_dir.mkdir(parents=True, exist_ok=True)
+69          report_date = pd.Timestamp(date.today() - timedelta(days=1))
+70          mm, prev = f"{report_date.month:02d}", f"{(report_date.month - 2) % 12 + 1:02d}"
+71          loan = read_sas(args.input_dir / args.loan_pattern.format(mm=mm))
+72          df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+73          df.columns = [str(c).upper() for c in df.columns]
+74          for col in df.select_dtypes(include=["object"]).columns:
+75              df[col] = df[col].map(
+76                  lambda x: x.decode("latin1").rstrip() if isinstance(x, bytes)
+77                  else (x.rstrip() if isinstance(x, str) else x)
+78          return df
+79          wiis = read_sas(args.input_dir / args.wiis_file).drop(columns=["NOTENO", "NTBRCH"], errors="ignore")
+80          wiis["_WIIS"] = True
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py:333: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  wiis["_WIIS"] = True
+81          loan = loan.merge(wiis, on="ACCTNO", how="left", suffixes=("", "_WIIS"))
+82          loan["WRITEOFF"] = np.where(loan["_WIIS"].fillna(False), "Y", "N")
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py:335: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  loan["WRITEOFF"] = np.where(loan["_WIIS"].fillna(False), "Y", "N")
+83          if "LOANTYPE" in loan:
+84              loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEEAMT"] = loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEETOT2"]
+85              loan.loc[loan["LOANTYPE"].isin([983, 993]), "WDOWNIND"] = "N"
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py:338: FutureWarning: Setting an item of incompatible dtype is deprecated and will raise an error in a future version of pandas. Value 'N' has dtype incompatible with float64, please explicitly cast to a compatible dtype first.
+  loan.loc[loan["LOANTYPE"].isin([983, 993]), "WDOWNIND"] = "N"
+86          bmap = load_branch_map(args.branch_map)
+87          if not path: return {}
+88          existing = loan[loan.get("EXIST", "") == "Y"].apply(calculate_existing, axis=1, report_date=report_date)
+89          row = initialize_row(row.copy())
+90          for c in NUMERIC_ZERO:
+91              if c not in row or pd.isna(row[c]):
+92                  row[c] = 0.0
+93          if val(row, "EARNTERM") == 0:
+94          x = row.get(name, default)
+95          return default if pd.isna(x) else x
+96          row["WRITEOFF"] = val(row, "WRITEOFF", "N")
+97          row["WDOWNIND"] = val(row, "WDOWNIND", "N")
+98          row["RESCHEIND"] = val(row, "RESCHEIND", "N")
+99          row["USER5"] = val(row, "USER5", "")
+100         row["BORSTAT"] = val(row, "BORSTAT", "")
+101         return row
+102         for c in ["IIS", "SUSPEND", "UHC", "OI", "OISUSP", "RECOVER", "OIRECV", "OIRECC", "OIW", "RECC"]:
+103             row[c] = 0.0
+104         lt, days = int(val(row, "LOANTYPE", 0)), val(row, "DAYS")
+105         if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y":
+106         nonperforming = days > 89 or row["BORSTAT"] in {"F", "R", "I"} or (row["USER5"] == "N" and lt not in {983, 993})
+107         bl, issue, term, charge = sas_date(row.get("BLDATE")), sas_date(row.get("ISSDTE")), row["EARNTERM"], row["TERMCHG"]
+108         if pd.isna(value):
+109         if isinstance(value, (int, float, np.integer, np.floating)):
+110             return pd.to_datetime(value, unit="D", origin="1960-01-01")
+111         if pd.notna(bl) and charge > 0 and nonperforming:
+112         elif nonperforming:
+113         row["NETBAL"] = row["CURBAL"] - row["UHC"]
+114         if row["NETBAL"] <= row["IISP"] and (nonperforming or row["USER5"] == "N"):
+115         if row["BORSTAT"] == "W":
+116             row["RECOVER"] = row["IISP"] + row["SUSPEND"] - row["IIS"]
+117             if row["RECOVER"] < 0:
+118             if row["RECOVER"] > row["IISP"]:
+119             if lt not in {128, 130}:
+120                 row["OIRECV"] = row["OIP"] - row["OI"]
+121                 if row["OIRECV"] < 0:
+122                 if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
+123                 if row["OIRECV"] > row["OIP"]:
+124         if charge == 0:
+125             netexp = row["CURBAL"] - row["IISP"] - (row["MARKETVL"] if row["BORSTAT"] == "R" else 0)
+126             if (netexp > 0 and days > 89) or row["BORSTAT"] == "R":
+127         if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
+128         row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
+129         a = pd.to_numeric(pd.Series(values), errors="coerce")
+130         return float(a.sum(skipna=True))
+131         if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
+132         if row["OIRECV"] > row["OIP"]:
+133         row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
+134         return rescheduled(written_off(row))
+135         if row["WRITEOFF"] != "Y":
+136             return row
+137         if row["RESCHEIND"] == "Y":
+138         row["TOTIIS"] = sas_sum(row["IIS"], row["OI"])
+139         return row
+140             return pd.NaT
+141                     row["OISUSP"] -= row["OIRECV"]; row["OIRECV"] = 0.0
+142                     row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
+143             rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
+144         if pd.isna(date) or pd.isna(issue):
+145         return term - ((date.year - issue.year) * 12 + date.month - issue.month + 1)
+146             rem2 = max(0, remaining_months(report_date, issue, term))
+147             rems = remaining_months(pd.Timestamp(report_date.year, 1, 1), issue, term)
+148             row["IIS"] = rule78_sum(rem1, rem2, charge, term)
+149         if any(pd.isna(x) for x in (rem1, rem2)) or term <= 0 or rem1 < rem2:
+150         months = np.arange(int(rem1), int(rem2) - 1, -1)
+151         return float((2 * (months + 1) * charge / (term * (term + 1))).sum())
+152             row["SUSPEND"] = rule78_sum(rems, rem2, charge, term)
+153             return 0.0
+154             row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+155             if lt not in {128, 130}:
+156                 row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
+157             if rem2 > 0 and term > 0:
+158                 row["SUSPEND"] -= row["RECOVER"]; row["RECOVER"] = 0.0
+159             row["BORSTAT"] = "W"
+160             row["IISPW"], row["OIW"] = row["IISP"], row["OIP"]
+161         row["SUSPEND"], row["OISUSP"] = val(row, "WSUSPEND"), val(row, "WOISUSP")
+162         if row["WDOWNIND"] != "Y":
+163             row["RECOVER"], row["RECC"] = val(row, "WRECOVER"), val(row, "WRECC")
+164             row["OIRECV"], row["OIRECC"] = val(row, "WOIRECV"), val(row, "WOIRECC")
+165             row["IIS"] = row["OI"] = 0.0
+166             row["IISPW"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"])
+167             row["OIW"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"])
+168         return row
+169             row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+170             row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
+171             row["IIS"] = row["NETBAL"]
+172                 row["IIS"], row["RECOVER"] = row["RECOVER"], 0.0
+173                 row["OI"], row["OIRECV"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"]), 0.0
+174                 row["RECC"] = row["RECOVER"] - row["IISP"]; row["RECOVER"] = row["IISP"]
+175             row["EARNTERM"] = val(row, "NOTETERM")
+176         current = loan[loan.get("EXIST", "") != "Y"].apply(calculate_current, axis=1, report_date=report_date)
+177         row = initialize_row(row.copy())
+178         for c in ["IIS", "UHC", "OI", "RECOVER", "RECC", "OIRECV", "OIRECC", "IISPW", "OIW"]:
+179             row[c] = 0.0
+180         lt = int(val(row, "LOANTYPE", 0))
+181         if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y": row["BORSTAT"] = "W"
+182         issue, bl = sas_date(row.get("ISSDTE")), sas_date(row.get("BLDATE"))
+183         term, charge = row["EARNTERM"], row["TERMCHG"]
+184         condition = (pd.notna(bl) and charge > 0) or (row["USER5"] == "N" and lt not in {983, 993})
+185         rem2 = max(0, remaining_months(report_date, issue, term)) if pd.notna(issue) else 0
+186         if condition:
+187             rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
+188             row["IIS"] = rule78_sum(rem1, rem2, charge, term)
+189         if rem2 > 0 and term > 0: row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
+190         row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+191         if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
+192         row["SUSPEND"], row["OISUSP"] = row["IIS"], row["OI"]
+193         row["NETBAL"] = row["CURBAL"] - row["UHC"]
+194         return rescheduled(written_off(row))
+195             return np.nan
+196         for df in (existing, current):
+197             df["BRANCH"] = df["NTBRCH"].map(lambda x: branch_label(x, bmap))
+198         try:
+199             code = int(ntbrch)
+200         description = branch_map.get(code)
+201         if description is None:
+202             try:
+203                 description = pbbln_put(code, "BRCHCD.", "")
+204         return f"{description} {code:03d}".strip()
+205             df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py:344: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
   df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
-/stgsrcsys/host/holding/pas/EIFMNP03.py:344: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of call
-ing `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To
- get a de-fragmented frame, use `newframe = frame.copy()`
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py:344: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
   df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
+206         if mm == "01":
+207             previous_path = args.input_dir / args.previous_pattern.format(mm=prev)
+208             if previous_path.exists():
+209                 previous = apply_nplntb(read_sas(previous_path))
+210         return previous
+211                 ren = {"DAYS": "PDAYS", "SUSPEND": "PSUSPEND", "OISUSP": "POISUSP", "IISP": "PIISP", "OIP": "POIP", "OI": "POI", "RECC": "PRECC", "OIRECC": "POIRECC", "RECOVER": "PRECOVER", "OIRECV": "POIRECV"}
+212                 previous = previous.rename(columns=ren).drop_duplicates(["ACCTNO", "NOTENO"])
+213                 existing = existing.merge(previous[[c for c in previous if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]], on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV"))
+214                 ploan_path = args.input_dir / args.ploan_pattern.format(mm=mm)
+215                 if ploan_path.exists():
+216                     ploan_cols = ["ACCTNO", "NOTENO", "CURBAL", "DAYS", "BORSTAT", "NTBRCH", "COSTCTR"]
+217                     ploan = read_sas(ploan_path)[ploan_cols].drop_duplicates(["ACCTNO", "NOTENO"])
+218                     eligible = previous.copy()
+219                     piisp = pd.to_numeric(eligible.get("PIISP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
+220                     poip = pd.to_numeric(eligible.get("POIP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
+221                     exist = eligible.get("EXIST", pd.Series("", index=eligible.index)).fillna("")
+222                     eligible = eligible[(piisp == 0) & (poip == 0) & (exist != "Y")]
+223                     eligible = eligible.merge(ploan, on=["ACCTNO", "NOTENO"], how="left", suffixes=("", "_PLOAN"))
+224                 current = current.merge(
+225                     eligible[[c for c in eligible if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]],
+226                     on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV")
+227         combined = pd.concat([existing, current], ignore_index=True, sort=False)
 Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/pas/EIFMNP03.py", line 398, in <module>
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 398, in <module>
     main()
-  File "/stgsrcsys/host/holding/pas/EIFMNP03.py", line 373, in main
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 373, in main
     combined = pd.concat([existing, current], ignore_index=True, sort=False)
   File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/reshape/concat.py", line 395, in concat
     return op.get_result()
   File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/reshape/concat.py", line 680, in get_result
     indexers[ax] = obj_labels.get_indexer(new_labels)
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3892, in get_indexer
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3885, in get_indexer
     raise InvalidIndexError(self._requires_unique_msg)
 pandas.errors.InvalidIndexError: Reindexing only valid with uniquely valued Index objects
-EIAWOF13: EIFMNP03 failed with return code 1
-NOTE: 28 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
-      /stgsrcsys/host/holding/pas/EIAWOF13.py".
-      The minimum record length was 10.
-      The maximum record length was 321.
-NOTE: DATA statement used (Total process time):
-      real time           14:51.55
-      cpu time            0.01 seconds
-      
 
-37         
-38         
-39         %LET _CLIENTTASKLABEL=;
-40         %LET _CLIENTPROCESSFLOWNAME=;
-41         %LET _CLIENTPROJECTPATH=;
-42         %LET _CLIENTPROJECTPATHHOST=;
-43         %LET _CLIENTPROJECTNAME=;
-44         %LET _SASPROGRAMFILE=;
-45         %LET _SASPROGRAMFILEHOST=;
-46         
-47         ;*';*";*/;quit;run;
-48         ODS _ALL_ CLOSE;
-49         
-50         
-51         QUIT; RUN;
-52         
+Total time elapsed : 01:56:36
+Memory used: 2034.26 MB
+Program end : 2026/08/15 18:27:05
+67          if result.returncode:
+68              raise SystemExit(
+69                  f"EIAWOF13: {program} failed "
+70                  f"with return code {result.returncode}"
+EIAWOF13: EIFMNP03 failed with return code 1
+
+Total time elapsed : 01:56:43
+Memory used: 2.02 MB
+Program end : 2026/08/15 18:27:06
+You have mail in /var/spool/mail/sas_edw_dev
