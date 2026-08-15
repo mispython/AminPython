@@ -1,28 +1,83 @@
 source /sas/python/virt_edw/bin/activate
+/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
 [sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
 **********************************************************
-* Job:      EIFMNP03                                     *
+* Job:      EIAWOF13                                     *
 * Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
 *                                                        *
-* Modified: Saturday, August 15, 2026, 03:34:07 PM       *
+* Modified: Saturday, August 15, 2026, 03:43:16 PM       *
 **********************************************************
-Program start : 2026/08/15 15:34:23
+Program start : 2026/08/15 15:49:12
 
-1       """Python conversion of SAS program EIFMNP03.
+1       """Controller for PBB EIAWOF13; keeps EIFMNP03/06/07 separate."""
 2       from __future__ import annotations
 3       import argparse
-4       from datetime import date, timedelta
-5       from pathlib import Path
-6       from typing import Any
-7       import numpy as np
-8       import pandas as pd
-9       from PBBLNFMT import put as pbbln_put
+4       import subprocess
+5       import sys
+6       from datetime import date, timedelta
+7       from pathlib import Path
+8       SCRIPT_DIR = Path(__file__).resolve().parent
+9       DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+10      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+11      def run(program: str, arguments: list[str]) -> None:
+12      def main() -> None:
+13      if __name__ == "__main__":
+14          main()
+15          parser = argparse.ArgumentParser(description="Run separate PBB EIFMNP03/06/07 steps")
+16          parser.add_argument("--input-dir", type=Path, default=DEFAULT_BASE)
+17          parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+18          parser.add_argument("--branch-map", type=Path)
+19          args = parser.parse_args()
+20          args.input_dir = args.input_dir.resolve()
+21          args.output_dir = args.output_dir.resolve()
+22          if not args.input_dir.is_dir():
+23          args.output_dir.mkdir(parents=True, exist_ok=True)
+24          print(f"EIAWOF13: input directory  = {args.input_dir}")
+EIAWOF13: input directory  = /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod
+25          print(f"EIAWOF13: output directory = {args.output_dir}")
+EIAWOF13: output directory = /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output
+26          common = ["--input-dir", str(args.input_dir)]
+27          if args.branch_map:
+28          step03 = args.output_dir / "eifmnp03"
+29          step06 = args.output_dir / "eifmnp06"
+30          step07 = args.output_dir / "eifmnp07"
+31          run("EIFMNP03", common + ["--output-dir", str(step03)])
+32              SCRIPT_DIR / (program + ".py"),
+33              SCRIPT_DIR / (program.lower() + ".py"),
+34          candidates = [
+35          script = next((candidate for candidate in candidates if candidate.is_file()), None)
+36          if script is None:
+37          print(f"EIAWOF13: starting {program}")
+EIAWOF13: starting EIFMNP03
+38          result = subprocess.run([sys.executable, str(script), *arguments], check=False)
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+FileNotFoundError: [Errno 2] No such file or directory: '/sas/python/virt_edw/Logs/EIFMNP03_PYTHON_/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod_2026.08.15_15.49.12.log'
+Exception ignored in: <function TeeOutput.__del__ at 0x7fc915963ee0>
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 24, in <module>
-    from PBBLNFMT import put as pbbln_put
-ImportError: cannot import name 'put' from 'PBBLNFMT' (/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/PBBLNFMT.py)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/sitecustomize.py", line 51, in __del__
+    self.close()
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/sitecustomize.py", line 47, in close
+    if self.log_file:
+AttributeError: 'TeeOutput' object has no attribute 'log_file'
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 398, in <module>
+    main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 331, in main
+    loan = read_sas(args.input_dir / args.loan_pattern.format(mm=mm))
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 55, in read_sas
+    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sasreader.py", line 164, in read_sas
+    reader = SAS7BDATReader(
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 207, in __init__
+    self.handles = get_handle(
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/common.py", line 882, in get_handle
+    handle = open(handle, ioargs.mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/loan08.sas7bdat'
+39          if result.returncode:
+40              raise SystemExit(f"EIAWOF13: {program} failed with return code {result.returncode}")
+EIAWOF13: EIFMNP03 failed with return code 1
 
-Total time elapsed : 00:00:00
-Memory used: 9.06 MB
-Program end : 2026/08/15 15:34:23
+Total time elapsed : 00:00:01
+Memory used: 0.69 MB
+Program end : 2026/08/15 15:49:13
