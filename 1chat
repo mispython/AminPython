@@ -1,14 +1,14 @@
 source /sas/python/virt_edw/bin/activate
-/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
 [sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
+/sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13_PAS.py
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13_PAS.py
 **********************************************************
-* Job:      EIAWOF13                                     *
+* Job:      EIAWOF13_PAS                                 *
 * Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
 *                                                        *
-* Modified: Saturday, August 15, 2026, 03:43:16 PM       *
+* Modified: Saturday, August 15, 2026, 03:19:47 PM       *
 **********************************************************
-Program start : 2026/08/15 15:49:12
+Program start : 2026/08/15 16:24:55
 
 1       """Controller for PBB EIAWOF13; keeps EIFMNP03/06/07 separate."""
 2       from __future__ import annotations
@@ -18,7 +18,7 @@ Program start : 2026/08/15 15:49:12
 6       from datetime import date, timedelta
 7       from pathlib import Path
 8       SCRIPT_DIR = Path(__file__).resolve().parent
-9       DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+9       DEFAULT_BASE = SCRIPT_DIR / "input" / "prod"
 10      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
 11      def run(program: str, arguments: list[str]) -> None:
 12      def main() -> None:
@@ -43,40 +43,68 @@ EIAWOF13: output directory = /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/
 29          step06 = args.output_dir / "eifmnp06"
 30          step07 = args.output_dir / "eifmnp07"
 31          run("EIFMNP03", common + ["--output-dir", str(step03)])
-32              SCRIPT_DIR / (program + ".py"),
-33              SCRIPT_DIR / (program.lower() + ".py"),
-34          candidates = [
-35          script = next((candidate for candidate in candidates if candidate.is_file()), None)
-36          if script is None:
-37          print(f"EIAWOF13: starting {program}")
+32              SCRIPT_DIR / (program.lower() + ".py"),
+33              SCRIPT_DIR / (program + "_PAS.py"),
+34              SCRIPT_DIR / (program.lower() + "_pas.py"),
+35              SCRIPT_DIR / (program + ".py"),
+36          candidates = [
+37          script = next((candidate for candidate in candidates if candidate.is_file()), None)
+38          if script is None:
+39          print(f"EIAWOF13: starting {program}")
 EIAWOF13: starting EIFMNP03
-38          result = subprocess.run([sys.executable, str(script), *arguments], check=False)
+40          result = subprocess.run([sys.executable, str(script), *arguments], check=False)
 Error in sitecustomize; set PYTHONVERBOSE for traceback:
-FileNotFoundError: [Errno 2] No such file or directory: '/sas/python/virt_edw/Logs/EIFMNP03_PYTHON_/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod_2026.08.15_15.49.12.log'
-Exception ignored in: <function TeeOutput.__del__ at 0x7fc915963ee0>
+FileNotFoundError: [Errno 2] No such file or directory: '/sas/python/virt_edw/Logs/EIFMNP03_PAS_PYTHON_/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod_2026.08.15_16.24.56.log'
+Exception ignored in: <function TeeOutput.__del__ at 0x7f0181224ee0>
 Traceback (most recent call last):
   File "/sas/python/virt_edw/lib64/python3.9/site-packages/sitecustomize.py", line 51, in __del__
     self.close()
   File "/sas/python/virt_edw/lib64/python3.9/site-packages/sitecustomize.py", line 47, in close
     if self.log_file:
 AttributeError: 'TeeOutput' object has no attribute 'log_file'
+41          if result.returncode:
+42          print(f"EIAWOF13: {program} completed")
+EIAWOF13: EIFMNP03 completed
+43          month = f"{(date.today() - timedelta(days=1)).month:02d}"
+44          run("EIFMNP06", common + [
+45              "--output-dir", str(step06),
+46              "--iis-file", str(step03 / f"iis{month}.csv"),
+EIAWOF13: starting EIFMNP06
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+FileNotFoundError: [Errno 2] No such file or directory: '/sas/python/virt_edw/Logs/EIFMNP06_PYTHON_/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod_2026.08.15_16.24.56.log'
+Exception ignored in: <function TeeOutput.__del__ at 0x7fa267760f70>
 Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 398, in <module>
-    main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 331, in main
-    loan = read_sas(args.input_dir / args.loan_pattern.format(mm=mm))
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 55, in read_sas
-    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sasreader.py", line 164, in read_sas
-    reader = SAS7BDATReader(
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 207, in __init__
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/sitecustomize.py", line 51, in __del__
+    self.close()
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/sitecustomize.py", line 47, in close
+    if self.log_file:
+AttributeError: 'TeeOutput' object has no attribute 'log_file'
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py:156: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm)); wsp=read_sas(a.input_dir/a.wsp2_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore"); wsp["_WSP"]=True
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py:157: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  data=loan.merge(wsp,on="ACCTNO",how="left",suffixes=("","_WSP")); data["WRITEOFF"]=np.where(data["_WSP"].fillna(False),"Y","N")
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 173, in <module>
+    if __name__=="__main__": main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 159, in main
+    iis=read_table(iis_path)[["ACCTNO","IIS"]].drop_duplicates("ACCTNO"); data=data.merge(iis,on="ACCTNO",how="left",suffixes=("","_IIS")); data["IIS"]=data.get("IIS_IIS",data.get("IIS",0)).fillna(0)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 79, in read_table
+    df = pd.read_csv(path)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/parsers/readers.py", line 620, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/parsers/readers.py", line 1620, in __init__
+    self._engine = self._make_engine(f, self.engine)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/parsers/readers.py", line 1880, in _make_engine
     self.handles = get_handle(
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/common.py", line 882, in get_handle
-    handle = open(handle, ioargs.mode)
-FileNotFoundError: [Errno 2] No such file or directory: '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/loan08.sas7bdat'
-39          if result.returncode:
-40              raise SystemExit(f"EIAWOF13: {program} failed with return code {result.returncode}")
-EIAWOF13: EIFMNP03 failed with return code 1
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/common.py", line 873, in get_handle
+    handle = open(
+FileNotFoundError: [Errno 2] No such file or directory: '/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output/eifmnp03/iis08.csv'
+47              raise SystemExit(f"EIAWOF13: {program} failed with return code {result.returncode}")
+EIAWOF13: EIFMNP06 failed with return code 1
 
-Total time elapsed : 00:00:01
-Memory used: 0.69 MB
+Total time elapsed : 00:00:04
+Memory used: -0.11 MB
+Program end : 2026/08/15 16:25:00
+(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
