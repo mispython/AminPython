@@ -1,60 +1,108 @@
-******************************************************
-* Job:      MIS_EXCT_LN_BILL                         *
-* Location: /sas/pythonITD/mis/job/LOAN              *
-*                                                    *
-* Modified: Thursday, November 20, 2025, 11:04:36 PM *
-******************************************************
-Program start : 2026/08/15 09:02:15
+1                                                          The SAS System                            17:39 Saturday, August 15, 2026
 
-1	import os
-2	import sys
-3	import dask.config
-4	from dask.distributed import Client, LocalCluster
-5	from job.COMMON.MIS_FILE_READER import run_file_reader
-6	from datetime import datetime,timedelta
-7	import dask
-8	sys.dont_write_bytecode = True
-9	if __name__ == "__main__":
-10	    batch_dt =  (datetime.now() - timedelta(days=1))
-11	    batch_dt_str = batch_dt.strftime("%Y%m%d")
-12	    APPL_KEY   = 'ln'
-13	    APPL_NAME  = 'LN'
-14	    BATCH_MODE = 'BILL'
-15	        'input_dir': f"/sasdata/rawdata/{APPL_KEY}",
-16	        'output_dir' : f"/parquet/dwh/LOAN/staging",
-17	        'layout_dir' : f"/sas/pythonITD/mis/job/LOAN/PARQUET_LAYOUT/{BATCH_MODE}",
-18	        'status_file_dir' : f"/sas/pythonITD/mis/job/LOAN/STATUS",
-19	        'batch_date' : batch_dt_str,
-20	        'n_workers' : 10,
-21	        'threads_per_worker' : 2,
-22	        'memory_limit': '64GB',
-23	        'applname': f"{APPL_NAME}",
-24		    'batch_mode': f"{BATCH_MODE}"
-25	    config = {
-26	    dask.config.set({"distributed.worker.timeouts.connect":"180s"})
-27	    dask.config.set({"distributed.worker.timeouts.termination":"120s"})
-28	    cluster  = LocalCluster(
-29	        n_workers=config['n_workers'],
-30	        threads_per_worker=config['threads_per_worker'],
-31	        memory_limit=config['memory_limit']
-/sas/pythonITD/mis/lib64/python3.9/site-packages/distributed/node.py:182: UserWarning: Port 8787 is already in use.
-Perhaps you already have a cluster running?
-Hosting the HTTP server on port 36459 instead
-  warnings.warn(
-32	    client = Client(cluster)
-33	    try:
-34	        run_file_reader(
-35	            input_dir=config['input_dir'],
-36	            output_dir=config['output_dir'],
-37	            layout_dir=config['layout_dir'],
-38	            batch_dt_str=config['batch_date'],
-39	            status_file_dir=config['status_file_dir'],
-40	            applname=config['applname'],
-41	            batch_mode = config['batch_mode']
-===========================/sasdata/rawdata/ln/BILL_MST_20260814=====================================
-First run detected. Creating new status file /sas/pythonITD/mis/job/LOAN/STATUS/BILL_status_20260814.json
-42	        client.close()
-43	        client.shutdown()
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='Program';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='';
+9          %LET _SASPROGRAMFILEHOST='';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         data _null_;
+29                 infile "
+30         cd /sas/python/virt_edw;
+31         source bin/activate;
+32         python /stgsrcsys/host/holding/pas/EIAWOF13.py
+33         " pipe;
+34                 input;
+35                 put _infile_;
+36         run;
 
-Total time elapsed : 00:23:13
-Program end : 2026/08/15 09:25:28
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIAWOF13.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIAWOF13.py"
+
+EIAWOF13: run date         = 2026-08-15
+EIAWOF13: process date     = 2026-08-14
+EIAWOF13: input directory  = /stgsrcsys/host/holding/pas
+EIAWOF13: output directory = /stgsrcsys/host/holding/pas/output
+EIAWOF13: starting EIFMNP03
+/stgsrcsys/host/holding/pas/EIFMNP03.py:333: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of call
+ing `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To
+ get a de-fragmented frame, use `newframe = frame.copy()`
+  wiis["_WIIS"] = True
+/stgsrcsys/host/holding/pas/EIFMNP03.py:335: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated
+ and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_o
+ption('future.no_silent_downcasting', True)`
+  loan["WRITEOFF"] = np.where(loan["_WIIS"].fillna(False), "Y", "N")
+/stgsrcsys/host/holding/pas/EIFMNP03.py:338: FutureWarning: Setting an item of incompatible dtype is deprecated and will raise an er
+ror in a future version of pandas. Value 'N' has dtype incompatible with float64, please explicitly cast to a compatible dtype first
+.
+  loan.loc[loan["LOANTYPE"].isin([983, 993]), "WDOWNIND"] = "N"
+2                                                          The SAS System                            17:39 Saturday, August 15, 2026
+
+/stgsrcsys/host/holding/pas/EIFMNP03.py:344: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of call
+ing `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To
+ get a de-fragmented frame, use `newframe = frame.copy()`
+  df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
+/stgsrcsys/host/holding/pas/EIFMNP03.py:344: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of call
+ing `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To
+ get a de-fragmented frame, use `newframe = frame.copy()`
+  df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/pas/EIFMNP03.py", line 398, in <module>
+    main()
+  File "/stgsrcsys/host/holding/pas/EIFMNP03.py", line 373, in main
+    combined = pd.concat([existing, current], ignore_index=True, sort=False)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/reshape/concat.py", line 395, in concat
+    return op.get_result()
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/reshape/concat.py", line 680, in get_result
+    indexers[ax] = obj_labels.get_indexer(new_labels)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 3892, in get_indexer
+    raise InvalidIndexError(self._requires_unique_msg)
+pandas.errors.InvalidIndexError: Reindexing only valid with uniquely valued Index objects
+EIAWOF13: EIFMNP03 failed with return code 1
+NOTE: 28 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/pas/EIAWOF13.py".
+      The minimum record length was 10.
+      The maximum record length was 321.
+NOTE: DATA statement used (Total process time):
+      real time           14:51.55
+      cpu time            0.01 seconds
+      
+
+37         
+38         
+39         %LET _CLIENTTASKLABEL=;
+40         %LET _CLIENTPROCESSFLOWNAME=;
+41         %LET _CLIENTPROJECTPATH=;
+42         %LET _CLIENTPROJECTPATHHOST=;
+43         %LET _CLIENTPROJECTNAME=;
+44         %LET _SASPROGRAMFILE=;
+45         %LET _SASPROGRAMFILEHOST=;
+46         
+47         ;*';*";*/;quit;run;
+48         ODS _ALL_ CLOSE;
+49         
+50         
+51         QUIT; RUN;
+52         
