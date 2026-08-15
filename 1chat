@@ -1,39 +1,60 @@
-source /sas/python/virt_edw/bin/activate
-[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
-**********************************************************
-* Job:      EIAWOF13                                     *
-* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
-*                                                        *
-* Modified: Saturday, August 15, 2026, 04:14:54 PM       *
-**********************************************************
-Program start : 2026/08/15 16:28:28
+******************************************************
+* Job:      MIS_EXCT_LN_BILL                         *
+* Location: /sas/pythonITD/mis/job/LOAN              *
+*                                                    *
+* Modified: Thursday, November 20, 2025, 11:04:36 PM *
+******************************************************
+Program start : 2026/08/15 09:02:15
 
-1       """Controller for PBB EIAWOF13; keeps EIFMNP03/06/07 separate."""
-2       from __future__ import annotations
-3       import argparse
-4       import os
-5       import subprocess
-6       import sys
-7       from datetime import date, timedelta
-8       from pathlib import Path
-9       SCRIPT_DIR = Path(__file__).resolve().parent
-10      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
-11      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
-12      SCHEDULED_DAY = 27
-13      def run(
-14      def main() -> None:
-15      if __name__ == "__main__":
-16          main()
-17          today = date.today()
-18          if today.day != SCHEDULED_DAY:
-19              print(
-20                  f"EIAWOF13 skipped: job only runs on day {SCHEDULED_DAY} "
-21                  f"of each month. Today is {today:%Y-%m-%d}."
-EIAWOF13 skipped: job only runs on day 27 of each month. Today is 2026-08-15.
-22              return
+1	import os
+2	import sys
+3	import dask.config
+4	from dask.distributed import Client, LocalCluster
+5	from job.COMMON.MIS_FILE_READER import run_file_reader
+6	from datetime import datetime,timedelta
+7	import dask
+8	sys.dont_write_bytecode = True
+9	if __name__ == "__main__":
+10	    batch_dt =  (datetime.now() - timedelta(days=1))
+11	    batch_dt_str = batch_dt.strftime("%Y%m%d")
+12	    APPL_KEY   = 'ln'
+13	    APPL_NAME  = 'LN'
+14	    BATCH_MODE = 'BILL'
+15	        'input_dir': f"/sasdata/rawdata/{APPL_KEY}",
+16	        'output_dir' : f"/parquet/dwh/LOAN/staging",
+17	        'layout_dir' : f"/sas/pythonITD/mis/job/LOAN/PARQUET_LAYOUT/{BATCH_MODE}",
+18	        'status_file_dir' : f"/sas/pythonITD/mis/job/LOAN/STATUS",
+19	        'batch_date' : batch_dt_str,
+20	        'n_workers' : 10,
+21	        'threads_per_worker' : 2,
+22	        'memory_limit': '64GB',
+23	        'applname': f"{APPL_NAME}",
+24		    'batch_mode': f"{BATCH_MODE}"
+25	    config = {
+26	    dask.config.set({"distributed.worker.timeouts.connect":"180s"})
+27	    dask.config.set({"distributed.worker.timeouts.termination":"120s"})
+28	    cluster  = LocalCluster(
+29	        n_workers=config['n_workers'],
+30	        threads_per_worker=config['threads_per_worker'],
+31	        memory_limit=config['memory_limit']
+/sas/pythonITD/mis/lib64/python3.9/site-packages/distributed/node.py:182: UserWarning: Port 8787 is already in use.
+Perhaps you already have a cluster running?
+Hosting the HTTP server on port 36459 instead
+  warnings.warn(
+32	    client = Client(cluster)
+33	    try:
+34	        run_file_reader(
+35	            input_dir=config['input_dir'],
+36	            output_dir=config['output_dir'],
+37	            layout_dir=config['layout_dir'],
+38	            batch_dt_str=config['batch_date'],
+39	            status_file_dir=config['status_file_dir'],
+40	            applname=config['applname'],
+41	            batch_mode = config['batch_mode']
+===========================/sasdata/rawdata/ln/BILL_MST_20260814=====================================
+First run detected. Creating new status file /sas/pythonITD/mis/job/LOAN/STATUS/BILL_status_20260814.json
+42	        client.close()
+43	        client.shutdown()
 
-Total time elapsed : 00:00:00
-Memory used: 0.49 MB
-Program end : 2026/08/15 16:28:28
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
+Total time elapsed : 00:23:13
+Program end : 2026/08/15 09:25:28
