@@ -1,240 +1,408 @@
- 
-E:\ftp\INGSAS>set mm=08 
-E:\ftp\INGSAS>set dd=05 
-E:\ftp\INGSAS>set yy=26 
-E:\ftp\INGSAS>set TODAY=050826 
-E:\ftp\INGSAS>echo 050826 
-050826
-E:\ftp\INGSAS>if /I 05 LEQ 31 set day=22 
-E:\ftp\INGSAS>if /I 05 LEQ 22 set day=15 
-E:\ftp\INGSAS>if /I 05 LEQ 15 set day=08 
-E:\ftp\INGSAS>if /I 05 LEQ 08 set day=01 
-E:\ftp\INGSAS>set YSTRDAY=010826 
-E:\ftp\INGSAS>echo 010826 
-010826
-E:\ftp\INGSAS>forfiles /P "E:\ftp\ingsas\backup" /M AIAPBB* /C "cmd /c del @path" /D -45 
-ERROR: No files found with the specified search criteria.
-E:\ftp\INGSAS>forfiles /P "E:\ftp\INGSAS\errlog" /M *.html /C "cmd /c del @path" /D -45 
-ERROR: No files found with the specified search criteria.
-E:\ftp\INGSAS>ECHO PULL INGSAS 
-PULL INGSAS
-E:\ftp\INGSAS>e:
-E:\ftp\INGSAS>cd\
-E:\>cd E:\ftp\INGSAS 
-E:\ftp\INGSAS>move /y AIAPBB*.CustTrans backup 
-A duplicate file name exists, or the file
-cannot be found.
-E:\ftp\INGSAS>move /y AIAPBB*.CloseTrans backup 
-A duplicate file name exists, or the file
-cannot be found.
-E:\ftp\INGSAS>move /y AIAPBB*.ProdTrans backup 
-A duplicate file name exists, or the file
-cannot be found.
-E:\ftp\INGSAS>move /y AIAPBB*.ClosedTrans backup 
-A duplicate file name exists, or the file
-cannot be found.
-E:\ftp\INGSAS>move /y AIAPBB*.RiderTrans backup 
-A duplicate file name exists, or the file
-cannot be found.
-E:\ftp\INGSAS>move /y AIAPBB*.DependTrans backup 
-A duplicate file name exists, or the file
-cannot be found.
-E:\ftp\INGSAS>del *.pgp 
-E:\ftp\INGSAS\IPTEBPBB01082601.CustTrans.pgp
-The process cannot access the file because it is being used by another process.
-E:\ftp\INGSAS>curl --max-time 1800 -o AIAPBB01082601.CustTrans.pgp -u PBB_TM_Operator:INGpbtm01 -k https://ftp.aia.com.my/webdav/PBB_TM_Operator/AIAPBB01082601.CustTrans.pgp 
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-  0 11.4M    0 16140    0     0  12424      0  0:16:06  0:00:01  0:16:05 12444
-  0 11.4M    0  111k    0     0  52708      0  0:03:47  0:00:02  0:03:45 52763
-  2 11.4M    2  240k    0     0  73933      0  0:02:42  0:00:03  0:02:39 73979
-  3 11.4M    3  352k    0     0  86590      0  0:02:18  0:00:04  0:02:14 86625
-  4 11.4M    4  512k    0     0    99k      0  0:01:58  0:00:05  0:01:53  102k
-  5 11.4M    5  688k    0     0   111k      0  0:01:45  0:00:06  0:01:39  137k
-  6 11.4M    6  704k    0     0    98k      0  0:01:59  0:00:07  0:01:52  118k
-  6 11.4M    6  800k    0     0  98821      0  0:02:01  0:00:08  0:01:53  112k
-  7 11.4M    7  912k    0     0    99k      0  0:01:57  0:00:09  0:01:48  111k
-  8 11.4M    8  960k    0     0  95588      0  0:02:05  0:00:10  0:01:55 89670
-  8 11.4M    8 1008k    0     0  92442      0  0:02:09  0:00:11  0:01:58 65641
-  9 11.4M    9 1136k    0     0  95366      0  0:02:05  0:00:12  0:01:53 88103
- 10 11.4M   10 1248k    0     0  96899      0  0:02:03  0:00:13  0:01:50 93641
- 11 11.4M   11 1296k    0     0  93679      0  0:02:08  0:00:14  0:01:54 78737
- 11 11.4M   11 1360k    0     0  91831      0  0:02:10  0:00:15  0:01:55 83900
- 12 11.4M   12 1408k    0     0  88917      0  0:02:15  0:00:16  0:01:59 81124
- 12 11.4M   12 1472k    0     0  87486      0  0:02:17  0:00:17  0:02:00 68388
- 12 11.4M   12 1520k    0     0  85691      0  0:02:20  0:00:18  0:02:02 55974
- 13 11.4M   13 1616k    0     0  85825      0  0:02:19  0:00:19  0:02:00 64075
- 14 11.4M   14 1696k    0     0  86101      0  0:02:19  0:00:20  0:01:59 68744
- 15 11.4M   15 1776k    0     0  85757      0  0:02:19  0:00:21  0:01:58 75487
- 15 11.4M   15 1808k    0     0  80875      0  0:02:28  0:00:22  0:02:06 60767
- 15 11.4M   15 1808k    0     0  79808      0  0:02:30  0:00:23  0:02:07 58584
- 15 11.4M   15 1840k    0     0  76961      0  0:02:35  0:00:24  0:02:11 44102
- 15 11.4M   15 1856k    0     0  75517      0  0:02:38  0:00:25  0:02:13 32787
- 16 11.4M   16 1888k    0     0  73883      0  0:02:42  0:00:26  0:02:16 23117
- 17 11.4M   17 2032k    0     0  76541      0  0:02:36  0:00:27  0:02:09 53430
- 18 11.4M   18 2144k    0     0  77858      0  0:02:34  0:00:28  0:02:06 68812
- 18 11.4M   18 2176k    0     0  76318      0  0:02:37  0:00:29  0:02:08 72972
- 18 11.4M   18 2224k    0     0  75359      0  0:02:39  0:00:30  0:02:09 74590
- 19 11.4M   19 2288k    0     0  75130      0  0:02:39  0:00:31  0:02:08 81642
- 20 11.4M   20 2352k    0     0  74858      0  0:02:40  0:00:32  0:02:08 65680
- 20 11.4M   20 2416k    0     0  74340      0  0:02:41  0:00:33  0:02:08 54828
- 21 11.4M   21 2480k    0     0  74063      0  0:02:42  0:00:34  0:02:08 61134
- 21 11.4M   21 2512k    0     0  73044      0  0:02:44  0:00:35  0:02:09 59029
- 22 11.4M   22 2592k    0     0  73335      0  0:02:43  0:00:36  0:02:07 62159
- 22 11.4M   22 2688k    0     0  74065      0  0:02:42  0:00:37  0:02:05 68950
- 23 11.4M   23 2800k    0     0  75071      0  0:02:39  0:00:38  0:02:01 80003
- 24 11.4M   24 2896k    0     0  75702      0  0:02:38  0:00:39  0:01:59 87202
- 25 11.4M   25 2944k    0     0  75030      0  0:02:40  0:00:40  0:02:00 89115
- 26 11.4M   26 3088k    0     0  76821      0  0:02:36  0:00:41  0:01:55   99k
- 27 11.4M   27 3264k    0     0  79245      0  0:02:31  0:00:42  0:01:49  114k
- 28 11.4M   28 3296k    0     0  77746      0  0:02:34  0:00:43  0:01:51 97336
- 28 11.4M   28 3360k    0     0  77890      0  0:02:34  0:00:44  0:01:50 95027
- 28 11.4M   28 3376k    0     0  76150      0  0:02:37  0:00:45  0:01:52 84777
- 29 11.4M   29 3424k    0     0  75868      0  0:02:38  0:00:46  0:01:52 68117
- 30 11.4M   30 3568k    0     0  77278      0  0:02:35  0:00:47  0:01:48 61026
- 31 11.4M   31 3680k    0     0  78223      0  0:02:33  0:00:48  0:01:45 82556
- 32 11.4M   32 3760k    0     0  78276      0  0:02:33  0:00:49  0:01:44 81691
- 33 11.4M   33 3872k    0     0  79037      0  0:02:31  0:00:50  0:01:41  104k
- 34 11.4M   34 4048k    0     0  80987      0  0:02:28  0:00:51  0:01:37  125k
- 34 11.4M   34 4064k    0     0  79512      0  0:02:30  0:00:52  0:01:38   98k
- 34 11.4M   34 4096k    0     0  78753      0  0:02:32  0:00:53  0:01:39 83772
- 35 11.4M   35 4112k    0     0  77674      0  0:02:34  0:00:54  0:01:40 71788
- 35 11.4M   35 4112k    0     0  76145      0  0:02:37  0:00:55  0:01:42 47887
- 35 11.4M   35 4128k    0     0  75089      0  0:02:39  0:00:56  0:01:43 16028
- 35 11.4M   35 4208k    0     0  75365      0  0:02:39  0:00:57  0:01:42 30485
- 36 11.4M   36 4288k    0     0  75487      0  0:02:39  0:00:58  0:01:41 40050
- 38 11.4M   38 4464k    0     0  77256      0  0:02:35  0:00:59  0:01:36 72685
- 38 11.4M   38 4560k    0     0  77601      0  0:02:34  0:01:00  0:01:34 94122
- 39 11.4M   39 4640k    0     0  77671      0  0:02:34  0:01:01  0:01:33  104k
- 39 11.4M   39 4688k    0     0  77217      0  0:02:35  0:01:02  0:01:33 98402
- 40 11.4M   40 4768k    0     0  77273      0  0:02:35  0:01:03  0:01:32 97990
- 41 11.4M   41 4848k    0     0  77249      0  0:02:35  0:01:04  0:01:31 77161
- 42 11.4M   42 4928k    0     0  77442      0  0:02:35  0:01:05  0:01:30 75517
- 42 11.4M   42 5008k    0     0  77395      0  0:02:35  0:01:06  0:01:29 74092
- 43 11.4M   43 5056k    0     0  77048      0  0:02:35  0:01:07  0:01:28 74976
- 43 11.4M   43 5104k    0     0  76667      0  0:02:36  0:01:08  0:01:28 68978
- 43 11.4M   43 5152k    0     0  76259      0  0:02:37  0:01:09  0:01:28 63310
- 44 11.4M   44 5232k    0     0  76335      0  0:02:37  0:01:10  0:01:27 61974
- 44 11.4M   44 5264k    0     0  75670      0  0:02:38  0:01:11  0:01:27 52692
- 46 11.4M   46 5440k    0     0  77186      0  0:02:35  0:01:12  0:01:23 79054
- 47 11.4M   47 5568k    0     0  77879      0  0:02:34  0:01:13  0:01:21 94291
- 48 11.4M   48 5728k    0     0  79027      0  0:02:31  0:01:14  0:01:17  114k
- 49 11.4M   49 5808k    0     0  79044      0  0:02:31  0:01:15  0:01:16  113k
- 50 11.4M   50 5904k    0     0  79375      0  0:02:31  0:01:16  0:01:15  129k
- 51 11.4M   51 6064k    0     0  80450      0  0:02:29  0:01:17  0:01:12  124k
- 51 11.4M   51 6096k    0     0  79836      0  0:02:30  0:01:18  0:01:12  106k
- 52 11.4M   52 6208k    0     0  80242      0  0:02:29  0:01:19  0:01:10 98284
- 54 11.4M   54 6336k    0     0  80932      0  0:02:28  0:01:20  0:01:08  107k
- 55 11.4M   55 6496k    0     0  81946      0  0:02:26  0:01:21  0:01:05  118k
- 56 11.4M   56 6624k    0     0  82435      0  0:02:25  0:01:22  0:01:03  109k
- 57 11.4M   57 6752k    0     0  83126      0  0:02:24  0:01:23  0:01:01  131k
- 58 11.4M   58 6880k    0     0  83709      0  0:02:23  0:01:24  0:00:59  136k
- 59 11.4M   59 6992k    0     0  84072      0  0:02:22  0:01:25  0:00:57  131k
- 60 11.4M   60 7040k    0     0  83662      0  0:02:23  0:01:26  0:00:57  108k
- 61 11.4M   61 7216k    0     0  84762      0  0:02:21  0:01:27  0:00:54  120k
- 62 11.4M   62 7328k    0     0  85005      0  0:02:21  0:01:28  0:00:53  112k
- 63 11.4M   63 7392k    0     0  84883      0  0:02:21  0:01:29  0:00:52  102k
- 63 11.4M   63 7456k    0     0  84276      0  0:02:22  0:01:30  0:00:52 87469
- 64 11.4M   64 7504k    0     0  84281      0  0:02:22  0:01:31  0:00:51 94932
- 64 11.4M   64 7568k    0     0  83988      0  0:02:22  0:01:32  0:00:50 70759
- 64 11.4M   64 7584k    0     0  83210      0  0:02:24  0:01:33  0:00:51 51868
- 65 11.4M   65 7632k    0     0  82996      0  0:02:24  0:01:34  0:00:50 49260
- 65 11.4M   65 7648k    0     0  82248      0  0:02:25  0:01:35  0:00:50 42519
- 65 11.4M   65 7712k    0     0  82059      0  0:02:26  0:01:36  0:00:50 42068
- 66 11.4M   66 7760k    0     0  81593      0  0:02:27  0:01:37  0:00:50 38415
- 66 11.4M   66 7792k    0     0  81261      0  0:02:27  0:01:38  0:00:49 43825
- 66 11.4M   66 7824k    0     0  80084      0  0:02:29  0:01:40  0:00:49 33448
- 66 11.4M   66 7840k    0     0  80138      0  0:02:29  0:01:40  0:00:49 39630
- 67 11.4M   67 7872k    0     0  79673      0  0:02:30  0:01:41  0:00:49 33172
- 67 11.4M   67 7920k    0     0  79350      0  0:02:31  0:01:42  0:00:49 34005
- 67 11.4M   67 7952k    0     0  78910      0  0:02:32  0:01:43  0:00:49 32768
- 67 11.4M   67 7968k    0     0  78191      0  0:02:33  0:01:44  0:00:49 34228
- 68 11.4M   68 8016k    0     0  78003      0  0:02:33  0:01:45  0:00:48 35673
- 69 11.4M   69 8096k    0     0  78066      0  0:02:33  0:01:46  0:00:47 45692
- 69 11.4M   69 8192k    0     0  78231      0  0:02:33  0:01:47  0:00:46 55461
- 70 11.4M   70 8256k    0     0  78036      0  0:02:33  0:01:48  0:00:45 60504
- 70 11.4M   70 8320k    0     0  78045      0  0:02:33  0:01:49  0:00:44 74859
- 71 11.4M   71 8384k    0     0  77931      0  0:02:34  0:01:50  0:00:44 76374
- 72 11.4M   72 8448k    0     0  77712      0  0:02:34  0:01:51  0:00:43 70372
- 72 11.4M   72 8528k    0     0  77747      0  0:02:34  0:01:52  0:00:42 67582
- 73 16.9M   73 12.4M    0     0  90200      0  0:03:17  0:02:25  0:00:52  205k
- 74 16.9M   74 12.6M    0     0  90915      0  0:03:15  0:02:26  0:00:49  214k
- 75 16.9M   75 12.8M    0     0  91871      0  0:03:13  0:02:27  0:00:46  214k
- 77 16.9M   77 13.0M    0     0  92579      0  0:03:12  0:02:28  0:00:44  213k
- 77 16.9M   77 13.2M    0     0  93046      0  0:03:11  0:02:29  0:00:42  200k
- 78 16.9M   78 13.3M    0     0  93082      0  0:03:11  0:02:30  0:00:41  172k
- 79 16.9M   79 13.4M    0     0  93235      0  0:03:11  0:02:31  0:00:40  157k
- 80 16.9M   80 13.6M    0     0  94011      0  0:03:09  0:02:32  0:00:37  153k
- 81 16.9M   81 13.8M    0     0  94788      0  0:03:07  0:02:33  0:00:34  156k
- 82 16.9M   82 14.0M    0     0  95461      0  0:03:06  0:02:34  0:00:32  163k
- 83 16.9M   83 14.2M    0     0  96181      0  0:03:05  0:02:35  0:00:30  184k
- 84 16.9M   84 14.3M    0     0  96439      0  0:03:04  0:02:36  0:00:28  188k
- 85 16.9M   85 14.5M    0     0  96940      0  0:03:03  0:02:37  0:00:26  181k
- 86 16.9M   86 14.6M    0     0  97399      0  0:03:02  0:02:38  0:00:24  173k
- 87 16.9M   87 14.9M    0     0  98227      0  0:03:01  0:02:39  0:00:22  179k
- 88 16.9M   88 15.1M    0     0  98935      0  0:03:00  0:02:40  0:00:20  180k
- 90 16.9M   90 15.3M    0     0  99748      0  0:02:58  0:02:41  0:00:17  198k
- 91 16.9M   91 15.5M    0     0    98k      0  0:02:57  0:02:42  0:00:15  207k
- 92 16.9M   92 15.6M    0     0    98k      0  0:02:56  0:02:43  0:00:13  204k
- 93 16.9M   93 15.9M    0     0    99k      0  0:02:55  0:02:44  0:00:11  204k
- 94 16.9M   94 16.0M    0     0    99k      0  0:02:54  0:02:45  0:00:09  187k
- 94 16.9M   94 16.1M    0     0    99k      0  0:02:55  0:02:46  0:00:09  158k
- 95 16.9M   95 16.1M    0     0    98k      0  0:02:55  0:02:47  0:00:08  126k
- 95 16.9M   95 16.2M    0     0    99k      0  0:02:55  0:02:48  0:00:07  124k
- 96 16.9M   96 16.3M    0     0    99k      0  0:02:55  0:02:49  0:00:06 94310
- 96 16.9M   96 16.4M    0     0    98k      0  0:02:56  0:02:50  0:00:06 79485
- 97 16.9M   97 16.5M    0     0    98k      0  0:02:56  0:02:51  0:00:05 82166
- 97 16.9M   97 16.5M    0     0    98k      0  0:02:56  0:02:52  0:00:04 85418
- 97 16.9M   97 16.6M    0     0    98k      0  0:02:57  0:02:53  0:00:04 65379
- 97 16.9M   97 16.6M    0     0  99983      0  0:02:58  0:02:54  0:00:04 52157
- 97 16.9M   97 16.6M    0     0  99521      0  0:02:58  0:02:55  0:00:03 45565
- 97 16.9M   97 16.6M    0     0  98653      0  0:03:00  0:02:56  0:00:04 23663
- 97 16.9M   97 16.6M    0     0  98157      0  0:03:01  0:02:57  0:00:04 12062
- 97 16.9M   97 16.6M    0     0  97744      0  0:03:02  0:02:58  0:00:04  6103
- 98 16.9M   98 16.6M    0     0  97494      0  0:03:02  0:02:59  0:00:03  9923
- 98 16.9M   98 16.7M    0     0  97189      0  0:03:03  0:03:00  0:00:03 16234
- 98 16.9M   98 16.7M    0     0  96430      0  0:03:04  0:03:01  0:00:03 19305
- 98 16.9M   98 16.7M    0     0  96439      0  0:03:04  0:03:02  0:00:02 28966
- 98 16.9M   98 16.7M    0     0  96162      0  0:03:05  0:03:03  0:00:02 35310
- 99 16.9M   99 16.8M    0     0  96170      0  0:03:05  0:03:04  0:00:01 48956
-100 16.9M  100 16.9M    0     0  96371      0  0:03:04  0:03:04 --:--:-- 64205
-E:\ftp\INGSAS>curl --max-time 1800 -o AIAPBB01082601.DependTrans.pgp -u PBB_TM_Operator:INGpbtm01 -k https://ftp.aia.com.my/webdav/PBB_TM_Operator/AIAPBB01082601.DependTrans.pgp 
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
- 80  199k   80  160k    0     0   119k      0  0:00:01  0:00:01 --:--:--  119k
-100  199k  100  199k    0     0   132k      0  0:00:01  0:00:01 --:--:--  132k
-E:\ftp\INGSAS>curl --max-time 1800 -l -u PBB_TM_Operator:INGpbtm01 -k https://ftp.aia.com.my/webdav/PBB_TM_Operator/  1>>errlog\log_010826.html 
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
- 27  649k   27  175k    0     0   245k      0  0:00:02 --:--:--  0:00:02  246k
- 51  649k   51  335k    0     0   195k      0  0:00:03  0:00:01  0:00:02  195k
- 76  649k   76  495k    0     0   181k      0  0:00:03  0:00:02  0:00:01  181k
- 91  649k   91  591k    0     0   158k      0  0:00:04  0:00:03  0:00:01  159k
-100  649k  100  649k    0     0   159k      0  0:00:04  0:00:04 --:--:--  159k
-E:\ftp\INGSAS>c:
-C:\>cd\
-C:\>cd c:\gnupg 
-c:\gnupg>gpg -d --batch -o "E:/ftp/INGSAS/AIAPBB01082601.CustTrans" "E:/ftp/INGSAS/AIAPBB01082601.CustTrans.pgp" 
-gpg: encrypted with 1024-bit ELG-E key, ID DCFC9525, created 2008-05-23
-      "PublicBank ING CRSU <michaelcheong@publicbank.com.my>"
-c:\gnupg>if 0 NEQ 0 exit /b 0  
-c:\gnupg>gpg -d --batch -o "E:/ftp/INGSAS/AIAPBB01082601.CloseTrans" "E:/ftp/INGSAS/AIAPBB01082601.CloseTrans.pgp" 
-gpg: encrypted with 1024-bit ELG-E key, ID DCFC9525, created 2008-05-23
-      "PublicBank ING CRSU <michaelcheong@publicbank.com.my>"
-c:\gnupg>if 0 NEQ 0 exit /b 0  
-c:\gnupg>gpg -d --batch -o "E:/ftp/INGSAS/AIAPBB01082601.ProdTrans" "E:/ftp/INGSAS/AIAPBB01082601.ProdTrans.pgp" 
-gpg: encrypted with 1024-bit ELG-E key, ID DCFC9525, created 2008-05-23
-      "PublicBank ING CRSU <michaelcheong@publicbank.com.my>"
-gpg: block_filter 025C00B8: read error (size=6853,a->size=6853)
-gpg: block_filter 025C02C0: read error (size=11189,a->size=7093)
-gpg: block_filter 025C0130: read error (size=10424,a->size=6328)
-gpg: WARNING: encrypted message has been manipulated!
-gpg: block_filter: pending bytes!
-gpg: block_filter: pending bytes!
-gpg: block_filter: pending bytes!
-c:\gnupg>if 2 NEQ 0 exit /b 2  
+#!/usr/bin/env python3
+"""Python conversion of SAS program EIFMNP03.
+
+Inputs are SAS7BDAT files.  Column names are normalized to upper case.  The
+program preserves the original stages: report date, LOAN+WIIS merge, existing
+and current NPL calculations, previous-month movement processing, combined
+IIS outputs, and summary/detail reports.
+
+PBBLNFMT and PBBELF are provided as Python modules. The supplied NPLNTB include
+contains only commented-out mappings, so apply_nplntb() intentionally performs
+no transformation, matching the executable SAS behavior.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+try:
+    # Production Linux deployment uses the uppercase mainframe program name.
+    from PBBLNFMT import put as pbbln_put
+except (ModuleNotFoundError, ImportError):
+    from pbblnfmt import put as pbbln_put
+
+
+DEFAULT_BASE = Path(os.environ.get("XMIS_INPUT_DIR", "Data_Warehouse/MIS/XMIS/input/prod"))
+DEFAULT_OUTPUT_DIR = Path(os.environ.get("XMIS_OUTPUT_DIR", str(DEFAULT_BASE / "output" / "eifmnp03")))
+
+
+LOAN_TYPES = {
+    128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
+    700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
+    380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
+    993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
+    720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
+    **{i: "HOUSING LOANS" for i in range(200, 300)},
+}
+ACCRUAL_TYPES = {720, 725}
+PIBB_PROFILE = False
+
+NUMERIC_ZERO = [
+    "IISP", "OIP", "IISPW", "CURBAL", "TERMCHG", "EARNTERM", "NOTETERM",
+    "FEETOT2", "FEEAMTA", "FEEAMT5", "FEEAMT", "FEETOT2", "ACCRUAL",
+    "WSUSPEND", "WOISUSP", "WRECOVER", "WRECC", "WOIRECV", "WOIRECC",
+    "WIISPW", "WOIW", "MARKETVL", "DAYS",
+]
+
+
+def read_sas(path: Path) -> pd.DataFrame:
+    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    df.columns = [str(c).upper() for c in df.columns]
+    for col in df.select_dtypes(include=["object"]).columns:
+        df[col] = df[col].map(
+            lambda x: x.decode("latin1").rstrip() if isinstance(x, bytes)
+            else (x.rstrip() if isinstance(x, str) else x)
+        )
+    return df
+
+
+def sas_sum(*values: Any) -> float:
+    a = pd.to_numeric(pd.Series(values), errors="coerce")
+    return float(a.sum(skipna=True))
+
+
+def sas_date(value: Any) -> pd.Timestamp:
+    """Convert a SAS date (days since 1960-01-01) or date-like value."""
+    if pd.isna(value):
+        return pd.NaT
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return pd.to_datetime(value, unit="D", origin="1960-01-01")
+    return pd.to_datetime(value)
+
+
+def val(row: pd.Series, name: str, default: Any = 0) -> Any:
+    x = row.get(name, default)
+    return default if pd.isna(x) else x
+
+
+def branch_label(ntbrch: Any, branch_map: dict[int, str]) -> str:
+    try:
+        code = int(ntbrch)
+    except (TypeError, ValueError):
+        return ""
+    description = branch_map.get(code)
+    if description is None:
+        try:
+            description = pbbln_put(code, "BRCHCD.", "")
+        except KeyError:
+            description = ""
+    return f"{description} {code:03d}".strip()
+
+
+def remaining_months(date: pd.Timestamp, issue: pd.Timestamp, term: float) -> float:
+    if pd.isna(date) or pd.isna(issue):
+        return np.nan
+    return term - ((date.year - issue.year) * 12 + date.month - issue.month + 1)
+
+
+def initialize_row(row: pd.Series) -> pd.Series:
+    for c in NUMERIC_ZERO:
+        if c not in row or pd.isna(row[c]):
+            row[c] = 0.0
+    if val(row, "EARNTERM") == 0:
+        row["EARNTERM"] = val(row, "NOTETERM")
+    row["WRITEOFF"] = val(row, "WRITEOFF", "N")
+    row["WDOWNIND"] = val(row, "WDOWNIND", "N")
+    row["RESCHEIND"] = val(row, "RESCHEIND", "N")
+    row["USER5"] = val(row, "USER5", "")
+    row["BORSTAT"] = val(row, "BORSTAT", "")
+    return row
+
+
+def rule78_sum(rem1: float, rem2: float, charge: float, term: float) -> float:
+    if any(pd.isna(x) for x in (rem1, rem2)) or term <= 0 or rem1 < rem2:
+        return 0.0
+    months = np.arange(int(rem1), int(rem2) - 1, -1)
+    return float((2 * (months + 1) * charge / (term * (term + 1))).sum())
+
+
+def written_off(row: pd.Series) -> pd.Series:
+    if row["WRITEOFF"] != "Y":
+        return row
+    row["SUSPEND"], row["OISUSP"] = val(row, "WSUSPEND"), val(row, "WOISUSP")
+    if row["WDOWNIND"] != "Y":
+        row["RECOVER"], row["RECC"] = val(row, "WRECOVER"), val(row, "WRECC")
+        row["OIRECV"], row["OIRECC"] = val(row, "WOIRECV"), val(row, "WOIRECC")
+        row["IIS"] = row["OI"] = 0.0
+        row["IISPW"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"])
+        row["OIW"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"])
+    else:
+        row["IISPW"], row["OIW"] = val(row, "WIISPW"), val(row, "WOIW")
+        row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -val(row, "RECOVER"), -val(row, "RECC"), -row["IISPW"])
+        if row["IIS"] < 0:
+            row["RECOVER"] = 0.0
+            row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -val(row, "RECC"), -row["IISPW"])
+        row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -val(row, "OIRECV"), -val(row, "OIRECC"), -row["OIW"])
+        if row["OI"] < 0:
+            row["OIRECV"] = row["OIRECC"] = 0.0
+            row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIW"])
+    return row
+
+
+def rescheduled(row: pd.Series) -> pd.Series:
+    if row["RESCHEIND"] == "Y":
+        for target, source in [("SUSPEND", "WSUSPEND"), ("OISUSP", "WOISUSP"),
+                               ("RECOVER", "WRECOVER"), ("RECC", "WRECC"),
+                               ("OIRECV", "WOIRECV"), ("OIRECC", "WOIRECC")]:
+            row[target] = val(row, source)
+        row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"], -val(row, "IISPW"))
+        row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"], -val(row, "OIW"))
+    row["TOTIIS"] = sas_sum(row["IIS"], row["OI"])
+    return row
+
+
+def calculate_existing(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
+    row = initialize_row(row.copy())
+    for c in ["IIS", "SUSPEND", "UHC", "OI", "OISUSP", "RECOVER", "OIRECV", "OIRECC", "OIW", "RECC"]:
+        row[c] = 0.0
+    lt, days = int(val(row, "LOANTYPE", 0)), val(row, "DAYS")
+    if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y":
+        row["BORSTAT"] = "W"
+    nonperforming = days > 89 or row["BORSTAT"] in {"F", "R", "I"} or (row["USER5"] == "N" and lt not in {983, 993})
+    bl, issue, term, charge = sas_date(row.get("BLDATE")), sas_date(row.get("ISSDTE")), row["EARNTERM"], row["TERMCHG"]
+    if pd.notna(bl) and charge > 0 and nonperforming:
+        rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
+        rem2 = max(0, remaining_months(report_date, issue, term))
+        rems = remaining_months(pd.Timestamp(report_date.year, 1, 1), issue, term)
+        row["IIS"] = rule78_sum(rem1, rem2, charge, term)
+        row["SUSPEND"] = rule78_sum(rems, rem2, charge, term)
+        row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+        if lt not in {128, 130}:
+            row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
+        if rem2 > 0 and term > 0:
+            row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
+    elif nonperforming:
+        row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+        row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
+    row["NETBAL"] = row["CURBAL"] - row["UHC"]
+    if row["NETBAL"] <= row["IISP"] and (nonperforming or row["USER5"] == "N"):
+        row["IIS"] = row["NETBAL"]
+    if row["BORSTAT"] == "W":
+        row["IISPW"], row["OIW"] = row["IISP"], row["OIP"]
+    else:
+        row["RECOVER"] = row["IISP"] + row["SUSPEND"] - row["IIS"]
+        if row["RECOVER"] < 0:
+            row["SUSPEND"] -= row["RECOVER"]; row["RECOVER"] = 0.0
+        if row["RECOVER"] > row["IISP"]:
+            row["RECC"] = row["RECOVER"] - row["IISP"]; row["RECOVER"] = row["IISP"]
+        if lt not in {128, 130}:
+            row["OIRECV"] = row["OIP"] - row["OI"]
+            if row["OIRECV"] < 0:
+                row["OISUSP"] -= row["OIRECV"]; row["OIRECV"] = 0.0
+            if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
+            if row["OIRECV"] > row["OIP"]:
+                row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
+    if charge == 0:
+        netexp = row["CURBAL"] - row["IISP"] - (row["MARKETVL"] if row["BORSTAT"] == "R" else 0)
+        if (netexp > 0 and days > 89) or row["BORSTAT"] == "R":
+            row["IIS"], row["RECOVER"] = row["RECOVER"], 0.0
+            row["OI"], row["OIRECV"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"]), 0.0
+    if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
+    row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
+    if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
+    if row["OIRECV"] > row["OIP"]:
+        row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
+    row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
+    return rescheduled(written_off(row))
+
+
+def calculate_current(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
+    row = initialize_row(row.copy())
+    for c in ["IIS", "UHC", "OI", "RECOVER", "RECC", "OIRECV", "OIRECC", "IISPW", "OIW"]:
+        row[c] = 0.0
+    lt = int(val(row, "LOANTYPE", 0))
+    if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y": row["BORSTAT"] = "W"
+    issue, bl = sas_date(row.get("ISSDTE")), sas_date(row.get("BLDATE"))
+    term, charge = row["EARNTERM"], row["TERMCHG"]
+    condition = (pd.notna(bl) and charge > 0) or (row["USER5"] == "N" and lt not in {983, 993})
+    rem2 = max(0, remaining_months(report_date, issue, term)) if pd.notna(issue) else 0
+    if condition:
+        rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
+        row["IIS"] = rule78_sum(rem1, rem2, charge, term)
+    if rem2 > 0 and term > 0: row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
+    row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+    if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
+    row["SUSPEND"], row["OISUSP"] = row["IIS"], row["OI"]
+    row["NETBAL"] = row["CURBAL"] - row["UHC"]
+    return rescheduled(written_off(row))
+
+
+def apply_nplntb(previous: pd.DataFrame) -> pd.DataFrame:
+    """Match PGM(NPLNTB), whose supplied transformation rules are commented."""
+    return previous
+
+
+def risk(row: pd.Series) -> str:
+    if val(row, "DAYS") > 364 or val(row, "BORSTAT", "") == "W": return "BAD"
+    if val(row, "DAYS") > 273: return "DOUBTFUL"
+    if val(row, "DAYS") > 182: return "SUBSTANDARD 2"
+    return "SUBSTANDARD-1"
+
+
+def load_branch_map(path: Path | None) -> dict[int, str]:
+    if not path: return {}
+    m = pd.read_csv(path)
+    m.columns = [c.upper() for c in m.columns]
+    return dict(zip(m["NTBRCH"].astype(int), m["BRANCH"].astype(str)))
+
+
+def write_reports(df: pd.DataFrame, output: Path) -> None:
+    measures = ["CURBAL", "UHC", "NETBAL", "IISP", "SUSPEND", "RECOVER", "RECC",
+                "IISPW", "IIS", "OIP", "OISUSP", "OIRECV", "OIRECC", "OIW", "OI", "TOTIIS"]
+    for c in measures:
+        if c not in df: df[c] = 0.0
+    summary = df.groupby(["LOANTYP", "RISK", "BRANCH"], dropna=False).agg(
+        NO_OF_ACCOUNT=("ACCTNO", "size"), **{c: (c, "sum") for c in measures}
+    ).reset_index()
+    detail_cols = [c for c in ["LOANTYP", "BRANCH", "RISK", "ACCTNO", "NOTENO", "NAME", "DAYS", "BORSTAT", "NETPROC"] + measures if c in df]
+    summary.to_csv(output / "eifmnp03_summary.csv", index=False)
+    df.sort_values([c for c in ["LOANTYP", "BRANCH", "RISK", "DAYS", "ACCTNO"] if c in df])[detail_cols].to_csv(output / "eifmnp03_detail.csv", index=False)
+
+
+IIS_REPORT_LABELS = {
+    "ACCTNO":"MNI ACCOUNT NO", "DAYS":"NO OF DAYS PAST DUE",
+    "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
+    "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)",
+    "IISP":"OPENING BAL FOR FINANCIAL YEAR (D)",
+    "SUSPEND":"INTEREST SUSPENDED DURING THE PERIOD (E)",
+    "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (F)",
+    "RECC":"REVERSAL OF CURRENT YEAR IIS (G)", "IISPW":"WRITTEN OFF (H)",
+    "IIS":"IIS CLOSING BAL (D+E-F-G-H=I)",
+    "OIP":"OPENING BAL FOR FINANCIAL YEAR (J)",
+    "OISUSP":"OI SUSPENDED DURING THE PERIOD (K)",
+    "OIRECV":"WRITTEN BACK TO PROFIT & LOSS (L)",
+    "OIRECC":"REVERSAL OF CURRENT YEAR OI (M)", "OIW":"WRITTEN OFF (N)",
+    "OI":"OI CLOSING BAL (J+K-L-M-N=O)",
+    "TOTIIS":"TOTAL CLOSING BAL AS AT RPT DATE (I+O)",
+}
+
+
+def write_original_listing(df: pd.DataFrame, report_date: pd.Timestamp, output: Path) -> str:
+    """Render both PROC TABULATE tables and the original PROC PRINT listing."""
+    measures=["CURBAL","UHC","NETBAL","IISP","SUSPEND","RECOVER","RECC","IISPW","IIS","OIP","OISUSP","OIRECV","OIRECC","OIW","OI","TOTIIS"]
+    for column in measures:
+        if column not in df: df[column]=0.0
+    title1="PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW"
+    title2=f"MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH ENDING {report_date.strftime('%d %B %Y').upper()} (EXISTING AND CURRENT)"
+    fmt=lambda value:f"{value:,.2f}"
+    risk_branch=df.groupby(["LOANTYP","RISK","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
+    branch=df.groupby(["LOANTYP","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
+    rename={**IIS_REPORT_LABELS,"NO_OF_ACCOUNT":"NO OF ACCOUNT"}
+    lines=[title1,title2,"","SUMMARY BY RISK AND BRANCH",
+           risk_branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
+           "","SUMMARY BY BRANCH",
+           branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
+           "","DETAILED LISTING"]
+    ordered=df.sort_values(["LOANTYP","BRANCH","RISK","DAYS","ACCTNO"])
+    detail_cols=["ACCTNO","NAME","DAYS","BORSTAT","NETPROC",*measures]
+    for (loan_type,branch_name,risk_name),group in ordered.groupby(["LOANTYP","BRANCH","RISK"],dropna=False,sort=False):
+        lines.extend(["",f"LOAN TYPE: {loan_type}    BRANCH: {branch_name}    RISK: {risk_name}"])
+        display=group[[c for c in detail_cols if c in group]].rename(columns=IIS_REPORT_LABELS)
+        lines.append(display.to_string(index=False,formatters={IIS_REPORT_LABELS[c]:fmt for c in measures if c in group}))
+        totals=group[measures].sum()
+        lines.append("TOTAL: "+" | ".join(f"{IIS_REPORT_LABELS[c]}={totals[c]:,.2f}" for c in measures))
+    report="\n".join(lines)+"\n"
+    (output/"eifmnp03_report.lst").write_text(report,encoding="utf-8")
+    (output/"eifmnp03_report.txt").write_text(report,encoding="utf-8")
+    return report
+
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--input-dir", type=Path, default=DEFAULT_BASE)
+    p.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    p.add_argument("--loan-pattern", default="loan{mm}.sas7bdat")
+    p.add_argument("--wiis-file", default="wiis.sas7bdat")
+    p.add_argument("--previous-pattern", default="iis{mm}.sas7bdat")
+    p.add_argument("--ploan-pattern", default="ploan{mm}.sas7bdat")
+    p.add_argument("--branch-map", type=Path, default=os.environ.get("XMIS_BRANCH_MAP"))
+    p.add_argument("--no-console-report", action="store_true")
+    args = p.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    # Replacement for NPL.REPTDATE: process as at yesterday's calendar date.
+    report_date = pd.Timestamp(date.today() - timedelta(days=1))
+    mm, prev = f"{report_date.month:02d}", f"{(report_date.month - 2) % 12 + 1:02d}"
+    loan = read_sas(args.input_dir / args.loan_pattern.format(mm=mm))
+    wiis = read_sas(args.input_dir / args.wiis_file).drop(columns=["NOTENO", "NTBRCH"], errors="ignore")
+    wiis["_WIIS"] = True
+    loan = loan.merge(wiis, on="ACCTNO", how="left", suffixes=("", "_WIIS"))
+    loan["WRITEOFF"] = np.where(loan["_WIIS"].fillna(False), "Y", "N")
+    if "LOANTYPE" in loan:
+        loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEEAMT"] = loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEETOT2"]
+        loan.loc[loan["LOANTYPE"].isin([983, 993]), "WDOWNIND"] = "N"
+    bmap = load_branch_map(args.branch_map)
+    existing = loan[loan.get("EXIST", "") == "Y"].apply(calculate_existing, axis=1, report_date=report_date)
+    current = loan[loan.get("EXIST", "") != "Y"].apply(calculate_current, axis=1, report_date=report_date)
+    for df in (existing, current):
+        df["BRANCH"] = df["NTBRCH"].map(lambda x: branch_label(x, bmap))
+        df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
+    if mm == "01":
+        for df in (existing, current): df[["IISPCUM", "OIPCUM", "POI"]] = 0.0
+    else:
+        previous_path = args.input_dir / args.previous_pattern.format(mm=prev)
+        if previous_path.exists():
+            previous = apply_nplntb(read_sas(previous_path))
+            # Retain prior columns for audit and downstream reconciliation.
+            ren = {"DAYS": "PDAYS", "SUSPEND": "PSUSPEND", "OISUSP": "POISUSP", "IISP": "PIISP", "OIP": "POIP", "OI": "POI", "RECC": "PRECC", "OIRECC": "POIRECC", "RECOVER": "PRECOVER", "OIRECV": "POIRECV"}
+            # A prior-month dataset may already contain retained P* columns.
+            # SAS RENAME replaces the active variable names for this step;
+            # pandas would otherwise keep duplicate labels and pd.concat fails.
+            existing_targets = [
+                target
+                for source, target in ren.items()
+                if source in previous.columns and target in previous.columns
+            ]
+            previous = previous.drop(columns=existing_targets)
+            previous = previous.rename(columns=ren).drop_duplicates(["ACCTNO", "NOTENO"])
+            existing = existing.merge(previous[[c for c in previous if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]], on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV"))
+            # SAS uses PLOANMM to retain prior current-NPL accounts which are
+            # absent from the current LOANMM extract (settled-account path).
+            ploan_path = args.input_dir / args.ploan_pattern.format(mm=mm)
+            if ploan_path.exists():
+                ploan_cols = ["ACCTNO", "NOTENO", "CURBAL", "DAYS", "BORSTAT", "NTBRCH", "COSTCTR"]
+                ploan = read_sas(ploan_path)[ploan_cols].drop_duplicates(["ACCTNO", "NOTENO"])
+                eligible = previous.copy()
+                piisp = pd.to_numeric(eligible.get("PIISP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
+                poip = pd.to_numeric(eligible.get("POIP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
+                exist = eligible.get("EXIST", pd.Series("", index=eligible.index)).fillna("")
+                eligible = eligible[(piisp == 0) & (poip == 0) & (exist != "Y")]
+                eligible = eligible.merge(ploan, on=["ACCTNO", "NOTENO"], how="left", suffixes=("", "_PLOAN"))
+            else:
+                eligible = previous
+            current = current.merge(
+                eligible[[c for c in eligible if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]],
+                on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV")
+            )
+    combined = pd.concat([existing, current], ignore_index=True, sort=False)
+    if PIBB_PROFILE:
+        # EIIMNP03: Islamic cost centres plus the two explicitly included centres.
+        combined = combined[
+            ((combined["COSTCTR"] >= 3000) & (combined["COSTCTR"] <= 3999))
+            | combined["COSTCTR"].isin([4043, 4048])
+        ]
+    else:
+        # EIFMNP03: PBB excludes Islamic cost centres and 4043/4048.
+        combined = combined[
+            ((combined["COSTCTR"] < 3000) | (combined["COSTCTR"] > 3999))
+            & ~combined["COSTCTR"].isin([4043, 4048])
+            & combined["COSTCTR"].notna()
+        ]
+    combined["RISK"] = combined.apply(risk, axis=1)
+    combined = combined.drop_duplicates(["ACCTNO", "NOTENO"])
+    combined.to_csv(args.output_dir / f"iis{mm}.csv", index=False)
+    write_reports(combined, args.output_dir)
+    report = write_original_listing(combined, report_date, args.output_dir)
+    print(f"Processed {len(combined):,} rows for {report_date.date()} into {args.output_dir}")
+    if not args.no_console_report:
+        print(report, end="")
+
+
+if __name__ == "__main__":
+    main()
