@@ -9,8 +9,24 @@ from datetime import date, timedelta
 from pathlib import Path
 
 
+# With the script deployed at Data_Warehouse/MIS/XMIS/EIAWOF13_PAS.py,
+# these resolve to Data_Warehouse/MIS/XMIS/input/prod and its output folder.
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_BASE = SCRIPT_DIR / "input" / "prod"
+DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
+
+
 def run(program: str, arguments: list[str]) -> None:
-    script = Path(__file__).with_name(program.lower() + ".py")
+    candidates = [
+        SCRIPT_DIR / (program.lower() + ".py"),
+        SCRIPT_DIR / (program + "_PAS.py"),
+        SCRIPT_DIR / (program.lower() + "_pas.py"),
+        SCRIPT_DIR / (program + ".py"),
+    ]
+    script = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if script is None:
+        searched = ", ".join(str(candidate) for candidate in candidates)
+        raise SystemExit(f"EIAWOF13: program file not found; searched: {searched}")
     print(f"EIAWOF13: starting {program}")
     result = subprocess.run([sys.executable, str(script), *arguments], check=False)
     if result.returncode:
@@ -20,10 +36,17 @@ def run(program: str, arguments: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run separate PBB EIFMNP03/06/07 steps")
-    parser.add_argument("--input-dir", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--input-dir", type=Path, default=DEFAULT_BASE)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--branch-map", type=Path)
     args = parser.parse_args()
+    args.input_dir = args.input_dir.resolve()
+    args.output_dir = args.output_dir.resolve()
+    if not args.input_dir.is_dir():
+        raise SystemExit(f"EIAWOF13: input directory not found: {args.input_dir}")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"EIAWOF13: input directory  = {args.input_dir}")
+    print(f"EIAWOF13: output directory = {args.output_dir}")
     common = ["--input-dir", str(args.input_dir)]
     if args.branch_map:
         common.extend(["--branch-map", str(args.branch_map)])
@@ -33,60 +56,14 @@ def main() -> None:
     step07 = args.output_dir / "eifmnp07"
     run("EIFMNP03", common + ["--output-dir", str(step03)])
     month = f"{(date.today() - timedelta(days=1)).month:02d}"
-    run("EIFMNP06", common + ["--output-dir", str(step06), "--iis-file", str(step03 / f"iis{month}.csv")])
+    # NPL.IISMM is created by EIFMNP03 and consumed by EIFMNP06.
+    run("EIFMNP06", common + [
+        "--output-dir", str(step06),
+        "--iis-file", str(step03 / f"iis{month}.csv"),
+    ])
     run("EIFMNP07", common + ["--output-dir", str(step07)])
     print("EIAWOF13: all three separate PBB steps completed")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-INPUT PATH
-DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
-DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
-
-
-
-
-
-
-
-
-
-
-source /sas/python/virt_edw/bin/activate
-[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13_PAS.py
-**********************************************************
-* Job:      EIAWOF13_PAS                                 *
-* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
-*                                                        *
-* Modified: Friday, August 14, 2026, 10:33:58 AM         *
-**********************************************************
-Program start : 2026/08/15 15:01:54
-
-1       """Controller for PBB EIAWOF13; keeps EIFMNP03/06/07 separate."""
-2       from __future__ import annotations
-3       import argparse
-4       import subprocess
-5       import sys
-6       from datetime import date, timedelta
-7       from pathlib import Path
-8       def run(program: str, arguments: list[str]) -> None:
-9       def main() -> None:
-10      if __name__ == "__main__":
-11          main()
-12          parser = argparse.ArgumentParser(description="Run separate PBB EIFMNP03/06/07 steps")
-13          parser.add_argument("--input-dir", type=Path, required=True)
-14          parser.add_argument("--output-dir", type=Path, required=True)
-15          parser.add_argument("--branch-map", type=Path)
-16          args = parser.parse_args()
-usage: EIAWOF13_PAS.py [-h] --input-dir INPUT_DIR --output-dir OUTPUT_DIR [--branch-map BRANCH_MAP]
-EIAWOF13_PAS.py: error: the following arguments are required: --input-dir, --output-dir
-
-Total time elapsed : 00:00:00
-Memory used: 0.43 MB
-Program end : 2026/08/15 15:01:54
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
