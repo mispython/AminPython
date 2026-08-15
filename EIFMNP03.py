@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+"""Python conversion of SAS program EIFMNP03.
+
+Inputs are SAS7BDAT files.  Column names are normalized to upper case.  The
+program preserves the original stages: report date, LOAN+WIIS merge, existing
+and current NPL calculations, previous-month movement processing, combined
+IIS outputs, and summary/detail reports.
+
+PBBLNFMT and PBBELF are provided as Python modules. The supplied NPLNTB include
+contains only commented-out mappings, so apply_nplntb() intentionally performs
+no transformation, matching the executable SAS behavior.
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+try:
+    # Production Linux deployment uses the uppercase mainframe program name.
+    from PBBLNFMT import put as pbbln_put
+except (ModuleNotFoundError, ImportError):
+    from pbblnfmt import put as pbbln_put
+
+
+DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output" / "eifmnp03"
+
+
+LOAN_TYPES = {
+    128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
+    700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
+    380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
+    993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
+    720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
+    **{i: "HOUSING LOANS" for i in range(200, 300)},
+}
+ACCRUAL_TYPES = {720, 725}
+PIBB_PROFILE = False
+
+NUMERIC_ZERO = [
+    "IISP", "OIP", "IISPW", "CURBAL", "TERMCHG", "EARNTERM", "NOTETERM",
+    "FEETOT2", "FEEAMTA", "FEEAMT5", "FEEAMT", "FEETOT2", "ACCRUAL",
+    "WSUSPEND", "WOISUSP", "WRECOVER", "WRECC", "WOIRECV", "WOIRECC",
+    "WIISPW", "WOIW", "MARKETVL", "DAYS",
+]
+
+
+def read_sas(path: Path) -> pd.DataFrame:
+    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+    df.columns = [str(c).upper() for c in df.columns]
+    for col in df.select_dtypes(include=["object"]).columns:
+        df[col] = df[col].map(
+            lambda x: x.decode("latin1").rstrip() if isinstance(x, bytes)
+            else (x.rstrip() if isinstance(x, str) else x)
+        )
+    return df
+
+
+def sas_sum(*values: Any) -> float:
+    a = pd.to_numeric(pd.Series(values), errors="coerce")
+    return float(a.sum(skipna=True))
+
+
+def sas_date(value: Any) -> pd.Timestamp:
+    """Convert a SAS date (days since 1960-01-01) or date-like value."""
+    if pd.isna(value):
+        return pd.NaT
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return pd.to_datetime(value, unit="D", origin="1960-01-01")
+    return pd.to_datetime(value)
+
+
+def val(row: pd.Series, name: str, default: Any = 0) -> Any:
+    x = row.get(name, default)
+    return default if pd.isna(x) else x
+
+
+def branch_label(ntbrch: Any, branch_map: dict[int, str]) -> str:
+    try:
+        code = int(ntbrch)
+    except (TypeError, ValueError):
+        return ""
+    description = branch_map.get(code)
+    if description is None:
+        try:
+            description = pbbln_put(code, "BRCHCD.", "")
+        except KeyError:
+            description = ""
+    return f"{description} {code:03d}".strip()
+
+
+def remaining_months(date: pd.Timestamp, issue: pd.Timestamp, term: float) -> float:
+    if pd.isna(date) or pd.isna(issue):
+        return np.nan
+    return term - ((date.year - issue.year) * 12 + date.month - issue.month + 1)
+
+
+def initialize_row(row: pd.Series) -> pd.Series:
+    for c in NUMERIC_ZERO:
+        if c not in row or pd.isna(row[c]):
+            row[c] = 0.0
+    if val(row, "EARNTERM") == 0:
+        row["EARNTERM"] = val(row, "NOTETERM")
+    row["WRITEOFF"] = val(row, "WRITEOFF", "N")
+    row["WDOWNIND"] = val(row, "WDOWNIND", "N")
+    row["RESCHEIND"] = val(row, "RESCHEIND", "N")
+    row["USER5"] = val(row, "USER5", "")
+    row["BORSTAT"] = val(row, "BORSTAT", "")
+    return row
+
+
+def rule78_sum(rem1: float, rem2: float, charge: float, term: float) -> float:
+    if any(pd.isna(x) for x in (rem1, rem2)) or term <= 0 or rem1 < rem2:
+        return 0.0
+    months = np.arange(int(rem1), int(rem2) - 1, -1)
+    return float((2 * (months + 1) * charge / (term * (term + 1))).sum())
+
+
+def written_off(row: pd.Series) -> pd.Series:
+    if row["WRITEOFF"] != "Y":
+        return row
+    row["SUSPEND"], row["OISUSP"] = val(row, "WSUSPEND"), val(row, "WOISUSP")
+    if row["WDOWNIND"] != "Y":
+        row["RECOVER"], row["RECC"] = val(row, "WRECOVER"), val(row, "WRECC")
+        row["OIRECV"], row["OIRECC"] = val(row, "WOIRECV"), val(row, "WOIRECC")
+        row["IIS"] = row["OI"] = 0.0
+        row["IISPW"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"])
+        row["OIW"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"])
+    else:
+        row["IISPW"], row["OIW"] = val(row, "WIISPW"), val(row, "WOIW")
+        row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -val(row, "RECOVER"), -val(row, "RECC"), -row["IISPW"])
+        if row["IIS"] < 0:
+            row["RECOVER"] = 0.0
+            row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -val(row, "RECC"), -row["IISPW"])
+        row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -val(row, "OIRECV"), -val(row, "OIRECC"), -row["OIW"])
+        if row["OI"] < 0:
+            row["OIRECV"] = row["OIRECC"] = 0.0
+            row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIW"])
+    return row
+
+
+def rescheduled(row: pd.Series) -> pd.Series:
+    if row["RESCHEIND"] == "Y":
+        for target, source in [("SUSPEND", "WSUSPEND"), ("OISUSP", "WOISUSP"),
+                               ("RECOVER", "WRECOVER"), ("RECC", "WRECC"),
+                               ("OIRECV", "WOIRECV"), ("OIRECC", "WOIRECC")]:
+            row[target] = val(row, source)
+        row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"], -val(row, "IISPW"))
+        row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"], -val(row, "OIW"))
+    row["TOTIIS"] = sas_sum(row["IIS"], row["OI"])
+    return row
+
+
+def calculate_existing(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
+    row = initialize_row(row.copy())
+    for c in ["IIS", "SUSPEND", "UHC", "OI", "OISUSP", "RECOVER", "OIRECV", "OIRECC", "OIW", "RECC"]:
+        row[c] = 0.0
+    lt, days = int(val(row, "LOANTYPE", 0)), val(row, "DAYS")
+    if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y":
+        row["BORSTAT"] = "W"
+    nonperforming = days > 89 or row["BORSTAT"] in {"F", "R", "I"} or (row["USER5"] == "N" and lt not in {983, 993})
+    bl, issue, term, charge = sas_date(row.get("BLDATE")), sas_date(row.get("ISSDTE")), row["EARNTERM"], row["TERMCHG"]
+    if pd.notna(bl) and charge > 0 and nonperforming:
+        rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
+        rem2 = max(0, remaining_months(report_date, issue, term))
+        rems = remaining_months(pd.Timestamp(report_date.year, 1, 1), issue, term)
+        row["IIS"] = rule78_sum(rem1, rem2, charge, term)
+        row["SUSPEND"] = rule78_sum(rems, rem2, charge, term)
+        row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+        if lt not in {128, 130}:
+            row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
+        if rem2 > 0 and term > 0:
+            row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
+    elif nonperforming:
+        row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+        row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
+    row["NETBAL"] = row["CURBAL"] - row["UHC"]
+    if row["NETBAL"] <= row["IISP"] and (nonperforming or row["USER5"] == "N"):
+        row["IIS"] = row["NETBAL"]
+    if row["BORSTAT"] == "W":
+        row["IISPW"], row["OIW"] = row["IISP"], row["OIP"]
+    else:
+        row["RECOVER"] = row["IISP"] + row["SUSPEND"] - row["IIS"]
+        if row["RECOVER"] < 0:
+            row["SUSPEND"] -= row["RECOVER"]; row["RECOVER"] = 0.0
+        if row["RECOVER"] > row["IISP"]:
+            row["RECC"] = row["RECOVER"] - row["IISP"]; row["RECOVER"] = row["IISP"]
+        if lt not in {128, 130}:
+            row["OIRECV"] = row["OIP"] - row["OI"]
+            if row["OIRECV"] < 0:
+                row["OISUSP"] -= row["OIRECV"]; row["OIRECV"] = 0.0
+            if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
+            if row["OIRECV"] > row["OIP"]:
+                row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
+    if charge == 0:
+        netexp = row["CURBAL"] - row["IISP"] - (row["MARKETVL"] if row["BORSTAT"] == "R" else 0)
+        if (netexp > 0 and days > 89) or row["BORSTAT"] == "R":
+            row["IIS"], row["RECOVER"] = row["RECOVER"], 0.0
+            row["OI"], row["OIRECV"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"]), 0.0
+    if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
+    row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
+    if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
+    if row["OIRECV"] > row["OIP"]:
+        row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
+    row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
+    return rescheduled(written_off(row))
+
+
+def calculate_current(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
+    row = initialize_row(row.copy())
+    for c in ["IIS", "UHC", "OI", "RECOVER", "RECC", "OIRECV", "OIRECC", "IISPW", "OIW"]:
+        row[c] = 0.0
+    lt = int(val(row, "LOANTYPE", 0))
+    if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y": row["BORSTAT"] = "W"
+    issue, bl = sas_date(row.get("ISSDTE")), sas_date(row.get("BLDATE"))
+    term, charge = row["EARNTERM"], row["TERMCHG"]
+    condition = (pd.notna(bl) and charge > 0) or (row["USER5"] == "N" and lt not in {983, 993})
+    rem2 = max(0, remaining_months(report_date, issue, term)) if pd.notna(issue) else 0
+    if condition:
+        rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
+        row["IIS"] = rule78_sum(rem1, rem2, charge, term)
+    if rem2 > 0 and term > 0: row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
+    row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
+    if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
+    row["SUSPEND"], row["OISUSP"] = row["IIS"], row["OI"]
+    row["NETBAL"] = row["CURBAL"] - row["UHC"]
+    return rescheduled(written_off(row))
+
+
+def apply_nplntb(previous: pd.DataFrame) -> pd.DataFrame:
+    """Match PGM(NPLNTB), whose supplied transformation rules are commented."""
+    return previous
+
+
+def risk(row: pd.Series) -> str:
+    if val(row, "DAYS") > 364 or val(row, "BORSTAT", "") == "W": return "BAD"
+    if val(row, "DAYS") > 273: return "DOUBTFUL"
+    if val(row, "DAYS") > 182: return "SUBSTANDARD 2"
+    return "SUBSTANDARD-1"
+
+
+def load_branch_map(path: Path | None) -> dict[int, str]:
+    if not path: return {}
+    m = pd.read_csv(path)
+    m.columns = [c.upper() for c in m.columns]
+    return dict(zip(m["NTBRCH"].astype(int), m["BRANCH"].astype(str)))
+
+
+def write_reports(df: pd.DataFrame, output: Path) -> None:
+    measures = ["CURBAL", "UHC", "NETBAL", "IISP", "SUSPEND", "RECOVER", "RECC",
+                "IISPW", "IIS", "OIP", "OISUSP", "OIRECV", "OIRECC", "OIW", "OI", "TOTIIS"]
+    for c in measures:
+        if c not in df: df[c] = 0.0
+    summary = df.groupby(["LOANTYP", "RISK", "BRANCH"], dropna=False).agg(
+        NO_OF_ACCOUNT=("ACCTNO", "size"), **{c: (c, "sum") for c in measures}
+    ).reset_index()
+    detail_cols = [c for c in ["LOANTYP", "BRANCH", "RISK", "ACCTNO", "NOTENO", "NAME", "DAYS", "BORSTAT", "NETPROC"] + measures if c in df]
+    summary.to_csv(output / "eifmnp03_summary.csv", index=False)
+    df.sort_values([c for c in ["LOANTYP", "BRANCH", "RISK", "DAYS", "ACCTNO"] if c in df])[detail_cols].to_csv(output / "eifmnp03_detail.csv", index=False)
+
+
+IIS_REPORT_LABELS = {
+    "ACCTNO":"MNI ACCOUNT NO", "DAYS":"NO OF DAYS PAST DUE",
+    "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
+    "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)",
+    "IISP":"OPENING BAL FOR FINANCIAL YEAR (D)",
+    "SUSPEND":"INTEREST SUSPENDED DURING THE PERIOD (E)",
+    "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (F)",
+    "RECC":"REVERSAL OF CURRENT YEAR IIS (G)", "IISPW":"WRITTEN OFF (H)",
+    "IIS":"IIS CLOSING BAL (D+E-F-G-H=I)",
+    "OIP":"OPENING BAL FOR FINANCIAL YEAR (J)",
+    "OISUSP":"OI SUSPENDED DURING THE PERIOD (K)",
+    "OIRECV":"WRITTEN BACK TO PROFIT & LOSS (L)",
+    "OIRECC":"REVERSAL OF CURRENT YEAR OI (M)", "OIW":"WRITTEN OFF (N)",
+    "OI":"OI CLOSING BAL (J+K-L-M-N=O)",
+    "TOTIIS":"TOTAL CLOSING BAL AS AT RPT DATE (I+O)",
+}
+
+
+def write_original_listing(df: pd.DataFrame, report_date: pd.Timestamp, output: Path) -> str:
+    """Render both PROC TABULATE tables and the original PROC PRINT listing."""
+    measures=["CURBAL","UHC","NETBAL","IISP","SUSPEND","RECOVER","RECC","IISPW","IIS","OIP","OISUSP","OIRECV","OIRECC","OIW","OI","TOTIIS"]
+    for column in measures:
+        if column not in df: df[column]=0.0
+    title1="PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW"
+    title2=f"MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH ENDING {report_date.strftime('%d %B %Y').upper()} (EXISTING AND CURRENT)"
+    fmt=lambda value:f"{value:,.2f}"
+    risk_branch=df.groupby(["LOANTYP","RISK","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
+    branch=df.groupby(["LOANTYP","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
+    rename={**IIS_REPORT_LABELS,"NO_OF_ACCOUNT":"NO OF ACCOUNT"}
+    lines=[title1,title2,"","SUMMARY BY RISK AND BRANCH",
+           risk_branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
+           "","SUMMARY BY BRANCH",
+           branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
+           "","DETAILED LISTING"]
+    ordered=df.sort_values(["LOANTYP","BRANCH","RISK","DAYS","ACCTNO"])
+    detail_cols=["ACCTNO","NAME","DAYS","BORSTAT","NETPROC",*measures]
+    for (loan_type,branch_name,risk_name),group in ordered.groupby(["LOANTYP","BRANCH","RISK"],dropna=False,sort=False):
+        lines.extend(["",f"LOAN TYPE: {loan_type}    BRANCH: {branch_name}    RISK: {risk_name}"])
+        display=group[[c for c in detail_cols if c in group]].rename(columns=IIS_REPORT_LABELS)
+        lines.append(display.to_string(index=False,formatters={IIS_REPORT_LABELS[c]:fmt for c in measures if c in group}))
+        totals=group[measures].sum()
+        lines.append("TOTAL: "+" | ".join(f"{IIS_REPORT_LABELS[c]}={totals[c]:,.2f}" for c in measures))
+    report="\n".join(lines)+"\n"
+    (output/"eifmnp03_report.lst").write_text(report,encoding="utf-8")
+    (output/"eifmnp03_report.txt").write_text(report,encoding="utf-8")
+    return report
+
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--input-dir", type=Path, default=DEFAULT_BASE)
+    p.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    p.add_argument("--loan-pattern", default="loan{mm}.sas7bdat")
+    p.add_argument("--wiis-file", default="wiis.sas7bdat")
+    p.add_argument("--previous-pattern", default="iis{mm}.sas7bdat")
+    p.add_argument("--ploan-pattern", default="ploan{mm}.sas7bdat")
+    p.add_argument("--branch-map", type=Path)
+    p.add_argument("--no-console-report", action="store_true")
+    args = p.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    # Replacement for NPL.REPTDATE: process as at yesterday's calendar date.
+    report_date = pd.Timestamp(date.today() - timedelta(days=1))
+    mm, prev = f"{report_date.month:02d}", f"{(report_date.month - 2) % 12 + 1:02d}"
+    loan = read_sas(args.input_dir / args.loan_pattern.format(mm=mm))
+    wiis = read_sas(args.input_dir / args.wiis_file).drop(columns=["NOTENO", "NTBRCH"], errors="ignore")
+    wiis["_WIIS"] = True
+    loan = loan.merge(wiis, on="ACCTNO", how="left", suffixes=("", "_WIIS"))
+    loan["WRITEOFF"] = np.where(loan["_WIIS"].fillna(False), "Y", "N")
+    if "LOANTYPE" in loan:
+        loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEEAMT"] = loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEETOT2"]
+        loan.loc[loan["LOANTYPE"].isin([983, 993]), "WDOWNIND"] = "N"
+    bmap = load_branch_map(args.branch_map)
+    existing = loan[loan.get("EXIST", "") == "Y"].apply(calculate_existing, axis=1, report_date=report_date)
+    current = loan[loan.get("EXIST", "") != "Y"].apply(calculate_current, axis=1, report_date=report_date)
+    for df in (existing, current):
+        df["BRANCH"] = df["NTBRCH"].map(lambda x: branch_label(x, bmap))
+        df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
+    if mm == "01":
+        for df in (existing, current): df[["IISPCUM", "OIPCUM", "POI"]] = 0.0
+    else:
+        previous_path = args.input_dir / args.previous_pattern.format(mm=prev)
+        if previous_path.exists():
+            previous = apply_nplntb(read_sas(previous_path))
+            # Retain prior columns for audit and downstream reconciliation.
+            ren = {"DAYS": "PDAYS", "SUSPEND": "PSUSPEND", "OISUSP": "POISUSP", "IISP": "PIISP", "OIP": "POIP", "OI": "POI", "RECC": "PRECC", "OIRECC": "POIRECC", "RECOVER": "PRECOVER", "OIRECV": "POIRECV"}
+            previous = previous.rename(columns=ren).drop_duplicates(["ACCTNO", "NOTENO"])
+            existing = existing.merge(previous[[c for c in previous if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]], on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV"))
+            # SAS uses PLOANMM to retain prior current-NPL accounts which are
+            # absent from the current LOANMM extract (settled-account path).
+            ploan_path = args.input_dir / args.ploan_pattern.format(mm=mm)
+            if ploan_path.exists():
+                ploan_cols = ["ACCTNO", "NOTENO", "CURBAL", "DAYS", "BORSTAT", "NTBRCH", "COSTCTR"]
+                ploan = read_sas(ploan_path)[ploan_cols].drop_duplicates(["ACCTNO", "NOTENO"])
+                eligible = previous.copy()
+                piisp = pd.to_numeric(eligible.get("PIISP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
+                poip = pd.to_numeric(eligible.get("POIP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
+                exist = eligible.get("EXIST", pd.Series("", index=eligible.index)).fillna("")
+                eligible = eligible[(piisp == 0) & (poip == 0) & (exist != "Y")]
+                eligible = eligible.merge(ploan, on=["ACCTNO", "NOTENO"], how="left", suffixes=("", "_PLOAN"))
+            else:
+                eligible = previous
+            current = current.merge(
+                eligible[[c for c in eligible if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]],
+                on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV")
+            )
+    combined = pd.concat([existing, current], ignore_index=True, sort=False)
+    if PIBB_PROFILE:
+        # EIIMNP03: Islamic cost centres plus the two explicitly included centres.
+        combined = combined[
+            ((combined["COSTCTR"] >= 3000) & (combined["COSTCTR"] <= 3999))
+            | combined["COSTCTR"].isin([4043, 4048])
+        ]
+    else:
+        # EIFMNP03: PBB excludes Islamic cost centres and 4043/4048.
+        combined = combined[
+            ((combined["COSTCTR"] < 3000) | (combined["COSTCTR"] > 3999))
+            & ~combined["COSTCTR"].isin([4043, 4048])
+            & combined["COSTCTR"].notna()
+        ]
+    combined["RISK"] = combined.apply(risk, axis=1)
+    combined = combined.drop_duplicates(["ACCTNO", "NOTENO"])
+    combined.to_csv(args.output_dir / f"iis{mm}.csv", index=False)
+    write_reports(combined, args.output_dir)
+    report = write_original_listing(combined, report_date, args.output_dir)
+    print(f"Processed {len(combined):,} rows for {report_date.date()} into {args.output_dir}")
+    if not args.no_console_report:
+        print(report, end="")
+
+
+if __name__ == "__main__":
+    main()
