@@ -1,0 +1,94 @@
+66              [sys.executable, str(script)],
+67              env=child_environment,
+68              check=False,
+**********************************************************
+* Job:      EIFMNP06                                     *
+* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
+*                                                        *
+* Modified: Saturday, August 15, 2026, 03:53:08 PM       *
+**********************************************************
+Program start : 2026/08/17 15:30:09
+
+1       """PBB EIFMNP06: complete specific-provision job and reports."""
+2       from __future__ import annotations
+3       import argparse
+4       from datetime import date, timedelta
+5       from pathlib import Path
+6       from typing import Any
+7       import numpy as np
+8       import pandas as pd
+9       try:
+10          from EIFMNP03 import branch_label, load_branch_map, read_sas, risk, sas_date, sas_sum, val
+11      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
+12      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output" / "eifmnp06"
+13          128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
+14          700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
+15          380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
+16          720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
+17          993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
+18      LNTYP = {
+19          **{i: "HOUSING LOANS" for i in range(200, 300)},
+20      PIBB_PROFILE = False
+21      PROGRAM_NAME = "EIFMNP06"
+22      REPORT_ENTITY = "PUBLIC BANK"
+23          "ACCTNO":"MNI ACCOUNT NO", "VINNO":"AA NUMBER", "DAYS":"NO OF DAYS PAST DUE",
+24          "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
+25          "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)", "IIS":"IIS (E)",
+26          "OSPRIN":"PRINCIPAL OUTSTANDING (C-E=F)", "OTHERFEE":"OTHER FEES",
+27          "MARKETVL":"REALISABLE VALUE (G)", "NETEXP":"NET EXPOSURE (F-G=H)",
+28          "SPP2":"OPENING BAL FOR FINANCIAL YEAR (I)",
+29          "SPPL":"PROVISION MADE AGAINST PROFIT & LOSS (J)",
+30          "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (K)",
+31          "SPPW":"WRITTEN OFF AGAINST PROVISION (L)",
+32          "SP":"CLOSING BAL AS AT RPT DATE (I+J-K-L)",
+33      REPORT_LABELS = {
+34      def write_original_report(out: pd.DataFrame, report_date: pd.Timestamp, output_dir: Path) -> str:
+35      def read_table(path: Path) -> pd.DataFrame:
+36      def provision(row: pd.Series, report_date: pd.Timestamp, existing: bool) -> pd.Series:
+37      def main() -> None:
+38      if __name__=="__main__": main()
+39          p=argparse.ArgumentParser(); p.add_argument("--input-dir",type=Path,default=DEFAULT_BASE); p.add_argument("--output-dir",type=Path,default=DEFAULT_OUTPUT_DIR)
+40          p.add_argument("--iis-file",type=Path,help="Optional explicit IIS SAS7BDAT path")
+41          p.add_argument("--iis-pattern",default="iis{mm}.sas7bdat"); p.add_argument("--loan-pattern",default="loan{mm}.sas7bdat")
+42          p.add_argument("--wsp2-file",default="wsp2.sas7bdat"); p.add_argument("--previous-pattern",default="sp2{mm}.sas7bdat"); p.add_argument("--branch-map",type=Path); p.add_argument("--no-console-report",action="store_true")
+43          a=p.parse_args(); a.output_dir.mkdir(parents=True,exist_ok=True); rd=pd.Timestamp(date.today()-timedelta(days=1)); mm=f"{rd.month:02d}"; prev=f"{(rd.month-2)%12+1:02d}"
+44          loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm)); wsp=read_sas(a.input_dir/a.wsp2_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore"); wsp["_WSP"]=True
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py:156: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm)); wsp=read_sas(a.input_dir/a.wsp2_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore"); wsp["_WSP"]=True
+45          data=loan.merge(wsp,on="ACCTNO",how="left",suffixes=("","_WSP")); data["WRITEOFF"]=np.where(data["_WSP"].fillna(False),"Y","N")
+/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py:157: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
+  data=loan.merge(wsp,on="ACCTNO",how="left",suffixes=("","_WSP")); data["WRITEOFF"]=np.where(data["_WSP"].fillna(False),"Y","N")
+46          iis_path = a.iis_file if a.iis_file else a.input_dir/a.iis_pattern.format(mm=mm)
+47          iis=read_table(iis_path)[["ACCTNO","IIS"]].drop_duplicates("ACCTNO"); data=data.merge(iis,on="ACCTNO",how="left",suffixes=("","_IIS")); data["IIS"]=data.get("IIS_IIS",data.get("IIS",0)).fillna(0)
+48          if path.suffix.lower() == ".csv":
+49          return read_sas(path)
+Traceback (most recent call last):
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 173, in <module>
+    if __name__=="__main__": main()
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 159, in main
+    iis=read_table(iis_path)[["ACCTNO","IIS"]].drop_duplicates("ACCTNO"); data=data.merge(iis,on="ACCTNO",how="left",suffixes=("","_IIS")); data["IIS"]=data.get("IIS_IIS",data.get("IIS",0)).fillna(0)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 82, in read_table
+    return read_sas(path)
+  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 56, in read_sas
+    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sasreader.py", line 164, in read_sas
+    reader = SAS7BDATReader(
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 207, in __init__
+    self.handles = get_handle(
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/common.py", line 882, in get_handle
+    handle = open(handle, ioargs.mode)
+FileNotFoundError: [Errno 2] No such file or directory: 'Data_Warehouse/MIS/XMIS/input/prod/iis08.sas7bdat'
+
+Total time elapsed : 00:00:20
+Memory used: 758.26 MB
+Program end : 2026/08/17 15:30:30
+69          if result.returncode:
+70              raise SystemExit(
+71                  f"EIAWOF13: {program} failed "
+72                  f"with return code {result.returncode}"
+EIAWOF13: EIFMNP06 failed with return code 1
+
+Total time elapsed : 00:00:26
+Memory used: 0.83 MB
+Program end : 2026/08/17 15:30:30
+You have mail in /var/spool/mail/sas_edw_dev
