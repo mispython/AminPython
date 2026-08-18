@@ -1,408 +1,573 @@
-#!/usr/bin/env python3
-"""Python conversion of SAS program EIFMNP03.
-
-Inputs are SAS7BDAT files.  Column names are normalized to upper case.  The
-program preserves the original stages: report date, LOAN+WIIS merge, existing
-and current NPL calculations, previous-month movement processing, combined
-IIS outputs, and summary/detail reports.
-
-PBBLNFMT and PBBELF are provided as Python modules. The supplied NPLNTB include
-contains only commented-out mappings, so apply_nplntb() intentionally performs
-no transformation, matching the executable SAS behavior.
+"""
+Program : EIWFRMCR.py
+Purpose : Generate Foreign Remittance Report (Inward & Outward) for
+          compliance checking. Reads remittance transactions, filters
+          foreign ('F') transactions with STATUS IN ('TI','TO','BR'),
+          and splits them into an INWARD extract (STATUS='TI') and an
+          OUTWARD extract (STATUS IN ('TO','BR')).
 """
 
-from __future__ import annotations
-
-import argparse
-import os
-from datetime import date, timedelta
+import gc
+import sys
 from pathlib import Path
-from typing import Any
+from datetime import date, datetime, timedelta
 
-import numpy as np
+import duckdb
+import paramiko
 import pandas as pd
+import polars as pl
+import pyarrow as pa
+import pyarrow.parquet as pq
 
-try:
-    # Production Linux deployment uses the uppercase mainframe program name.
-    from PBBLNFMT import put as pbbln_put
-except (ModuleNotFoundError, ImportError):
-    from pbblnfmt import put as pbbln_put
+# from REPTDATE import get_reptdate_values
+# from input_date import get_latest_file
+from GET_BATCH_DATE import get_batch_date_dwh
+from EDW_TRANSFORMATION import get_sftp_info
+
+# ============================================================
+# PATH CONFIGURATION
+# ============================================================
+# # Testing Path
+# BASE_DIR    = Path("/sas/python/virt_edw/Data_Warehouse/MIS/XMIS")
+# INPUT_DIR   = BASE_DIR / "input" / "prod" / "remittance"
+# CACHE_DIR   = BASE_DIR / "input" / "cache" / "EIWFRMCR"
+# OUTPUT_DIR  = BASE_DIR / "output" / "EIWFRMCR"
+
+# Prodcution Path
+BASE_DIR   = Path("/dwh")
+INPUT_DIR  = BASE_DIR / "cmsbdptr"
+OUTPUT_DIR = Path("host_pq/mis/output/rmt")
+CACHE_DIR  = Path("host_pq/mis/parquet/rmt")
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+RMT_PREFIX = "remtran"
+
+# Original DSNs: SAP.PBB.COMP.INWARD.REPT / SAP.PBB.COMP.OUTWARD.REPT
+# No date component is present in these SAS-catalogued output DSNs, so
+# output_date.py's date-stamped naming is not applicable here;
+# filenames are static.
+
+# Generate time stamp
+reptdate = date.today() - timedelta(days=1)
+_ts = reptdate.strftime("%y%m%d")
+
+# _ts = datetime.now().strftime("%y%m%d_%H%M%S")
+# _ts = datetime.now().strftime("%y%m%d")
+
+INWARD_REPORT_FILE = OUTPUT_DIR / f"ForeignInwardRemittances_{_ts}.txt"
+OUTWARD_REPORT_FILE = OUTPUT_DIR / f"ForeignOutwardRemittances_{_ts}.txt"
+
+# Delimiter used in SAS: DLM = '05'X (hex 05 / ASCII ENQ control character)
+# DLM = chr(0x05)
+DLM = "\t"
+
+# ============================================================
+# CHUNK SIZE FOR STREAMING LARGE .sas7bdat FILES
+# ============================================================
+CHUNK_ROWS = 500_000
+
+# ============================================================
+# REPORT DATE DERIVATION  (from batch control, not REPTDATE)
+# ============================================================
+SOURCE_SYSTEM_CD = 'REMIT'
+
+# Fetch batch date string (format: "YYYY-MM-DD HH:MM:SS")
+batch_date_str = get_batch_date_dwh(SOURCE_SYSTEM_CD)
+
+# Parse to datetime
+batch_dt = datetime.strptime(batch_date_str, "%Y-%m-%d %H:%M:%S")
+
+# Derive the report-date components
+RDATE = batch_dt.date()
+REPTYEAR = batch_dt.strftime("%y")   # two-digit year
+REPTMON = batch_dt.strftime("%m")    # zero-padded month
+
+# Compute NOWK (same logic as SAS SELECT(DAY(REPTDATE)))
+day_of_month = batch_dt.day
+if 1 <= day_of_month <= 8:
+    NOWK = '1'
+elif 9 <= day_of_month <= 15:
+    NOWK = '2'
+elif 16 <= day_of_month <= 22:
+    NOWK = '3'
+else:
+    NOWK = '4'
+
+print(f"Report Date  : {RDATE}")
+print(f"Report Year  : {REPTYEAR}")
+print(f"Report Month : {REPTMON}")
+print(f"Report Week  : {NOWK}")
+
+# ============================================================
+# BUILD RMT FILENAME from derived components  (matches SAS naming)
+# ============================================================
+# Original: SET RMT.REMTRAN&REPTMON&NOWK&REPTYEAR;
+rmt_filename = f"remtran{REPTMON}{NOWK}{REPTYEAR}.sas7bdat"
+rmt_file = INPUT_DIR / rmt_filename
+
+if not rmt_file.exists():
+    raise FileNotFoundError(
+        f"Expected RMT file not found: {rmt_file}\n"
+        f"Derived from batch date {batch_dt.date()} with NOWK={NOWK}."
+    )
+
+print(f"Input RMT File : {rmt_file}")
+
+RMT_CACHE = CACHE_DIR / f"{rmt_file.stem}.parquet"
 
 
-DEFAULT_BASE = Path(os.environ.get("XMIS_INPUT_DIR", "Data_Warehouse/MIS/XMIS/input/prod"))
-DEFAULT_OUTPUT_DIR = Path(os.environ.get("XMIS_OUTPUT_DIR", str(DEFAULT_BASE / "output" / "eifmnp03")))
+# ============================================================
+# HELPER: CACHE STAMP  (skip re-conversion if .sas7bdat hasn't changed)
+# ============================================================
+def _cache_is_fresh(sas_path: Path, cache_path: Path) -> bool:
+    """Return True when the Parquet cache is newer than the source SAS file."""
+    return (
+        cache_path.exists()
+        and cache_path.stat().st_mtime >= sas_path.stat().st_mtime
+    )
 
 
-LOAN_TYPES = {
-    128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
-    700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
-    380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
-    993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
-    720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
-    **{i: "HOUSING LOANS" for i in range(200, 300)},
-}
-ACCRUAL_TYPES = {720, 725}
-PIBB_PROFILE = False
+# ============================================================
+# HELPER: STREAM .sas7bdat → PARQUET  (memory-efficient chunked conversion)
+# ============================================================
+def sas_to_parquet(sas_path: Path, cache_path: Path, tag: str) -> None:
+    """Convert a large .sas7bdat to Parquet in streaming chunks."""
+    print(f"  [{tag}] Converting {sas_path.name} -> {cache_path.name} ...")
+    writer = None
+    schema = None
+    total = 0
 
-NUMERIC_ZERO = [
-    "IISP", "OIP", "IISPW", "CURBAL", "TERMCHG", "EARNTERM", "NOTETERM",
-    "FEETOT2", "FEEAMTA", "FEEAMT5", "FEEAMT", "FEETOT2", "ACCRUAL",
-    "WSUSPEND", "WOISUSP", "WRECOVER", "WRECC", "WOIRECV", "WOIRECC",
-    "WIISPW", "WOIW", "MARKETVL", "DAYS",
+    reader = pd.read_sas(sas_path, encoding="latin1", chunksize=CHUNK_ROWS)
+    for chunk in reader:
+        table = pa.Table.from_pandas(chunk, preserve_index=False)
+
+        if schema is None:
+            # Lock schema on first chunk, but never lock in a 'null' type
+            # inferred from a chunk that happened to be blank for a text
+            # column — that would silently null out real values found in
+            # every later chunk.
+            fields = []
+            for field in table.schema:
+                if pa.types.is_null(field.type):
+                    fields.append(pa.field(field.name, pa.string()))
+                else:
+                    fields.append(field)
+            schema = pa.schema(fields)
+            table = table.cast(schema, safe=False)
+            writer = pq.ParquetWriter(cache_path, schema, compression="snappy")
+        else:
+            # Cast subsequent chunks to match the locked schema
+            cast_arrays = []
+            for field in schema:
+                col = table.column(field.name)
+                if col.type != field.type:
+                    try:
+                        col = col.cast(field.type, safe=False)
+                    except Exception as e:
+                        # Never silently null out real data. If the locked
+                        # schema field is a string, force through as string;
+                        # only fall back to nulls for genuine type conflicts.
+                        if pa.types.is_string(field.type):
+                            col = col.cast(pa.string(), safe=False)
+                        else:
+                            print(f"  [{tag}] WARNING: Cannot cast '{field.name}' "
+                                  f"from {col.type} to {field.type}: {e} — filling nulls")
+                            col = pa.nulls(len(col), type=field.type)
+                cast_arrays.append(col)
+            table = pa.Table.from_arrays(cast_arrays, schema=schema)
+
+        writer.write_table(table)
+        total += len(chunk)
+        del chunk, table
+        gc.collect()
+
+    if writer:
+        writer.close()
+    print(f"  [{tag}] Done — {total:,} rows cached.")
+
+
+# ============================================================
+# CACHE RMT FILE TO PARQUET  (~700 MB — streamed, not loaded whole)
+# ============================================================
+print("\nCaching RMT file to Parquet (if needed)...")
+
+# # ONE-TIME: force rebuild since the existing cache was written by the old
+# # schema-locking logic and may contain silently-nulled columns. Remove this
+# # `unlink()` block after the next successful run so caching resumes as normal.
+# if RMT_CACHE.exists():
+#     print(f"  [RMT] Removing stale cache: {RMT_CACHE.name}")
+#     RMT_CACHE.unlink()
+
+if not _cache_is_fresh(rmt_file, RMT_CACHE):
+    sas_to_parquet(rmt_file, RMT_CACHE, "RMT")
+else:
+    print(f"  [RMT] Cache fresh — skipping conversion.")
+
+
+# # TEMPORARY DIAGNOSTIC — remove after confirming the fix
+# con = duckdb.connect(database=":memory:")
+# print(con.execute(f"""
+#     SELECT BRANCHABB, BNAD1, ANAD1, CURRENCY, COUNTRY
+#     FROM read_parquet('{RMT_CACHE}')
+#     WHERE BRANCHABB IS NOT NULL
+#     LIMIT 10
+# """).pl())
+# con.close()
+
+
+# ============================================================
+# FIELD FORMATTING HELPERS (SAS PUT var +(-1) DLM +(-1) idiom)
+# ============================================================
+def _fmt_str(value) -> str:
+    """Format a character field: trim leading/trailing blanks.
+
+    Equivalent of SAS `var +(-1)` trimming the trailing blank that list
+    output would otherwise add before the delimiter.
+    """
+    if value is None:
+        return " "
+    stripped = str(value).strip()
+    return stripped if stripped else " "
+
+
+def _fmt_num(value) -> str:
+    """Format a numeric field the way SAS's default (unformatted) PUT would.
+
+    SAS stores all numerics as Float64 internally; whole values are written
+    without a trailing '.0'.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, float):
+        if value != value:  # NaN
+            return ""
+        if value.is_integer():
+            return str(int(value))
+    return str(value).strip()
+
+
+def _fmt_date(value) -> str:
+    """Format a transaction date field.
+
+    The original PUT statement carries no explicit date format, so the
+    variable's stored/permanent format is assumed. DDMMYYYY is used here
+    for report readability.
+    """
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%d/%m/%Y")
+    return str(value).strip()
+
+
+def _build_line(fields: list) -> str:
+    """Join fields with DLM, including a trailing DLM after the last field
+    (matches the SAS `... +(-1)DLM+(-1)` pattern repeated on every field,
+    including the last one in each PUT statement)."""
+    return DLM.join(fields) + DLM
+
+
+# ============================================================
+# HEADER DEFINITIONS
+# ============================================================
+INWARD_HEADERS = [
+    "TRANSACTION DATE",
+    "BRANCH NAME",
+    "REFERENCE NO",
+    "BENEFICIARY NAME 1",
+    "BENEFICIARY NAME 2",
+    "BENEFICIARY NAME 3",
+    "BENEFICIARY NAME 4",
+    "ORDERING CUSTOMER 1",
+    "ORDERING CUSTOMER 2",
+    "ORDERING CUSTOMER 3",
+    "ORDERING CUSTOMER 4",
+    "AMOUNT (FCY)",
+    "AMOUNT (MYR)",
+    "ACCOUNT NO",
+    "CURRENCY",
+    "PAYMENT MODE",
+    "STAFF ID",
+    "RESIDENCY",
+    "NATIONALITY",
+    "BMR STATUS",
+    "COUNTRY",
+    "CBOP CODE",
+]
+
+OUTWARD_HEADERS = [
+    "TRANSACTION DATE",
+    "BRANCH NAME",
+    "REFERENCE NO",
+    "ORDERING CUSTOMER 1",
+    "ORDERING CUSTOMER 2",
+    "ORDERING CUSTOMER 3",
+    "ORDERING CUSTOMER 4",
+    "ORDERING CUSTOMER ACCOUNT NO",
+    "BENEFICIARY NAME 1",
+    "BENEFICIARY NAME 2",
+    "BENEFICIARY NAME 3",
+    "BENEFICIARY NAME 4",
+    "AMOUNT (FCY)",
+    "AMOUNT (MYR)",
+    "ACCOUNT NO",
+    "CURRENCY",
+    "PAYMENT MODE",
+    "STAFF ID",
+    "RESIDENCY",
+    "NATIONALITY",
+    "BMR STATUS",
+    "COUNTRY",
+    "CBOP CODE",
 ]
 
 
-def read_sas(path: Path) -> pd.DataFrame:
-    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
-    df.columns = [str(c).upper() for c in df.columns]
-    for col in df.select_dtypes(include=["object"]).columns:
-        df[col] = df[col].map(
-            lambda x: x.decode("latin1").rstrip() if isinstance(x, bytes)
-            else (x.rstrip() if isinstance(x, str) else x)
-        )
-    return df
+# ============================================================
+# DETAIL LINE BUILDERS
+# ============================================================
+def _build_inward_line(row: dict) -> str:
+    """Equivalent of the SAS `DATA _NULL_; SET INWARD;` PUT statement."""
+    fields = [
+        _fmt_date(row["LASTTRAN"]),
+        _fmt_str(row["BRANCHABB"]),
+        _fmt_num(row["SERIAL"]),
+        _fmt_str(row["BNAD1"]),
+        _fmt_str(row["BNAD2"]),
+        _fmt_str(row["BNAD3"]),
+        _fmt_str(row["BNAD4"]),
+        _fmt_str(row["ANAD1"]),
+        _fmt_str(row["ANAD2"]),
+        _fmt_str(row["ANAD3"]),
+        _fmt_str(row["ANAD4"]),
+        _fmt_num(row["FORAMT"]),
+        _fmt_num(row["AMOUNT"]),
+        _fmt_num(row["ACCTNO"]),
+        _fmt_str(row["CURRENCY"]),
+        _fmt_str(row["PAYMODE"]),
+        _fmt_str(row["USERID"]),
+        _fmt_str(row["RESIDENT"]),
+        _fmt_str(row["APPLNATIONAL"]),
+        _fmt_str(row["BMRSTATUS"]),
+        _fmt_str(row["COUNTRY"]),
+        # _fmt_str(row["ADMIN"]),
+        _fmt_num(row["ADMIN"]),
+    ]
+    return _build_line(fields)
 
 
-def sas_sum(*values: Any) -> float:
-    a = pd.to_numeric(pd.Series(values), errors="coerce")
-    return float(a.sum(skipna=True))
+def _build_outward_line(row: dict) -> str:
+    """Equivalent of the SAS `DATA _NULL_; SET OUTWARD;` PUT statement."""
+    fields = [
+        _fmt_date(row["LASTTRAN"]),
+        _fmt_str(row["BRANCHABB"]),
+        _fmt_num(row["SERIAL"]),
+        _fmt_str(row["ANAD1"]),
+        _fmt_str(row["ANAD2"]),
+        _fmt_str(row["ANAD3"]),
+        _fmt_str(row["ANAD4"]),
+        _fmt_str(row["PAYREF"]),
+        _fmt_str(row["BNAD1"]),
+        _fmt_str(row["BNAD2"]),
+        _fmt_str(row["BNAD3"]),
+        _fmt_str(row["BNAD4"]),
+        _fmt_num(row["FORAMT"]),
+        _fmt_num(row["AMOUNT"]),
+        _fmt_num(row["ACCTNO"]),
+        _fmt_str(row["CURRENCY"]),
+        _fmt_str(row["PAYMODE"]),
+        _fmt_str(row["USERID"]),
+        _fmt_str(row["RESIDENT"]),
+        _fmt_str(row["APPLNATIONAL"]),
+        _fmt_str(row["BMRSTATUS"]),
+        _fmt_str(row["COUNTRY"]),
+        # _fmt_str(row["ADMIN"]),
+        _fmt_num(row["ADMIN"]),
+    ]
+    return _build_line(fields)
 
 
-def sas_date(value: Any) -> pd.Timestamp:
-    """Convert a SAS date (days since 1960-01-01) or date-like value."""
-    if pd.isna(value):
-        return pd.NaT
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        return pd.to_datetime(value, unit="D", origin="1960-01-01")
-    return pd.to_datetime(value)
+def _write_report(
+    df: pl.DataFrame,
+    headers: list,
+    build_line_fn,
+    output_path: Path,
+) -> list:
+    """Write header line + one detail line per row.
+
+    NOTE: Original DD is RECFM=FB, LRECL=1000 (fixed-block, no ASA carriage
+    control - this is a plain delimited data extract, not a printed report).
+    Fixed-length byte padding to LRECL=1000 is not reproduced here; each
+    record is written as a newline-terminated delimited line, consistent
+    with how this extract is consumed downstream (read/split by DLM).
+    """
+    lines = [_build_line(headers)]
+    for row in df.iter_rows(named=True):
+        lines.append(build_line_fn(row))
+
+    output_path.write_text("\n".join(lines) + "\n", encoding="latin1")
+    return lines
 
 
-def val(row: pd.Series, name: str, default: Any = 0) -> Any:
-    x = row.get(name, default)
-    return default if pd.isna(x) else x
+# ============================================================
+# READ + FILTER RMT DATA FROM PARQUET CACHE  (DuckDB, filter pushed to SQL)
+# ============================================================
+# Original:
+#   WHERE REMTYPE = 'F' AND STATUS IN ('TI','TO','BR');
+#   IF STATUS = 'TI' THEN OUTPUT INWARD; ELSE OUTPUT OUTWARD;
+#   KEEP BRANCHABB STATUS SERIAL LASTTRAN ANAD1 ANAD2 ANAD3 ANAD4
+#        BNAD1 BNAD2 BNAD3 BNAD4 AMOUNT FORAMT PAYREF
+#        ACCTNO CURRENCY PAYMODE USERID RESIDENT APPLNATIONAL
+#        BMRSTATUS COUNTRY ADMIN;
+KEEP_COLUMNS = [
+    "BRANCHABB", "STATUS", "SERIAL", "LASTTRAN",
+    "ANAD1", "ANAD2", "ANAD3", "ANAD4",
+    "BNAD1", "BNAD2", "BNAD3", "BNAD4",
+    "AMOUNT", "FORAMT", "PAYREF",
+    "ACCTNO", "CURRENCY", "PAYMODE", "USERID", "RESIDENT",
+    "APPLNATIONAL", "BMRSTATUS", "COUNTRY", "ADMIN",
+]
+
+print("\nReading + filtering RMT data from Parquet cache...")
+
+con = duckdb.connect(database=":memory:")
+
+filtered_df = con.execute(f"""
+    SELECT {', '.join(KEEP_COLUMNS)}
+    FROM read_parquet('{RMT_CACHE}')
+    WHERE REMTYPE = 'F'
+      AND STATUS IN ('TI', 'TO', 'BR')
+""").pl()
+
+con.close()
+gc.collect()
+
+print(f"  Filtered rows: {len(filtered_df):,}")
+
+# Normalize fixed-width character columns (SAS pads char values with blanks)
+str_cols = [c for c, dt in zip(filtered_df.columns, filtered_df.dtypes) if dt == pl.Utf8]
+if str_cols:
+    filtered_df = filtered_df.with_columns([pl.col(c).str.strip_chars() for c in str_cols])
+
+inward_df = filtered_df.filter(pl.col("STATUS") == "TI")
+outward_df = filtered_df.filter(pl.col("STATUS") != "TI")  # STATUS IN ('TO','BR')
+
+del filtered_df
+gc.collect()
+
+# ============================================================
+# WRITE OUTPUT FILES
+# ============================================================
+inward_lines = _write_report(inward_df, INWARD_HEADERS, _build_inward_line, INWARD_REPORT_FILE)
+outward_lines = _write_report(outward_df, OUTWARD_HEADERS, _build_outward_line, OUTWARD_REPORT_FILE)
+
+# ============================================================
+# TERMINAL OUTPUT
+# ============================================================
+print(f"\nInward Report Output Path  : {INWARD_REPORT_FILE}")
+print(f"Inward Records Written     : {inward_df.height}")
+# print("Inward Report Preview:")
+# for line in inward_lines[:5]:
+#     print(line.replace(DLM, "|"))
+
+print(f"\nOutward Report Output Path : {OUTWARD_REPORT_FILE}")
+print(f"Outward Records Written    : {outward_df.height}")
+# print("Outward Report Preview:")
+# for line in outward_lines[:5]:
+#     print(line.replace(DLM, "|"))
+
+# ============================================================
+# CACHE NOTE
+# ============================================================
+# The RMT parquet cache (RMT_CACHE) is intentionally kept across runs so a
+# second execution against the same source file skips the expensive
+# SAS -> Parquet conversion step. Remove it manually or let the freshness
+# check (_cache_is_fresh) handle eviction when the source file changes.
+
+del inward_df, outward_df
+gc.collect()
+
+# ============================================================
+# SFTP CONFIGURATION (DRR - Data Report Repository System)
+# ============================================================
+# HOST_DESC value that identifies the DRR entry in
+# ctl_dwh_sftp_info.sas7bdat.
+DRR_HOST_DESC = "Data Report Repository (DRR)"
+
+# Remote folder on the DRR server (from JCL: CD CD-BRC)
+DRR_REMOTE_DIR = "CD-BRC"
+
+# ============================================================
+# SFTP UPLOAD TO DRR
+# ============================================================
+def _drr_remote_filename(prefix: str) -> str:
+    """
+    Build the DRR filename using the run date, matching the JCL's
+    %OYYYY.%OMM.%ODD token. %O-prefixed variables in the original
+    COZBATCH/NDM script represent the file-transfer run date (today),
+    not the report date (REPTYEAR/REPTMON) — kept distinct on purpose.
+    """
+    today = datetime.now()
+    return f"{prefix}_{today:%Y.%m.%d}_UAT.txt"
 
 
-def branch_label(ntbrch: Any, branch_map: dict[int, str]) -> str:
+def sftp_upload_to_drr(local_files: list) -> None:
+    """
+    Upload output report file(s) to the DRR server.
+
+    Equivalent of the JCL RUNSFTP step:
+        //RUNSFTP  EXEC COZBATCH
+        //CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+        lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+        lzopts linerule=$lr
+        CD CD-BRC
+        PUT //SAP.PBB.COMP.INWARD.REPT   \
+                  ForeignInwardRemittances_%OYYYY.%OMM.%ODD..txt
+        PUT //SAP.PBB.COMP.OUTWARD.REPT  \
+                  ForeignOutwardRemittances_%OYYYY.%OMM.%ODD..txt
+        EOB
+
+    Parameters:
+        local_files: list of (local_path: Path, remote_filename_prefix: str)
+    """
+    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(DRR_HOST_DESC)
+
+    ssh = paramiko.SSHClient()
+    # NOTE: HOST_KEY from ctl_dwh_sftp_info.sas7bdat is available for strict
+    # host-key pinning, but its stored format (hex blob / OpenSSH pubkey
+    # string / fingerprint) is not confirmed yet — CONFIRM with infra team
+    # before enabling strict pinning. AutoAddPolicy is used in the interim.
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    print(f"  Connecting to DRR host {host_ip} as {sftp_id} ...")
+    ssh.connect(hostname=host_ip, username=sftp_id, password=sftp_pw)
+    sftp = ssh.open_sftp()
+
     try:
-        code = int(ntbrch)
-    except (TypeError, ValueError):
-        return ""
-    description = branch_map.get(code)
-    if description is None:
-        try:
-            description = pbbln_put(code, "BRCHCD.", "")
-        except KeyError:
-            description = ""
-    return f"{description} {code:03d}".strip()
+        sftp.chdir(DRR_REMOTE_DIR)
+    except IOError:
+        sftp.close()
+        ssh.close()
+        sys.exit(f"Aborting: Remote DRR folder '{DRR_REMOTE_DIR}' not found")
+
+    for local_path, remote_prefix in local_files:
+        remote_name = _drr_remote_filename(remote_prefix)
+        print(f"  SFTP upload: {local_path.name} -> {DRR_REMOTE_DIR}/{remote_name}")
+        sftp.put(str(local_path), remote_name)
+
+    sftp.close()
+    ssh.close()
+    print("  DRR upload complete.")
+
+# ============================================================
+# SFTP REPORTS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+# ============================================================
+print("\nUploading reports to DRR via SFTP...")
+sftp_upload_to_drr([
+    (INWARD_REPORT_FILE, "ForeignInwardRemittances"),
+    (OUTWARD_REPORT_FILE, "ForeignOutwardRemittances"),
+])
 
 
-def remaining_months(date: pd.Timestamp, issue: pd.Timestamp, term: float) -> float:
-    if pd.isna(date) or pd.isna(issue):
-        return np.nan
-    return term - ((date.year - issue.year) * 12 + date.month - issue.month + 1)
-
-
-def initialize_row(row: pd.Series) -> pd.Series:
-    for c in NUMERIC_ZERO:
-        if c not in row or pd.isna(row[c]):
-            row[c] = 0.0
-    if val(row, "EARNTERM") == 0:
-        row["EARNTERM"] = val(row, "NOTETERM")
-    row["WRITEOFF"] = val(row, "WRITEOFF", "N")
-    row["WDOWNIND"] = val(row, "WDOWNIND", "N")
-    row["RESCHEIND"] = val(row, "RESCHEIND", "N")
-    row["USER5"] = val(row, "USER5", "")
-    row["BORSTAT"] = val(row, "BORSTAT", "")
-    return row
-
-
-def rule78_sum(rem1: float, rem2: float, charge: float, term: float) -> float:
-    if any(pd.isna(x) for x in (rem1, rem2)) or term <= 0 or rem1 < rem2:
-        return 0.0
-    months = np.arange(int(rem1), int(rem2) - 1, -1)
-    return float((2 * (months + 1) * charge / (term * (term + 1))).sum())
-
-
-def written_off(row: pd.Series) -> pd.Series:
-    if row["WRITEOFF"] != "Y":
-        return row
-    row["SUSPEND"], row["OISUSP"] = val(row, "WSUSPEND"), val(row, "WOISUSP")
-    if row["WDOWNIND"] != "Y":
-        row["RECOVER"], row["RECC"] = val(row, "WRECOVER"), val(row, "WRECC")
-        row["OIRECV"], row["OIRECC"] = val(row, "WOIRECV"), val(row, "WOIRECC")
-        row["IIS"] = row["OI"] = 0.0
-        row["IISPW"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"])
-        row["OIW"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"])
-    else:
-        row["IISPW"], row["OIW"] = val(row, "WIISPW"), val(row, "WOIW")
-        row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -val(row, "RECOVER"), -val(row, "RECC"), -row["IISPW"])
-        if row["IIS"] < 0:
-            row["RECOVER"] = 0.0
-            row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -val(row, "RECC"), -row["IISPW"])
-        row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -val(row, "OIRECV"), -val(row, "OIRECC"), -row["OIW"])
-        if row["OI"] < 0:
-            row["OIRECV"] = row["OIRECC"] = 0.0
-            row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIW"])
-    return row
-
-
-def rescheduled(row: pd.Series) -> pd.Series:
-    if row["RESCHEIND"] == "Y":
-        for target, source in [("SUSPEND", "WSUSPEND"), ("OISUSP", "WOISUSP"),
-                               ("RECOVER", "WRECOVER"), ("RECC", "WRECC"),
-                               ("OIRECV", "WOIRECV"), ("OIRECC", "WOIRECC")]:
-            row[target] = val(row, source)
-        row["IIS"] = sas_sum(row["IISP"], row["SUSPEND"], -row["RECOVER"], -row["RECC"], -val(row, "IISPW"))
-        row["OI"] = sas_sum(row["OIP"], row["OISUSP"], -row["OIRECV"], -row["OIRECC"], -val(row, "OIW"))
-    row["TOTIIS"] = sas_sum(row["IIS"], row["OI"])
-    return row
-
-
-def calculate_existing(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
-    row = initialize_row(row.copy())
-    for c in ["IIS", "SUSPEND", "UHC", "OI", "OISUSP", "RECOVER", "OIRECV", "OIRECC", "OIW", "RECC"]:
-        row[c] = 0.0
-    lt, days = int(val(row, "LOANTYPE", 0)), val(row, "DAYS")
-    if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y":
-        row["BORSTAT"] = "W"
-    nonperforming = days > 89 or row["BORSTAT"] in {"F", "R", "I"} or (row["USER5"] == "N" and lt not in {983, 993})
-    bl, issue, term, charge = sas_date(row.get("BLDATE")), sas_date(row.get("ISSDTE")), row["EARNTERM"], row["TERMCHG"]
-    if pd.notna(bl) and charge > 0 and nonperforming:
-        rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
-        rem2 = max(0, remaining_months(report_date, issue, term))
-        rems = remaining_months(pd.Timestamp(report_date.year, 1, 1), issue, term)
-        row["IIS"] = rule78_sum(rem1, rem2, charge, term)
-        row["SUSPEND"] = rule78_sum(rems, rem2, charge, term)
-        row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
-        if lt not in {128, 130}:
-            row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
-        if rem2 > 0 and term > 0:
-            row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
-    elif nonperforming:
-        row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
-        row["OISUSP"] = sas_sum(row["FEEAMT"], -row["FEEAMTA"], row["FEEAMT5"])
-    row["NETBAL"] = row["CURBAL"] - row["UHC"]
-    if row["NETBAL"] <= row["IISP"] and (nonperforming or row["USER5"] == "N"):
-        row["IIS"] = row["NETBAL"]
-    if row["BORSTAT"] == "W":
-        row["IISPW"], row["OIW"] = row["IISP"], row["OIP"]
-    else:
-        row["RECOVER"] = row["IISP"] + row["SUSPEND"] - row["IIS"]
-        if row["RECOVER"] < 0:
-            row["SUSPEND"] -= row["RECOVER"]; row["RECOVER"] = 0.0
-        if row["RECOVER"] > row["IISP"]:
-            row["RECC"] = row["RECOVER"] - row["IISP"]; row["RECOVER"] = row["IISP"]
-        if lt not in {128, 130}:
-            row["OIRECV"] = row["OIP"] - row["OI"]
-            if row["OIRECV"] < 0:
-                row["OISUSP"] -= row["OIRECV"]; row["OIRECV"] = 0.0
-            if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
-            if row["OIRECV"] > row["OIP"]:
-                row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
-    if charge == 0:
-        netexp = row["CURBAL"] - row["IISP"] - (row["MARKETVL"] if row["BORSTAT"] == "R" else 0)
-        if (netexp > 0 and days > 89) or row["BORSTAT"] == "R":
-            row["IIS"], row["RECOVER"] = row["RECOVER"], 0.0
-            row["OI"], row["OIRECV"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"]), 0.0
-    if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
-    row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
-    if row["OISUSP"] < 0: row["OIRECV"] -= row["OISUSP"]
-    if row["OIRECV"] > row["OIP"]:
-        row["OIRECC"] = row["OIRECV"] - row["OIP"]; row["OIRECV"] = row["OIP"]
-    row["OISUSP"] = sas_sum(row["OIRECV"], row["OIRECC"], row["OIW"], -row["OIP"], row["OI"])
-    return rescheduled(written_off(row))
-
-
-def calculate_current(row: pd.Series, report_date: pd.Timestamp) -> pd.Series:
-    row = initialize_row(row.copy())
-    for c in ["IIS", "UHC", "OI", "RECOVER", "RECC", "OIRECV", "OIRECC", "IISPW", "OIW"]:
-        row[c] = 0.0
-    lt = int(val(row, "LOANTYPE", 0))
-    if row["WRITEOFF"] == "Y" and row["WDOWNIND"] != "Y": row["BORSTAT"] = "W"
-    issue, bl = sas_date(row.get("ISSDTE")), sas_date(row.get("BLDATE"))
-    term, charge = row["EARNTERM"], row["TERMCHG"]
-    condition = (pd.notna(bl) and charge > 0) or (row["USER5"] == "N" and lt not in {983, 993})
-    rem2 = max(0, remaining_months(report_date, issue, term)) if pd.notna(issue) else 0
-    if condition:
-        rem1 = remaining_months(bl, issue, term) - (3 if lt in {128, 130} else 1)
-        row["IIS"] = rule78_sum(rem1, rem2, charge, term)
-    if rem2 > 0 and term > 0: row["UHC"] = rem2 * (rem2 + 1) * charge / (term * (term + 1))
-    row["OI"] = sas_sum(row["FEETOT2"], -row["FEEAMTA"], row["FEEAMT5"])
-    if lt in ACCRUAL_TYPES: row["IIS"] = row["ACCRUAL"]
-    row["SUSPEND"], row["OISUSP"] = row["IIS"], row["OI"]
-    row["NETBAL"] = row["CURBAL"] - row["UHC"]
-    return rescheduled(written_off(row))
-
-
-def apply_nplntb(previous: pd.DataFrame) -> pd.DataFrame:
-    """Match PGM(NPLNTB), whose supplied transformation rules are commented."""
-    return previous
-
-
-def risk(row: pd.Series) -> str:
-    if val(row, "DAYS") > 364 or val(row, "BORSTAT", "") == "W": return "BAD"
-    if val(row, "DAYS") > 273: return "DOUBTFUL"
-    if val(row, "DAYS") > 182: return "SUBSTANDARD 2"
-    return "SUBSTANDARD-1"
-
-
-def load_branch_map(path: Path | None) -> dict[int, str]:
-    if not path: return {}
-    m = pd.read_csv(path)
-    m.columns = [c.upper() for c in m.columns]
-    return dict(zip(m["NTBRCH"].astype(int), m["BRANCH"].astype(str)))
-
-
-def write_reports(df: pd.DataFrame, output: Path) -> None:
-    measures = ["CURBAL", "UHC", "NETBAL", "IISP", "SUSPEND", "RECOVER", "RECC",
-                "IISPW", "IIS", "OIP", "OISUSP", "OIRECV", "OIRECC", "OIW", "OI", "TOTIIS"]
-    for c in measures:
-        if c not in df: df[c] = 0.0
-    summary = df.groupby(["LOANTYP", "RISK", "BRANCH"], dropna=False).agg(
-        NO_OF_ACCOUNT=("ACCTNO", "size"), **{c: (c, "sum") for c in measures}
-    ).reset_index()
-    detail_cols = [c for c in ["LOANTYP", "BRANCH", "RISK", "ACCTNO", "NOTENO", "NAME", "DAYS", "BORSTAT", "NETPROC"] + measures if c in df]
-    summary.to_csv(output / "eifmnp03_summary.csv", index=False)
-    df.sort_values([c for c in ["LOANTYP", "BRANCH", "RISK", "DAYS", "ACCTNO"] if c in df])[detail_cols].to_csv(output / "eifmnp03_detail.csv", index=False)
-
-
-IIS_REPORT_LABELS = {
-    "ACCTNO":"MNI ACCOUNT NO", "DAYS":"NO OF DAYS PAST DUE",
-    "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
-    "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)",
-    "IISP":"OPENING BAL FOR FINANCIAL YEAR (D)",
-    "SUSPEND":"INTEREST SUSPENDED DURING THE PERIOD (E)",
-    "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (F)",
-    "RECC":"REVERSAL OF CURRENT YEAR IIS (G)", "IISPW":"WRITTEN OFF (H)",
-    "IIS":"IIS CLOSING BAL (D+E-F-G-H=I)",
-    "OIP":"OPENING BAL FOR FINANCIAL YEAR (J)",
-    "OISUSP":"OI SUSPENDED DURING THE PERIOD (K)",
-    "OIRECV":"WRITTEN BACK TO PROFIT & LOSS (L)",
-    "OIRECC":"REVERSAL OF CURRENT YEAR OI (M)", "OIW":"WRITTEN OFF (N)",
-    "OI":"OI CLOSING BAL (J+K-L-M-N=O)",
-    "TOTIIS":"TOTAL CLOSING BAL AS AT RPT DATE (I+O)",
-}
-
-
-def write_original_listing(df: pd.DataFrame, report_date: pd.Timestamp, output: Path) -> str:
-    """Render both PROC TABULATE tables and the original PROC PRINT listing."""
-    measures=["CURBAL","UHC","NETBAL","IISP","SUSPEND","RECOVER","RECC","IISPW","IIS","OIP","OISUSP","OIRECV","OIRECC","OIW","OI","TOTIIS"]
-    for column in measures:
-        if column not in df: df[column]=0.0
-    title1="PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW"
-    title2=f"MOVEMENTS OF INTEREST IN SUSPENSE FOR THE MONTH ENDING {report_date.strftime('%d %B %Y').upper()} (EXISTING AND CURRENT)"
-    fmt=lambda value:f"{value:,.2f}"
-    risk_branch=df.groupby(["LOANTYP","RISK","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
-    branch=df.groupby(["LOANTYP","BRANCH"],dropna=False).agg(NO_OF_ACCOUNT=("ACCTNO","size"),**{c:(c,"sum") for c in measures}).reset_index()
-    rename={**IIS_REPORT_LABELS,"NO_OF_ACCOUNT":"NO OF ACCOUNT"}
-    lines=[title1,title2,"","SUMMARY BY RISK AND BRANCH",
-           risk_branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
-           "","SUMMARY BY BRANCH",
-           branch.rename(columns=rename).to_string(index=False,formatters={rename[c]:fmt for c in measures}),
-           "","DETAILED LISTING"]
-    ordered=df.sort_values(["LOANTYP","BRANCH","RISK","DAYS","ACCTNO"])
-    detail_cols=["ACCTNO","NAME","DAYS","BORSTAT","NETPROC",*measures]
-    for (loan_type,branch_name,risk_name),group in ordered.groupby(["LOANTYP","BRANCH","RISK"],dropna=False,sort=False):
-        lines.extend(["",f"LOAN TYPE: {loan_type}    BRANCH: {branch_name}    RISK: {risk_name}"])
-        display=group[[c for c in detail_cols if c in group]].rename(columns=IIS_REPORT_LABELS)
-        lines.append(display.to_string(index=False,formatters={IIS_REPORT_LABELS[c]:fmt for c in measures if c in group}))
-        totals=group[measures].sum()
-        lines.append("TOTAL: "+" | ".join(f"{IIS_REPORT_LABELS[c]}={totals[c]:,.2f}" for c in measures))
-    report="\n".join(lines)+"\n"
-    (output/"eifmnp03_report.lst").write_text(report,encoding="utf-8")
-    (output/"eifmnp03_report.txt").write_text(report,encoding="utf-8")
-    return report
-
-
-def main() -> None:
-    p = argparse.ArgumentParser()
-    p.add_argument("--input-dir", type=Path, default=DEFAULT_BASE)
-    p.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    p.add_argument("--loan-pattern", default="loan{mm}.sas7bdat")
-    p.add_argument("--wiis-file", default="wiis.sas7bdat")
-    p.add_argument("--previous-pattern", default="iis{mm}.sas7bdat")
-    p.add_argument("--ploan-pattern", default="ploan{mm}.sas7bdat")
-    p.add_argument("--branch-map", type=Path, default=os.environ.get("XMIS_BRANCH_MAP"))
-    p.add_argument("--no-console-report", action="store_true")
-    args = p.parse_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    # Replacement for NPL.REPTDATE: process as at yesterday's calendar date.
-    report_date = pd.Timestamp(date.today() - timedelta(days=1))
-    mm, prev = f"{report_date.month:02d}", f"{(report_date.month - 2) % 12 + 1:02d}"
-    loan = read_sas(args.input_dir / args.loan_pattern.format(mm=mm))
-    wiis = read_sas(args.input_dir / args.wiis_file).drop(columns=["NOTENO", "NTBRCH"], errors="ignore")
-    wiis["_WIIS"] = True
-    loan = loan.merge(wiis, on="ACCTNO", how="left", suffixes=("", "_WIIS"))
-    loan["WRITEOFF"] = np.where(loan["_WIIS"].fillna(False), "Y", "N")
-    if "LOANTYPE" in loan:
-        loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEEAMT"] = loan.loc[loan["LOANTYPE"].isin([380, 381]), "FEETOT2"]
-        loan.loc[loan["LOANTYPE"].isin([983, 993]), "WDOWNIND"] = "N"
-    bmap = load_branch_map(args.branch_map)
-    existing = loan[loan.get("EXIST", "") == "Y"].apply(calculate_existing, axis=1, report_date=report_date)
-    current = loan[loan.get("EXIST", "") != "Y"].apply(calculate_current, axis=1, report_date=report_date)
-    for df in (existing, current):
-        df["BRANCH"] = df["NTBRCH"].map(lambda x: branch_label(x, bmap))
-        df["LOANTYP"] = df["LOANTYPE"].map(LOAN_TYPES).fillna("OTHERS")
-    if mm == "01":
-        for df in (existing, current): df[["IISPCUM", "OIPCUM", "POI"]] = 0.0
-    else:
-        previous_path = args.input_dir / args.previous_pattern.format(mm=prev)
-        if previous_path.exists():
-            previous = apply_nplntb(read_sas(previous_path))
-            # Retain prior columns for audit and downstream reconciliation.
-            ren = {"DAYS": "PDAYS", "SUSPEND": "PSUSPEND", "OISUSP": "POISUSP", "IISP": "PIISP", "OIP": "POIP", "OI": "POI", "RECC": "PRECC", "OIRECC": "POIRECC", "RECOVER": "PRECOVER", "OIRECV": "POIRECV"}
-            # A prior-month dataset may already contain retained P* columns.
-            # SAS RENAME replaces the active variable names for this step;
-            # pandas would otherwise keep duplicate labels and pd.concat fails.
-            existing_targets = [
-                target
-                for source, target in ren.items()
-                if source in previous.columns and target in previous.columns
-            ]
-            previous = previous.drop(columns=existing_targets)
-            previous = previous.rename(columns=ren).drop_duplicates(["ACCTNO", "NOTENO"])
-            existing = existing.merge(previous[[c for c in previous if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]], on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV"))
-            # SAS uses PLOANMM to retain prior current-NPL accounts which are
-            # absent from the current LOANMM extract (settled-account path).
-            ploan_path = args.input_dir / args.ploan_pattern.format(mm=mm)
-            if ploan_path.exists():
-                ploan_cols = ["ACCTNO", "NOTENO", "CURBAL", "DAYS", "BORSTAT", "NTBRCH", "COSTCTR"]
-                ploan = read_sas(ploan_path)[ploan_cols].drop_duplicates(["ACCTNO", "NOTENO"])
-                eligible = previous.copy()
-                piisp = pd.to_numeric(eligible.get("PIISP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
-                poip = pd.to_numeric(eligible.get("POIP", pd.Series(0, index=eligible.index)), errors="coerce").fillna(0)
-                exist = eligible.get("EXIST", pd.Series("", index=eligible.index)).fillna("")
-                eligible = eligible[(piisp == 0) & (poip == 0) & (exist != "Y")]
-                eligible = eligible.merge(ploan, on=["ACCTNO", "NOTENO"], how="left", suffixes=("", "_PLOAN"))
-            else:
-                eligible = previous
-            current = current.merge(
-                eligible[[c for c in eligible if c in set(ren.values()) | {"ACCTNO", "NOTENO"}]],
-                on=["ACCTNO", "NOTENO"], how="outer", suffixes=("", "_PREV")
-            )
-    combined = pd.concat([existing, current], ignore_index=True, sort=False)
-    if PIBB_PROFILE:
-        # EIIMNP03: Islamic cost centres plus the two explicitly included centres.
-        combined = combined[
-            ((combined["COSTCTR"] >= 3000) & (combined["COSTCTR"] <= 3999))
-            | combined["COSTCTR"].isin([4043, 4048])
-        ]
-    else:
-        # EIFMNP03: PBB excludes Islamic cost centres and 4043/4048.
-        combined = combined[
-            ((combined["COSTCTR"] < 3000) | (combined["COSTCTR"] > 3999))
-            & ~combined["COSTCTR"].isin([4043, 4048])
-            & combined["COSTCTR"].notna()
-        ]
-    combined["RISK"] = combined.apply(risk, axis=1)
-    combined = combined.drop_duplicates(["ACCTNO", "NOTENO"])
-    combined.to_csv(args.output_dir / f"iis{mm}.csv", index=False)
-    write_reports(combined, args.output_dir)
-    report = write_original_listing(combined, report_date, args.output_dir)
-    print(f"Processed {len(combined):,} rows for {report_date.date()} into {args.output_dir}")
-    if not args.no_console_report:
-        print(report, end="")
-
-
-if __name__ == "__main__":
-    main()
+print("\nEIWFRMCR complete.")
