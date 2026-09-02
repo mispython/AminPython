@@ -1,208 +1,228 @@
-//EIBMTCSM JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB07068
-/*JOBPARM S=S1M2
-//**********************************************************************
-//* TITLE   : EXTRACT THE PB BANK CARD TRANSACTIONAL INFORMATION FROM
-//*           OCM TO SAS DATAWAREHOUSE
-//* DATASET : ATMTRNXmmyy
-//* ESMR    : 2010-4423
-//* DATE    : 24-02-2011 (PROGAAB)
-//*
-//* TITLE   : GENERATE DAILY SAS EXTRACTION FILE FOR MASTERCARD
-//*           QUARTERLY REPORT - POPULATE DATA FIELDS INTO PBCS
-//* DATASET : ATM_CASHyyyymm
-//* ESMR    : 2018-562
-//* DATE    : 28-02-2018 (PROGJKA)
-//**********************************************************************
-//DELETE  EXEC PGM=IEFBR14
-//DEL01   DD DSN=SAP.PBB.ATMFTP,
-//           DISP=(MOD,DELETE,DELETE),
-//           SPACE=(CYL,(0))
-//DEL01   DD DSN=SAP.PBB.ATMCSFTP,
-//           DISP=(MOD,DELETE,DELETE),
-//           SPACE=(CYL,(0))
-//**********************************************************************
-//CREATE  EXEC PGM=IEFBR14
-//CRT01   DD DSN=SAP.PBB.ATMFTP,
-//           DISP=(NEW,CATLG,DELETE),
-//           DCB=(RECFM=FB,LRECL=80,BLKSIZE=27920),
-//           SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)
-//CRT01   DD DSN=SAP.PBB.ATMCSFTP,
-//           DISP=(NEW,CATLG,DELETE),
-//           DCB=(RECFM=FB,LRECL=80,BLKSIZE=27920),
-//           SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)
-//*
-//EIBMTCSM  EXEC SAS609
-//DEPO      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
-//OCMTXT    DD DSN=ATP.TCS.JNL.MONTHLY.EXTRACT(0),DISP=SHR
-//OCM       DD DSN=SAP.PBB.OCM,DISP=OLD
-//TEMP      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
-//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
-//             SPACE=(CYL,(100,50)),UNIT=(SYSDA,5)
-//SYSIN     DD *
+options yearcutoff=1950 nocenter;
 
-OPTIONS YEARCUTOFF=1950 NOCENTER;
+/* Input/output locations */
+libname input "/host_pq/mis/input/OCM";
+libname out   "/dwh/pbcs";
 
-PROC FORMAT;
-   VALUE TYPE
-     0    =  'INCOMPLETE TRXN'
-     1    =  'CASH WITHDRAWAL'
-     2    =  'BALANCE INQUIRY'
-     3    =  'DEPOSIT'
-     4    =  'TRANSFER'
-     5    =  'PAYMENT ENCLOSED'
-     6    =  'SPECIAL'
-     7    =  'SECURITY EXPOSURE'
-     8    =  'PAYMENT FROM'
-     9    =  'CASH CHECK (USED SCWDRWL)'
-    11    =  'LAST 6 TRANSACTIONS'
-    12    =  'CELCOM PREPAID'
-    13    =  'MAXIS  PREPAID'
-    14    =  'DIGI   PREPAID'
-    17    =  'POS PURCHASE W/CASH BACK'
-    21    =  'PREAUTH FOR DAY2DAY'
-    10    =  '1ST DEPOSIT(FOR DEP SLIP)'
-    31    =  '2ND FIXED DEPOSIT'
-    32    =  '2ND DEPOSIT'
-    33    =  '1ST FIXED DEPOSIT'
-    34    =  '1ST TRANSFER'
-    35    =  '1ST GIRO'
-    36    =  '1ST PISA'
-    50    =  'CDT 1ST MSG'
-    51    =  'CDT: ENCASH'
-    65    =  'JARING PREPAID'
-    66    =  'NEW IC ENTERED'
-    67    =  'NEXTEL PREPAID'
-    68    =  'TMNET PREPAID & PREP ONE'
-    69    =  'ESA STATUS INQUIRY'
-    70    =  'ESA CANCELLATION'
-    71    =  'PINLESS TOPUP (1ST PART)'
-    72    =  'PINLESS TOPUP (2ND PART)'
-    81    =  'E-RIGHTS APPL (1ST PART)'
-    82    =  'E-RIGHTS APPL (2ND PART)'
-    97    =  'JOMPAY - 1ST PART'
-    98    =  'JOMPAY - 2ND PART'
-   129    =  'FAST CASH'
-   130    =  'CHECK DEPOSIT (USED SCDEP)'
-   131    =  'CHECK DEP W C/B (SCDEPCB)'
-   132    =  'DEPOSIT WITH CASH BACK'
-   133    =  'ENV DEP WITH CASH BACK'
-   135    =  'PAYMENT FROM/TO'
-   136    =  'BILL PAYMENT / GIRO'
-   137    =  'PIN CHANGE'
-   138    =  'CHEQUE BOOK ORDER'
-   139    =  'FIXED DEPOSIT'
-   140    =  'MINI STATEMENT'
-   141    =  'GIRO 1ST'
-   142    =  'CANCEL PRESSED'
-   143    =  'CUST TIMEOUT'
-   144    =  'HOST TIMEOUT'
-   145    =  'RETURN CARD PRESSED'
-   146    =  'GIRO CREDIT CARD PYMT'
-   147    =  'CARD REMOVAL TOUT'
-   148    =  'POS PURCHASE'
-   149    =  'POS VOID'
-   160    =  'MP LOADING'
-   150    =  'EBNK REGISTRATION'
-   151    =  'SMS TOPUP-REGISTRATION'
-   152    =  'SMS TOPUP-TERMINATION'
-   153    =  'REQUEST FOR TAC'
-   154    =  'REGISTER PHONE FOR TAC'
-   155    =  'LATEST PHONE# UPDATE'
-   156    =  'CONFIRM LATEST PHONE#'
-   157    =  'REGIONAL LINK REGN'
-   158    =  'AIRASIA INQUIRY'
-   159    =  'AIRASIA PAYMENT'
-   161    =  'TOUCH N GO (LOADING)'
-   162    =  'CHG DAILY W/D LIMIT'
-   163    =  'CANCEL PRE-AUTH'
-   164    =  'PMO HP REGISTRATION'
-   165    =  'CHG DAILY RETAIL LIMIT'
-   166    =  'ACTIVATE OVERSEAS W/D'
-   167    =  'DEACTIVATE OVERSEAS W/D'
-   168    =  'CONVERT BANKCARD TO D2D'
-   169    =  'MYMOBILE REGISTRATION'
-   170    =  'EBANK RESET PIN'
-   171    =  'MYMOBILE RESET PIN'
-   172    =  'CUSTOMER CONSENT'
-   173    =  'OPT STATUS INQUIRY'
-   174    =  'OPT STATUS UPDATE'
-   175    =  'NEW DAILY XFER LIMIT'
-   176    =  'CONTACTLESS PINLESS LIMIT'
-   225    =  'MINI STATEMENT'
-   226    =  'LAST TEN TRANS'
-   227    =  'DEPOSITORY LISTING'
-   ;
-RUN;
+/* JNL_MONTHLY is a raw FB binary file */
+filename jnlmth "/host_pq/mis/input/OCM/JNL_MONTHLY"
+    recfm=f
+    lrecl=224;
 
-DATA REPTDATE;
-   SET DEPO.REPTDATE;
-   DELTDATE = INTNX('MONTH',REPTDATE,-7,'E');
-   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
-   CALL SYMPUT('REPTYR1',PUT(REPTDATE,YEAR4.));
-   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-   CALL SYMPUT('NEXT_MTH',PUT(MONTH(DELTDATE),Z2.));
-   CALL SYMPUT('REPTDATE',REPTDATE);
-RUN;
+/* Default report date: previous month end */
+%let report_date  = %sysfunc(intnx(month,%sysfunc(today()),-1,e));
+%let report_month = %sysfunc(month(&report_date),z2.);
+%let report_year2 = %sysfunc(year(&report_date),z2.);
+%let report_year4 = %sysfunc(year(&report_date),z4.);
 
-PROC DATASETS LIBRARY=OCM;
-   DELETE ATMTRNX&NEXT_MTH;
-RUN;
+%put NOTE: Report date = %sysfunc(putn(&report_date,date9.));
+%put NOTE: Full output = out.ATMTRNX&report_month.&report_year2;
+%put NOTE: Cash output = out.ATM_CASH&report_year4.&report_month;
 
-DATA TEMP.ATMTRNX&REPTMON&REPTYEAR
-      OCM.ATMTRNX&REPTMON;
-  DROP YY MM DD TRNXDT COMPIND AUTHIND;
-  INFILE OCMTXT;
-  INPUT @071 CARDNO    $20.
-        @012 BRANCH    PD3.
-        @015 TERMNO    IB4.
-        @001 TRNXDT    PD5.
-        @006 TRNXTIME  PD4.
-        @019 TRNXCODE  IB2.
-        @010 ATMTYPE     2.
-        @021 TRNXAMT   PD8.2
-        @029 SUCCESS_TRAN_AMT PD8.2
-        @038 COMPIND    $1.
-        @039 AUTHIND    $1.
-        @047 DENIAL_CD   3.
-        @055 CARDTYPE   $2.
-        @091 ACCTNO     16.
-        @167 STATE_CD   $2.
-        ;
 
-  TRNXTYPE = PUT(TRNXCODE,TYPE.);
+/* Transaction descriptions */
+proc format;
+    value type
+        0   = "INCOMPLETE TRXN"
+        1   = "CASH WITHDRAWAL"
+        2   = "BALANCE INQUIRY"
+        3   = "DEPOSIT"
+        4   = "TRANSFER"
+        5   = "PAYMENT ENCLOSED"
+        6   = "SPECIAL"
+        7   = "SECURITY EXPOSURE"
+        8   = "PAYMENT FROM"
+        9   = "CASH CHECK (USED SCWDRWL)"
+        10  = "1ST DEPOSIT(FOR DEP SLIP)"
+        11  = "LAST 6 TRANSACTIONS"
+        12  = "CELCOM PREPAID"
+        13  = "MAXIS  PREPAID"
+        14  = "DIGI   PREPAID"
+        17  = "POS PURCHASE W/CASH BACK"
+        21  = "PREAUTH FOR DAY2DAY"
+        31  = "2ND FIXED DEPOSIT"
+        32  = "2ND DEPOSIT"
+        33  = "1ST FIXED DEPOSIT"
+        34  = "1ST TRANSFER"
+        35  = "1ST GIRO"
+        36  = "1ST PISA"
+        50  = "CDT 1ST MSG"
+        51  = "CDT: ENCASH"
+        65  = "JARING PREPAID"
+        66  = "NEW IC ENTERED"
+        67  = "NEXTEL PREPAID"
+        68  = "TMNET PREPAID & PREP ONE"
+        69  = "ESA STATUS INQUIRY"
+        70  = "ESA CANCELLATION"
+        71  = "PINLESS TOPUP (1ST PART)"
+        72  = "PINLESS TOPUP (2ND PART)"
+        81  = "E-RIGHTS APPL (1ST PART)"
+        82  = "E-RIGHTS APPL (2ND PART)"
+        97  = "JOMPAY - 1ST PART"
+        98  = "JOMPAY - 2ND PART"
+        129 = "FAST CASH"
+        130 = "CHECK DEPOSIT (USED SCDEP)"
+        131 = "CHECK DEP W C/B (SCDEPCB)"
+        132 = "DEPOSIT WITH CASH BACK"
+        133 = "ENV DEP WITH CASH BACK"
+        135 = "PAYMENT FROM/TO"
+        136 = "BILL PAYMENT / GIRO"
+        137 = "PIN CHANGE"
+        138 = "CHEQUE BOOK ORDER"
+        139 = "FIXED DEPOSIT"
+        140 = "MINI STATEMENT"
+        141 = "GIRO 1ST"
+        142 = "CANCEL PRESSED"
+        143 = "CUST TIMEOUT"
+        144 = "HOST TIMEOUT"
+        145 = "RETURN CARD PRESSED"
+        146 = "GIRO CREDIT CARD PYMT"
+        147 = "CARD REMOVAL TOUT"
+        148 = "POS PURCHASE"
+        149 = "POS VOID"
+        150 = "EBNK REGISTRATION"
+        151 = "SMS TOPUP-REGISTRATION"
+        152 = "SMS TOPUP-TERMINATION"
+        153 = "REQUEST FOR TAC"
+        154 = "REGISTER PHONE FOR TAC"
+        155 = "LATEST PHONE# UPDATE"
+        156 = "CONFIRM LATEST PHONE#"
+        157 = "REGIONAL LINK REGN"
+        158 = "AIRASIA INQUIRY"
+        159 = "AIRASIA PAYMENT"
+        160 = "MP LOADING"
+        161 = "TOUCH N GO (LOADING)"
+        162 = "CHG DAILY W/D LIMIT"
+        163 = "CANCEL PRE-AUTH"
+        164 = "PMO HP REGISTRATION"
+        165 = "CHG DAILY RETAIL LIMIT"
+        166 = "ACTIVATE OVERSEAS W/D"
+        167 = "DEACTIVATE OVERSEAS W/D"
+        168 = "CONVERT BANKCARD TO D2D"
+        169 = "MYMOBILE REGISTRATION"
+        170 = "EBANK RESET PIN"
+        171 = "MYMOBILE RESET PIN"
+        172 = "CUSTOMER CONSENT"
+        173 = "OPT STATUS INQUIRY"
+        174 = "OPT STATUS UPDATE"
+        175 = "NEW DAILY XFER LIMIT"
+        176 = "CONTACTLESS PINLESS LIMIT"
+        225 = "MINI STATEMENT"
+        226 = "LAST TEN TRANS"
+        227 = "DEPOSITORY LISTING"
+    ;
+run;
 
-  IF TRNXDT NE . THEN DO;
-     YY = SUBSTR(TRNXDT, 5,4);
-     MM = SUBSTR(TRNXDT, 9,2);
-     DD = SUBSTR(TRNXDT,11,2);
-     TRNXDATE = MDY(MM,DD,YY);
-  END;
 
-  FORMAT TERMNO     Z4.
-         TRNXTIME   Z6.;
+/* Read the IBM mainframe binary records */
+data out.ATMTRNX&report_month.&report_year2;
+    length
+        CARDNO          $20
+        BRANCH            8
+        TERMNO            8
+        TRNXTIME          8
+        TRNXCODE          8
+        ATMTYPE           8
+        TRNXAMT           8
+        SUCCESS_TRAN_AMT  8
+        DENIAL_CD         8
+        CARDTYPE         $2
+        ACCTNO            8
+        STATE_CD         $2
+        TRNXTYPE         $26
+        TRNXDATE          8
+        TRNXSTAT         $1
+        COMPIND          $1
+        AUTHIND          $1
+        _ATMTYPE         $2
+        _DENIAL_CD       $3
+        _ACCTNO         $16
+    ;
 
-  IF COMPIND EQ 'S' AND AUTHIND EQ 'A' THEN
-     TRNXSTAT = 'S';
-  ELSE
-     TRNXSTAT = 'R';
-RUN;
+    infile jnlmth truncover;
 
-DATA TEMP.ATM_CASH&REPTYR1&REPTMON;
-   SET TEMP.ATMTRNX&REPTMON&REPTYEAR;
+    /*
+       S370 informats read IBM mainframe binary data correctly
+       when SAS is running on Linux.
+    */
+    input
+        @001 TRNXDT           s370fpd5.
+        @006 TRNXTIME         s370fpd4.
+        @010 _ATMTYPE         $ebcdic2.
+        @012 BRANCH           s370fpd3.
+        @015 TERMNO           s370fib4.
+        @019 TRNXCODE         s370fib2.
+        @021 TRNXAMT          s370fpd8.2
+        @029 SUCCESS_TRAN_AMT s370fpd8.2
+        @038 COMPIND          $ebcdic1.
+        @039 AUTHIND          $ebcdic1.
+        @047 _DENIAL_CD       $ebcdic3.
+        @055 CARDTYPE         $ebcdic2.
+        @071 CARDNO           $ebcdic20.
+        @091 _ACCTNO          $ebcdic16.
+        @167 STATE_CD         $ebcdic2.
+    ;
 
-   WHERE TRNXSTAT = 'S' AND
-         CARDTYPE IN ('00','02','03','04') AND
-         TRNXCODE IN (001,002,129);
+    ATMTYPE = input(strip(_ATMTYPE),best32.);
+    DENIAL_CD = input(strip(_DENIAL_CD),best32.);
+    ACCTNO = input(strip(_ACCTNO),best32.);
 
-   FORMAT TRNXDATE DDMMYY10.;
+    TRNXTYPE = put(TRNXCODE,type.);
 
-   KEEP TRNXDATE TRNXTIME CARDNO TRNXAMT TRNXTYPE;
-RUN;
+    if not missing(TRNXDT) then
+        TRNXDATE = input(put(TRNXDT,z8.),yymmdd8.);
 
-FILENAME TRANFILE 'SAP.PBB.ATMFTP' DISP=OLD;
-PROC CPORT LIBRARY=TEMP FILE=TRANFILE; SELECT ATMTRNX&REPTMON&REPTYEAR;
-RUN;
+    if COMPIND = "S" and AUTHIND = "A" then
+        TRNXSTAT = "S";
+    else
+        TRNXSTAT = "R";
 
-FILENAME TRANFILE 'SAP.PBB.ATMCSFTP' DISP=OLD;
-PROC CPORT LIBRARY=TEMP FILE=TRANFILE; SELECT ATM_CASH&REPTYR1&REPTMON;
-RUN;
+    format TERMNO z4.
+           TRNXTIME z6.;
+
+    drop TRNXDT COMPIND AUTHIND
+         _ATMTYPE _DENIAL_CD _ACCTNO;
+run;
+
+
+/* Create ATM cash output */
+data out.ATM_CASH&report_year4.&report_month;
+    set out.ATMTRNX&report_month.&report_year2;
+
+    where TRNXSTAT = "S"
+      and CARDTYPE in ("00","02","03","04")
+      and TRNXCODE in (1,2,129);
+
+    keep CARDNO TRNXTIME TRNXAMT TRNXTYPE TRNXDATE;
+
+    format TRNXTIME z6.
+           TRNXDATE ddmmyy10.;
+run;
+
+
+/* Display output row counts */
+proc sql;
+    select count(*) as ATMTRNX_ROWS format=comma20.
+    from out.ATMTRNX&report_month.&report_year2;
+
+    select count(*) as ATM_CASH_ROWS format=comma20.
+    from out.ATM_CASH&report_year4.&report_month;
+quit;
+
+
+/* Validate output structure */
+proc contents
+    data=out.ATMTRNX&report_month.&report_year2
+    varnum;
+run;
+
+proc contents
+    data=out.ATM_CASH&report_year4.&report_month
+    varnum;
+run;
+
+
+/* Release files and libraries */
+filename jnlmth clear;
+libname input clear;
+libname out clear;
