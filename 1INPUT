@@ -951,3 +951,96 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+==============================================================================================================================
+
+
+1                                                          The SAS System                         09:19 Wednesday, September 2, 2026
+
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='ADHOC_SAS2.sas';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='C:\Users\pas68728\AppData\Local\Temp\scp16422\stgsrcsys\host\holding\ADHOC_SAS2.sas';
+9          %LET _SASPROGRAMFILEHOST='ITDNBVPN065';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         data _null_;
+29                 infile "
+30         cd /sas/python/virt_edw;
+31         source bin/activate;
+32         python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py
+33         " pipe;
+34                 input;
+35                 put _infile_;
+36         run;
+
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py"
+
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 172, in numeric_text
+    return int(value)
+ValueError: invalid literal for int() with base 10: '\x90\x91'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 376, in <module>
+    raise SystemExit(main())
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 345, in main
+    rows = [parse_record(record, args.encoding) for record in records]
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 345, in <listcomp>
+    rows = [parse_record(record, args.encoding) for record in records]
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 210, in parse_record
+    "ATMTYPE": numeric_text(record[9:11], encoding),
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 174, in numeric_text
+2                                                          The SAS System                         09:19 Wednesday, September 2, 2026
+
+    raise ValueError(f"Invalid numeric text field: {value!r}") from error
+ValueError: Invalid numeric text field: '\x90\x91'
+NOTE: 19 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py".
+      The minimum record length was 0.
+      The maximum record length was 77.
+NOTE: DATA statement used (Total process time):
+      real time           1:23.66
+      cpu time            0.01 seconds
+      
+
+37         
+38         %LET _CLIENTTASKLABEL=;
+39         %LET _CLIENTPROCESSFLOWNAME=;
+40         %LET _CLIENTPROJECTPATH=;
+41         %LET _CLIENTPROJECTPATHHOST=;
+42         %LET _CLIENTPROJECTNAME=;
+43         %LET _SASPROGRAMFILE=;
+44         %LET _SASPROGRAMFILEHOST=;
+45         
+46         ;*';*";*/;quit;run;
+47         ODS _ALL_ CLOSE;
+48         
+49         
+50         QUIT; RUN;
+51         
