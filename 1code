@@ -1,104 +1,141 @@
-1                                                          The SAS System                         09:19 Wednesday, September 2, 2026
+****************************************************
+* Job:      EIBMTCSM                               *
+* Location: /sas/pythonITD/mis/Job                 *
+*                                                  *
+* Modified: Thursday, August 27, 2026, 11:20:16 AM *
+****************************************************
+Program start : 2026/09/02 10:52:47
 
-1          ;*';*";*/;quit;run;
-2          OPTIONS PAGENO=MIN;
-3          %LET _CLIENTTASKLABEL='ADHOC_SAS2.sas';
-4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
-5          %LET _CLIENTPROJECTPATH='';
-6          %LET _CLIENTPROJECTPATHHOST='';
-7          %LET _CLIENTPROJECTNAME='';
-8          %LET _SASPROGRAMFILE='C:\Users\pas68728\AppData\Local\Temp\scp16422\stgsrcsys\host\holding\ADHOC_SAS2.sas';
-9          %LET _SASPROGRAMFILEHOST='ITDNBVPN065';
-10         
-11         ODS _ALL_ CLOSE;
-12         OPTIONS DEV=SVG;
-13         GOPTIONS XPIXELS=0 YPIXELS=0;
-14         %macro HTML5AccessibleGraphSupported;
-15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
-16         %mend;
-17         FILENAME EGHTML TEMP;
-18         ODS HTML5(ID=EGHTML) FILE=EGHTML
-19             OPTIONS(BITMAP_MODE='INLINE')
-20             %HTML5AccessibleGraphSupported
-21             ENCODING='utf-8'
-22             STYLE=HTMLBlue
-23             NOGTITLE
-24             NOGFOOTNOTE
-25             GPATH=&sasworklocation
-26         ;
-NOTE: Writing HTML5(EGHTML) Body file: EGHTML
-27         
-28         data _null_;
-29                 infile "
-30         cd /sas/python/virt_edw;
-31         source bin/activate;
-32         python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py --diagnostic
-33         " pipe;
-34                 input;
-35                 put _infile_;
-36         run;
-
-NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py --diagnostic" is:
-      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py --diagnostic"
-
-File size           : 7,755,102,312
-Number of records   : 34,314,612
-First record length : 224
-First 32 bytes      : 02 02 2d 63 1c 00 61 85 14 30 31 00 00 1a 00 00 00 0a 00 01 00 00 00 00 00 1a 00 0c 00 00 00 00
-TRNXDT bytes 1-5    : 02 02 2d 63 1c
-TRNXTIME bytes 6-9  : 00 61 85 14
-ATMTYPE bytes 10-11 : 30 31
-BRANCH bytes 12-14  : 00 00 1a
-TERMNO bytes 15-18  : 00 00 00 0a
-TRNXCODE bytes 19-20: 00 01
-Byte after record   : 0d 0a 02 02
+1	"""Python replacement for the EIBMTCSM JCL/SAS job."""
+2	from __future__ import annotations
+3	import argparse
+4	from datetime import date, datetime, timedelta
+5	from decimal import Decimal
+6	from pathlib import Path
+7	import pandas as pd
+8	DEFAULT_INPUT = Path("/host_pq/mis/input/OCM/JNL_MONTHLY")
+9	DEFAULT_OUTPUT_DIR = Path("/dwh/pbcs")
+10	    0: "INCOMPLETE TRXN", 1: "CASH WITHDRAWAL", 2: "BALANCE INQUIRY",
+11	    3: "DEPOSIT", 4: "TRANSFER", 5: "PAYMENT ENCLOSED", 6: "SPECIAL",
+12	    7: "SECURITY EXPOSURE", 8: "PAYMENT FROM",
+13	    9: "CASH CHECK (USED SCWDRWL)", 10: "1ST DEPOSIT(FOR DEP SLIP)",
+14	    11: "LAST 6 TRANSACTIONS", 12: "CELCOM PREPAID",
+15	    13: "MAXIS  PREPAID", 14: "DIGI   PREPAID",
+16	    17: "POS PURCHASE W/CASH BACK", 21: "PREAUTH FOR DAY2DAY",
+17	    31: "2ND FIXED DEPOSIT", 32: "2ND DEPOSIT",
+18	    33: "1ST FIXED DEPOSIT", 34: "1ST TRANSFER", 35: "1ST GIRO",
+19	    36: "1ST PISA", 50: "CDT 1ST MSG", 51: "CDT: ENCASH",
+20	    65: "JARING PREPAID", 66: "NEW IC ENTERED", 67: "NEXTEL PREPAID",
+21	    68: "TMNET PREPAID & PREP ONE", 69: "ESA STATUS INQUIRY",
+22	    70: "ESA CANCELLATION", 71: "PINLESS TOPUP (1ST PART)",
+23	    72: "PINLESS TOPUP (2ND PART)", 81: "E-RIGHTS APPL (1ST PART)",
+24	    82: "E-RIGHTS APPL (2ND PART)", 97: "JOMPAY - 1ST PART",
+25	    98: "JOMPAY - 2ND PART", 129: "FAST CASH",
+26	    130: "CHECK DEPOSIT (USED SCDEP)", 131: "CHECK DEP W C/B (SCDEPCB)",
+27	    132: "DEPOSIT WITH CASH BACK", 133: "ENV DEP WITH CASH BACK",
+28	    135: "PAYMENT FROM/TO", 136: "BILL PAYMENT / GIRO",
+29	    137: "PIN CHANGE", 138: "CHEQUE BOOK ORDER", 139: "FIXED DEPOSIT",
+30	    140: "MINI STATEMENT", 141: "GIRO 1ST", 142: "CANCEL PRESSED",
+31	    143: "CUST TIMEOUT", 144: "HOST TIMEOUT",
+32	    145: "RETURN CARD PRESSED", 146: "GIRO CREDIT CARD PYMT",
+33	    147: "CARD REMOVAL TOUT", 148: "POS PURCHASE", 149: "POS VOID",
+34	    150: "EBNK REGISTRATION", 151: "SMS TOPUP-REGISTRATION",
+35	    152: "SMS TOPUP-TERMINATION", 153: "REQUEST FOR TAC",
+36	    154: "REGISTER PHONE FOR TAC", 155: "LATEST PHONE# UPDATE",
+37	    156: "CONFIRM LATEST PHONE#", 157: "REGIONAL LINK REGN",
+38	    158: "AIRASIA INQUIRY", 159: "AIRASIA PAYMENT", 160: "MP LOADING",
+39	    161: "TOUCH N GO (LOADING)", 162: "CHG DAILY W/D LIMIT",
+40	    163: "CANCEL PRE-AUTH", 164: "PMO HP REGISTRATION",
+41	    165: "CHG DAILY RETAIL LIMIT", 166: "ACTIVATE OVERSEAS W/D",
+42	    167: "DEACTIVATE OVERSEAS W/D", 168: "CONVERT BANKCARD TO D2D",
+43	    169: "MYMOBILE REGISTRATION", 170: "EBANK RESET PIN",
+44	    171: "MYMOBILE RESET PIN", 172: "CUSTOMER CONSENT",
+45	    173: "OPT STATUS INQUIRY", 174: "OPT STATUS UPDATE",
+46	    175: "NEW DAILY XFER LIMIT", 176: "CONTACTLESS PINLESS LIMIT",
+47	    225: "MINI STATEMENT", 226: "LAST TEN TRANS",
+48	    227: "DEPOSITORY LISTING",
+49	TYPE_FORMAT = {
+50	def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
+51	def binary_integer(raw: bytes) -> int | None:
+52	def decoded(raw: bytes, encoding: str) -> str:
+53	def numeric_text(raw: bytes, encoding: str) -> int | None:
+54	def transaction_date(value: Decimal | None) -> str:
+55	def parse_record(record: bytes, encoding: str) -> dict[str, object]:
+56	def read_records(path: Path, record_length: int | None) -> list[bytes]:
+57	def parse_date(value: str) -> date:
+58	def write_sas7bdat(output_dir: Path, tables: dict[str, pd.DataFrame]) -> dict[str, Path]:
+59	def main() -> int:
+60	if __name__ == "__main__":
+61	    raise SystemExit(main())
+62	    parser = argparse.ArgumentParser(description=__doc__)
+63	    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+64	    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+65	    parser.add_argument(
+66	        "--report-date", type=parse_date,
+67	        default=date.today().replace(day=1) - timedelta(days=1),
+68	    parser.add_argument("--encoding", default="cp037")
+69	    parser.add_argument(
+70	        "--record-length",
+71	        type=int,
+72	        help="fixed record length; omit when records are newline-delimited",
+73	    args = parser.parse_args()
+74	    rows = [
+75	        for record in read_records(args.input, args.record_length)
+76	    if not path.is_file():
+77	    content = path.read_bytes()
+78	    if record_length:
+79	    return [record.rstrip(b"\r") for record in content.split(b"\n") if record.strip()]
+80	        parse_record(record, args.encoding)
+81	    if len(record) < 168:
+82	    trnxdt = packed_decimal(record[0:5])
+83	    if not raw or all(byte == 0 for byte in raw):
+84	    nibbles = [nibble for byte in raw for nibble in (byte >> 4, byte & 0x0F)]
+85	    sign = -1 if nibbles.pop() in (0x0B, 0x0D) else 1
+86	    if any(nibble > 9 for nibble in nibbles):
+87	    value = Decimal("".join(map(str, nibbles)))
+88	    return sign * value.scaleb(-scale)
+89	    trnxtime = packed_decimal(record[5:9])
+90	    branch = packed_decimal(record[11:14])
+91	    trnxcode = binary_integer(record[18:20])
+92	    return int.from_bytes(raw, byteorder="big", signed=True) if raw else None
+93	    compind = decoded(record[37:38], encoding)
+94	    return raw.decode(encoding, errors="replace").strip()
+95	    authind = decoded(record[38:39], encoding)
+96	        "CARDNO": decoded(record[70:90], encoding),
+97	        "BRANCH": int(branch) if branch is not None else None,
+98	        "TERMNO": binary_integer(record[14:18]),
+99	        "TRNXTIME": str(int(trnxtime)).zfill(6) if trnxtime is not None else "",
+100	        "TRNXCODE": trnxcode,
+101	        "ATMTYPE": numeric_text(record[9:11], encoding),
+102	    value = decoded(raw, encoding)
+103	    return int(value) if value else None
+104	        "TRNXAMT": float(packed_decimal(record[20:28], 2) or 0),
+105	        "SUCCESS_TRAN_AMT": float(packed_decimal(record[28:36], 2) or 0),
+106	        "DENIAL_CD": numeric_text(record[46:49], encoding),
+107	        "CARDTYPE": decoded(record[54:56], encoding),
+108	        "ACCTNO": decoded(record[90:106], encoding),
+109	        "STATE_CD": decoded(record[166:168], encoding),
+110	        "TRNXTYPE": TYPE_FORMAT.get(trnxcode, ""),
+111	        "TRNXDATE": transaction_date(trnxdt),
+112	    if value is None:
+113	    digits = str(abs(int(value))).zfill(8)[-8:]
+114	    try:
+115	        return datetime.strptime(digits, "%Y%m%d").date().isoformat()
+116	        "TRNXSTAT": "S" if compind == "S" and authind == "A" else "R",
+117	    return {
+118	        return None
 Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 172, in numeric_text
-    return int(value)
-ValueError: invalid literal for int() with base 10: '\x90\x91'
-
-The above exception was the direct cause of the following exception:
-2                                                          The SAS System                         09:19 Wednesday, September 2, 2026
-
-
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 378, in main
-    rows.append(parse_record(record, args.encoding))
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 210, in parse_record
-    "ATMTYPE": numeric_text(record[9:11], encoding),
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 174, in numeric_text
-    raise ValueError(f"Invalid numeric text field: {value!r}") from error
-ValueError: Invalid numeric text field: '\x90\x91'
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 415, in <module>
+  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 214, in <module>
     raise SystemExit(main())
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 380, in main
-    raise ValueError(
-ValueError: Failed to parse physical record 1 (zero-based byte offset 0): Invalid numeric text field: '\x90\x91'
-NOTE: 35 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
-      /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py --diagnostic".
-      The minimum record length was 0.
-      The maximum record length was 117.
-NOTE: DATA statement used (Total process time):
-      real time           1:19.30
-      cpu time            0.01 seconds
-      
+  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 188, in main
+    rows = [
+  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 189, in <listcomp>
+    parse_record(record, args.encoding)
+  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 115, in parse_record
+    "ATMTYPE": numeric_text(record[9:11], encoding),
+  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 85, in numeric_text
+    return int(value) if value else None
+ValueError: invalid literal for int() with base 10: 'N'
 
-37         
-38         %LET _CLIENTTASKLABEL=;
-39         %LET _CLIENTPROCESSFLOWNAME=;
-40         %LET _CLIENTPROJECTPATH=;
-41         %LET _CLIENTPROJECTPATHHOST=;
-42         %LET _CLIENTPROJECTNAME=;
-43         %LET _SASPROGRAMFILE=;
-44         %LET _SASPROGRAMFILEHOST=;
-45         
-46         ;*';*";*/;quit;run;
-47         ODS _ALL_ CLOSE;
-48         
-49         
-50         QUIT; RUN;
-51         
+Total time elapsed : 00:00:52
+Program end : 2026/09/02 10:53:39
