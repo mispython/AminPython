@@ -1,238 +1,65 @@
-/* ============================================================
-   CHECK RM703,278 TENURE DIFFERENCE
-   ============================================================ */
 
-libname DM_DP
-    "/dwh/dm_dp";
-
-libname DATAMART
-    "/dwh/dwh_m/tempsource/campaign/pbefdfpx0726";
-
-%let CHECK_DATA = DATAMART.CAMP_FDPB_eFDFPX_0126;
+Reconciliation: Total versus Tenure Breakdown 
 
 
-/* 1. Extract records not assigned to any tenure group */
-data work.MISSING_TENURE;
-    set &CHECK_DATA;
-
-    where missing(TENUREGRP);
-
-    keep ACCTNO
-         CDNO
-         INFLOW_DT
-         INITIAL_PLACEMENT_DT
-         TERM
-         TENUREGRP
-         STATUS
-         M_BAL
-         INTPLAN
-         SYS_PRODUCT_LTST
-         D_BANK_ENTITY
-         D_INDV_ORG_LTST
-         D_STAFF_IND_LTST;
-run;
 
 
-/* 2. Compare overall amount against tenure breakdown */
-proc sql;
-    title "Reconciliation: Total versus Tenure Breakdown";
-
-    select
-        sum(M_BAL)
-            as TOTAL_PLACEMENT
-            format=comma20.2,
-
-        sum(
-            case
-                when not missing(TENUREGRP)
-                then M_BAL
-                else 0
-            end
-        ) as TENURE_PLACEMENT
-          format=comma20.2,
-
-        sum(
-            case
-                when missing(TENUREGRP)
-                then M_BAL
-                else 0
-            end
-        ) as PLACEMENT_DIFFERENCE
-          format=comma20.2
-    from &CHECK_DATA;
-quit;
 
 
-/* 3. Compare active/outstanding amount */
-proc sql;
-    title "Reconciliation: Active Outstanding";
-
-    select
-        sum(
-            case
-                when STATUS = "A"
-                then M_BAL
-                else 0
-            end
-        ) as TOTAL_OUTSTANDING
-          format=comma20.2,
-
-        sum(
-            case
-                when STATUS = "A"
-                 and not missing(TENUREGRP)
-                then M_BAL
-                else 0
-            end
-        ) as TENURE_OUTSTANDING
-          format=comma20.2,
-
-        sum(
-            case
-                when STATUS = "A"
-                 and missing(TENUREGRP)
-                then M_BAL
-                else 0
-            end
-        ) as OUTSTANDING_DIFFERENCE
-          format=comma20.2
-    from &CHECK_DATA;
-quit;
 
 
-/* 4. Compare premature and matured amount */
-proc sql;
-    title "Reconciliation: Premature and Matured";
+TOTAL_PLACEMENT
 
-    select
-        sum(
-            case
-                when STATUS in ("P","M")
-                then M_BAL
-                else 0
-            end
-        ) as TOTAL_WITHDRAWN
-          format=comma20.2,
+TENURE_PLACEMENT
 
-        sum(
-            case
-                when STATUS in ("P","M")
-                 and not missing(TENUREGRP)
-                then M_BAL
-                else 0
-            end
-        ) as TENURE_WITHDRAWN
-          format=comma20.2,
-
-        sum(
-            case
-                when STATUS in ("P","M")
-                 and missing(TENUREGRP)
-                then M_BAL
-                else 0
-            end
-        ) as WITHDRAWN_DIFFERENCE
-          format=comma20.2
-    from &CHECK_DATA;
-quit;
+PLACEMENT_DIFFERENCE
 
 
-/* 5. Show missing tenure by TERM and STATUS */
-proc sql;
-    title "Missing Tenure Breakdown by TERM and STATUS";
-
-    select
-        TERM,
-        STATUS,
-        count(*) as ROWS
-            format=comma15.,
-        count(distinct ACCTNO) as ACCOUNTS
-            format=comma15.,
-        sum(M_BAL) as AMOUNT
-            format=comma20.2
-    from work.MISSING_TENURE
-    group by TERM, STATUS
-    order by STATUS, TERM;
-quit;
+4,453,634,270.98 4,453,634,270.98 0.00 
 
 
-/* 6. Show affected accounts */
-proc sort
-    data=work.MISSING_TENURE
-    out=work.MISSING_TENURE_DETAIL;
-    by TERM STATUS ACCTNO CDNO;
-run;
-
-title "Accounts Missing from Tenure Breakdown";
-
-proc print
-    data=work.MISSING_TENURE_DETAIL
-    noobs;
-    var ACCTNO
-        CDNO
-        INFLOW_DT
-        INITIAL_PLACEMENT_DT
-        TERM
-        STATUS
-        M_BAL
-        INTPLAN
-        SYS_PRODUCT_LTST;
-
-    format INFLOW_DT
-           INITIAL_PLACEMENT_DT date9.
-           M_BAL comma20.2;
-run;
 
 
-/* 7. Trace affected accounts to original input */
-proc sql;
-    create table work.MISSING_TENURE_SOURCE as
-    select source.*
-    from DM_DP.DM_FD_CAMPGN as source
-    where exists (
-        select *
-        from work.MISSING_TENURE as missing
-        where source.ACCTNO = missing.ACCTNO
-          and source.CDNO = missing.CDNO
-    )
-    order by source.ACCTNO, source.CDNO;
-quit;
-
-title "Affected Records from DM_DP.DM_FD_CAMPGN";
-
-proc print
-    data=work.MISSING_TENURE_SOURCE
-    noobs;
-    var ACCTNO
-        CDNO
-        INFLOW_DT
-        TERM
-        M_BAL
-        INTPLAN
-        SYS_PRODUCT_LTST;
-
-    format INFLOW_DT date9.
-           M_BAL comma20.2;
-run;
+Reconciliation: Active Outstanding 
 
 
-/* 8. Final check message */
-data _null_;
-    set work.MISSING_TENURE end=last;
 
-    retain TOTAL_MISSING 0;
-    TOTAL_MISSING + M_BAL;
 
-    if last then do;
-        put "====================================================";
-        put "TOTAL AMOUNT NOT ASSIGNED TO TENURE = "
-            TOTAL_MISSING comma20.2;
-        put "====================================================";
-    end;
-run;
 
-title;
 
-/* Libraries are released; datasets are not deleted */
-libname DM_DP clear;
-libname DATAMART clear;
+
+
+TOTAL_OUTSTANDING
+
+TENURE_OUTSTANDING
+
+OUTSTANDING_DIFFERENCE
+
+
+3,370,630,899.26 3,370,630,899.26 0.00 
+
+
+
+
+Reconciliation: Premature and Matured 
+
+
+
+
+
+
+
+
+TOTAL_WITHDRAWN
+
+TENURE_WITHDRAWN
+
+WITHDRAWN_DIFFERENCE
+
+
+1,083,003,371.72 1,083,003,371.72 0.00 
+
+
+
+
+Missing Tenure Breakdown by TERM and STATUS
