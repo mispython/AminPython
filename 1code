@@ -1,340 +1,367 @@
+#!/usr/bin/env python3
+# RUN EVERY 2ND OF THE MONTH, IMPLEMENT BY PAS
+
+"""Python replacement for the EIBMTCSM JCL/SAS job."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+
+import pandas as pd
+
+
+DEFAULT_INPUT = Path("/host_pq/mis/input/OCM/JNL_MONTHLY")
+DEFAULT_OUTPUT_DIR = Path("/dwh/pbcs")
+DEFAULT_RECORD_LENGTH = 224
+
+TYPE_FORMAT = {
+    0: "INCOMPLETE TRXN", 1: "CASH WITHDRAWAL",
+    2: "BALANCE INQUIRY", 3: "DEPOSIT", 4: "TRANSFER",
+    5: "PAYMENT ENCLOSED", 6: "SPECIAL", 7: "SECURITY EXPOSURE",
+    8: "PAYMENT FROM", 9: "CASH CHECK (USED SCWDRWL)",
+    10: "1ST DEPOSIT(FOR DEP SLIP)", 11: "LAST 6 TRANSACTIONS",
+    12: "CELCOM PREPAID", 13: "MAXIS  PREPAID",
+    14: "DIGI   PREPAID", 17: "POS PURCHASE W/CASH BACK",
+    21: "PREAUTH FOR DAY2DAY", 31: "2ND FIXED DEPOSIT",
+    32: "2ND DEPOSIT", 33: "1ST FIXED DEPOSIT",
+    34: "1ST TRANSFER", 35: "1ST GIRO", 36: "1ST PISA",
+    50: "CDT 1ST MSG", 51: "CDT: ENCASH", 65: "JARING PREPAID",
+    66: "NEW IC ENTERED", 67: "NEXTEL PREPAID",
+    68: "TMNET PREPAID & PREP ONE", 69: "ESA STATUS INQUIRY",
+    70: "ESA CANCELLATION", 71: "PINLESS TOPUP (1ST PART)",
+    72: "PINLESS TOPUP (2ND PART)",
+    81: "E-RIGHTS APPL (1ST PART)",
+    82: "E-RIGHTS APPL (2ND PART)",
+    97: "JOMPAY - 1ST PART", 98: "JOMPAY - 2ND PART",
+    129: "FAST CASH", 130: "CHECK DEPOSIT (USED SCDEP)",
+    131: "CHECK DEP W C/B (SCDEPCB)",
+    132: "DEPOSIT WITH CASH BACK",
+    133: "ENV DEP WITH CASH BACK", 135: "PAYMENT FROM/TO",
+    136: "BILL PAYMENT / GIRO", 137: "PIN CHANGE",
+    138: "CHEQUE BOOK ORDER", 139: "FIXED DEPOSIT",
+    140: "MINI STATEMENT", 141: "GIRO 1ST",
+    142: "CANCEL PRESSED", 143: "CUST TIMEOUT",
+    144: "HOST TIMEOUT", 145: "RETURN CARD PRESSED",
+    146: "GIRO CREDIT CARD PYMT", 147: "CARD REMOVAL TOUT",
+    148: "POS PURCHASE", 149: "POS VOID",
+    150: "EBNK REGISTRATION", 151: "SMS TOPUP-REGISTRATION",
+    152: "SMS TOPUP-TERMINATION", 153: "REQUEST FOR TAC",
+    154: "REGISTER PHONE FOR TAC", 155: "LATEST PHONE# UPDATE",
+    156: "CONFIRM LATEST PHONE#", 157: "REGIONAL LINK REGN",
+    158: "AIRASIA INQUIRY", 159: "AIRASIA PAYMENT",
+    160: "MP LOADING", 161: "TOUCH N GO (LOADING)",
+    162: "CHG DAILY W/D LIMIT", 163: "CANCEL PRE-AUTH",
+    164: "PMO HP REGISTRATION", 165: "CHG DAILY RETAIL LIMIT",
+    166: "ACTIVATE OVERSEAS W/D",
+    167: "DEACTIVATE OVERSEAS W/D",
+    168: "CONVERT BANKCARD TO D2D",
+    169: "MYMOBILE REGISTRATION", 170: "EBANK RESET PIN",
+    171: "MYMOBILE RESET PIN", 172: "CUSTOMER CONSENT",
+    173: "OPT STATUS INQUIRY", 174: "OPT STATUS UPDATE",
+    175: "NEW DAILY XFER LIMIT",
+    176: "CONTACTLESS PINLESS LIMIT",
+    225: "MINI STATEMENT", 226: "LAST TEN TRANS",
+    227: "DEPOSITORY LISTING",
+}
+
+FULL_COLUMNS = [
+    "CARDNO", "BRANCH", "TERMNO", "TRNXTIME", "TRNXCODE",
+    "ATMTYPE", "TRNXAMT", "SUCCESS_TRAN_AMT", "DENIAL_CD",
+    "CARDTYPE", "ACCTNO", "STATE_CD", "TRNXTYPE", "TRNXDATE",
+    "TRNXSTAT",
+]
+
+
+def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
+    if not raw:
+        return None
+
+    nibbles = [
+        nibble
+        for byte in raw
+        for nibble in (byte >> 4, byte & 0x0F)
+    ]
+    sign_nibble = nibbles.pop()
+
+    if sign_nibble in (0x0B, 0x0D):
+        sign = -1
+    elif sign_nibble in (0x0A, 0x0C, 0x0E, 0x0F):
+        sign = 1
+    else:
+        return None
+
+    if any(nibble > 9 for nibble in nibbles):
+        return None
+
+    value = Decimal("".join(map(str, nibbles))).scaleb(-scale)
+    return value if sign > 0 else -value
+
 
+def binary_integer(raw: bytes) -> int | None:
+    if not raw:
+        return None
+    return int.from_bytes(raw, byteorder="big", signed=True)
 
-The CONTENTS Procedure
 
+def decoded(raw: bytes, encoding: str) -> str:
+    return raw.decode(encoding, errors="replace").strip()
 
 
+def numeric_text(raw: bytes, encoding: str) -> int | None:
+    value = decoded(raw, encoding)
+    return int(value) if value else None
 
 
+def sas_transaction_date(value: Decimal | None) -> int | None:
+    if value is None:
+        return None
 
+    digits = str(abs(int(value))).zfill(8)[-8:]
 
+    try:
+        parsed = datetime.strptime(digits, "%Y%m%d").date()
+    except ValueError:
+        return None
 
+    return (parsed - date(1960, 1, 1)).days
 
 
-Data Set Name
-A.ATMTRNX0726 
-Observations
-32121089 
+def parse_record(record: bytes, encoding: str) -> dict[str, object]:
+    if len(record) != DEFAULT_RECORD_LENGTH:
+        raise ValueError(
+            f"Record is {len(record)} bytes; expected "
+            f"{DEFAULT_RECORD_LENGTH}"
+        )
 
-Member Type
-DATA 
-Variables
-15 
+    trnxdt = packed_decimal(record[0:5])
+    trnxtime = packed_decimal(record[5:9])
+    branch = packed_decimal(record[11:14])
+    trnxcode = binary_integer(record[18:20])
+    compind = decoded(record[37:38], encoding)
+    authind = decoded(record[38:39], encoding)
 
-Engine
-V9 
-Indexes
-0 
-
-Created
-08/02/2026 18:41:17 
-Observation Length
-136 
-
-Last Modified
-08/02/2026 18:41:17 
-Deleted Observations
-0 
-
-Protection
-  
-Compressed
-NO 
-
-Data Set Type
-  
-Sorted
-NO 
-
-Label
-  
- 
-  
-
-Data Representation
-SOLARIS_X86_64, LINUX_X86_64, ALPHA_TRU64, LINUX_IA64 
- 
-  
-
-Encoding
-latin1 Western (ISO) 
- 
-  
-
-
-
-
-
-
-
-Engine/Host Dependent Information
-
-
-
-Data Set Page Size
-65536 
-
-Number of Data Set Pages
-66780 
-
-First Data Page
-1 
-
-Max Obs per Page
-481 
-
-Obs in First Data Page
-454 
-
-Number of Data Set Repairs
-0 
-
-Filename
-/dwh/pbcs/atmtrnx0726.sas7bdat 
-
-Release Created
-9.0401M9 
-
-Host Created
-Linux 
-
-Inode Number
-30749726561 
-
-Access Permission
-rw-rw---- 
-
-Owner Name
-sasdemo_edw 
-
-File Size
-4GB 
-
-File Size (bytes)
-4376559616 
-
-
-
-
-
-
-
-
-
-
-
-Alphabetic List of Variables and Attributes
-
-
-#
-
-Variable
-
-Type
-
-Len
-
-Format
-
-
-
-11
-ACCTNO Num 8   
-
-6
-ATMTYPE Num 8   
-
-2
-BRANCH Num 8   
-
-1
-CARDNO Char 20   
-
-10
-CARDTYPE Char 2   
-
-9
-DENIAL_CD Num 8   
-
-12
-STATE_CD Char 2   
-
-8
-SUCCESS_TRAN_AMT Num 8   
-
-3
-TERMNO Num 8 Z4. 
-
-7
-TRNXAMT Num 8   
-
-5
-TRNXCODE Num 8   
-
-14
-TRNXDATE Num 8   
-
-15
-TRNXSTAT Char 1   
-
-4
-TRNXTIME Num 8 Z6. 
-
-13
-TRNXTYPE Char 26   
-
-
-
-
-The CONTENTS Procedure
-
-
-
-
-
-
-
-
-
-
-Data Set Name
-A.ATM_CASH202607 
-Observations
-1702704 
-
-Member Type
-DATA 
-Variables
-5 
-
-Engine
-V9 
-Indexes
-0 
-
-Created
-08/02/2026 18:41:16 
-Observation Length
-72 
-
-Last Modified
-08/02/2026 18:41:16 
-Deleted Observations
-0 
-
-Protection
-  
-Compressed
-NO 
-
-Data Set Type
-  
-Sorted
-NO 
-
-Label
-  
- 
-  
-
-Data Representation
-SOLARIS_X86_64, LINUX_X86_64, ALPHA_TRU64, LINUX_IA64 
- 
-  
-
-Encoding
-latin1 Western (ISO) 
- 
-  
-
-
-
-
-
-
-
-Engine/Host Dependent Information
-
-
-
-Data Set Page Size
-65536 
-
-Number of Data Set Pages
-1876 
-
-First Data Page
-1 
-
-Max Obs per Page
-908 
-
-Obs in First Data Page
-874 
-
-Number of Data Set Repairs
-0 
-
-Filename
-/dwh/pbcs/atm_cash202607.sas7bdat 
-
-Release Created
-9.0401M9 
-
-Host Created
-Linux 
-
-Inode Number
-30749726560 
-
-Access Permission
-rw-rw---- 
-
-Owner Name
-sasdemo_edw 
-
-File Size
-117MB 
-
-File Size (bytes)
-123011072 
-
-
-
-
-
-
-
-
-
-
-
-Alphabetic List of Variables and Attributes
-
-
-#
-
-Variable
-
-Type
-
-Len
-
-Format
-
-
-
-1
-CARDNO Char 20   
-
-3
-TRNXAMT Num 8   
-
-5
-TRNXDATE Num 8 DDMMYY10. 
-
-2
-TRNXTIME Num 8 Z6. 
-
-4
-TRNXTYPE Char 26   
+    return {
+        "CARDNO": decoded(record[70:90], encoding),
+        "BRANCH": int(branch) if branch is not None else None,
+        "TERMNO": binary_integer(record[14:18]),
+        "TRNXTIME": int(trnxtime) if trnxtime is not None else None,
+        "TRNXCODE": trnxcode,
+        "ATMTYPE": numeric_text(record[9:11], encoding),
+        "TRNXAMT": float(
+            packed_decimal(record[20:28], 2) or Decimal(0)
+        ),
+        "SUCCESS_TRAN_AMT": float(
+            packed_decimal(record[28:36], 2) or Decimal(0)
+        ),
+        "DENIAL_CD": numeric_text(record[46:49], encoding),
+        "CARDTYPE": decoded(record[54:56], encoding),
+        "ACCTNO": numeric_text(record[90:106], encoding),
+        "STATE_CD": decoded(record[166:168], encoding),
+        "TRNXTYPE": TYPE_FORMAT.get(trnxcode, ""),
+        "TRNXDATE": sas_transaction_date(trnxdt),
+        "TRNXSTAT": (
+            "S" if compind == "S" and authind == "A" else "R"
+        ),
+    }
+
+
+def fixed_records(
+    content: bytes,
+    record_length: int,
+    separator: bytes,
+) -> list[bytes] | None:
+    stride = record_length + len(separator)
+
+    if not content or len(content) % stride:
+        return None
+
+    records = []
+
+    for offset in range(0, len(content), stride):
+        block = content[offset:offset + stride]
+
+        if separator and block[record_length:] != separator:
+            return None
+
+        records.append(block[:record_length])
+
+    return records
+
+
+def read_records(path: Path, record_length: int) -> list[bytes]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing input file: {path}")
+
+    content = path.read_bytes()
+
+    if not content:
+        return []
+
+    for separator in (b"\r\n", b"\n", b""):
+        records = fixed_records(content, record_length, separator)
+
+        if records is not None:
+            return records
+
+    raise ValueError(
+        f"Input size {len(content):,} is incompatible with "
+        f"RECFM=FB,LRECL={record_length}. Ensure the file was "
+        "extracted in binary mode."
+    )
+
+
+def parse_date(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "date must be YYYY-MM-DD"
+        ) from error
+
+
+def write_sas7bdat(
+    output_dir: Path,
+    tables: dict[str, pd.DataFrame],
+) -> dict[str, Path]:
+    try:
+        import saspy
+    except ImportError as error:
+        raise RuntimeError(
+            "saspy and a configured SAS runtime are required"
+        ) from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    sas = saspy.SASsession()
+
+    try:
+        sas_path = str(output_dir.resolve()).replace("'", "''")
+        result = sas.submit(f"libname OUT '{sas_path}';")
+
+        if "ERROR:" in result.get("LOG", ""):
+            raise RuntimeError(result["LOG"])
+
+        for table, frame in tables.items():
+            stage = f"_PY_{table}"
+            sas.df2sd(frame, table=stage, libref="OUT")
+
+            if table.startswith("ATMTRNX"):
+                program = f"""
+data OUT.{table};
+    length CARDNO $20 BRANCH 8 TERMNO 8 TRNXTIME 8
+           TRNXCODE 8 ATMTYPE 8 TRNXAMT 8
+           SUCCESS_TRAN_AMT 8 DENIAL_CD 8 CARDTYPE $2
+           ACCTNO 8 STATE_CD $2 TRNXTYPE $26
+           TRNXDATE 8 TRNXSTAT $1;
+    set OUT.{stage};
+    format TERMNO Z4. TRNXTIME Z6.;
+run;
+"""
+            else:
+                program = f"""
+data OUT.{table};
+    length CARDNO $20 TRNXTIME 8 TRNXAMT 8
+           TRNXTYPE $26 TRNXDATE 8;
+    set OUT.{stage};
+    format TRNXTIME Z6. TRNXDATE DDMMYY10.;
+run;
+"""
+
+            result = sas.submit(program)
+
+            if "ERROR:" in result.get("LOG", ""):
+                raise RuntimeError(result["LOG"])
+
+            result = sas.submit(
+                "proc datasets library=OUT nolist;"
+                f" delete {stage};"
+                " quit;"
+            )
+
+            if "ERROR:" in result.get("LOG", ""):
+                raise RuntimeError(result["LOG"])
+
+    finally:
+        sas.endsas()
+
+    return {
+        table: output_dir / f"{table}.sas7bdat"
+        for table in tables
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=DEFAULT_INPUT,
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+    )
+    parser.add_argument(
+        "--report-date",
+        type=parse_date,
+        default=date.today().replace(day=1) - timedelta(days=1),
+    )
+    parser.add_argument(
+        "--encoding",
+        default="cp037",
+    )
+    parser.add_argument(
+        "--record-length",
+        type=int,
+        default=DEFAULT_RECORD_LENGTH,
+    )
+
+    args = parser.parse_args()
+
+    records = read_records(args.input, args.record_length)
+    rows = []
+
+    for record_number, record in enumerate(records, start=1):
+        try:
+            rows.append(parse_record(record, args.encoding))
+        except ValueError as error:
+            raise ValueError(
+                f"Failed to parse record {record_number:,}: {error}"
+            ) from error
+
+    transactions = pd.DataFrame(rows, columns=FULL_COLUMNS)
+
+    cash = transactions.loc[
+        (transactions["TRNXSTAT"] == "S")
+        & transactions["CARDTYPE"].isin(["00", "02", "03", "04"])
+        & transactions["TRNXCODE"].isin([1, 2, 129]),
+        ["CARDNO", "TRNXTIME", "TRNXAMT", "TRNXTYPE", "TRNXDATE"],
+    ].copy()
+
+    full_table = f"ATMTRNX{args.report_date:%m%y}"
+    cash_table = f"ATM_CASH{args.report_date:%Y%m}"
+
+    outputs = write_sas7bdat(
+        args.output_dir,
+        {
+            full_table: transactions,
+            cash_table: cash,
+        },
+    )
+
+    print(f"Input      : {args.input}")
+    print(f"Rows input : {len(transactions):,}")
+    print(f"Cash rows  : {len(cash):,}")
+    print(f"ATMTRNX    : {outputs[full_table]}")
+    print(f"ATM_CASH   : {outputs[cash_table]}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
