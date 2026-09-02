@@ -1,408 +1,199 @@
-NOTE: Log file opened at  Wed, 2 Sep 2026 11:35:19.597
-1                                                          The SAS System                         11:35 Wednesday, September 2, 2026
-
-NOTE: Unable to open SASUSER.REGSTRY. WORK.REGSTRY will be opened instead.
-NOTE: All registry changes will be lost at the end of the session.
-
-WARNING: Unable to copy SASUSER registry to WORK registry. Because of this, you will not see registry customizations during this 
-         session.
-NOTE: Unable to open SASUSER.PROFILE. WORK.PROFILE will be opened instead.
-NOTE: All profile changes will be lost at the end of the session.
-NOTE: Copyright (c) 2025 by SAS Institute Inc., Cary, NC, USA. 
-NOTE: SAS (r) Proprietary Software 9.4 (TS1M9) 
-      Licensed to PUBLIC BANK BERHAD, Site 12602125.
-NOTE: This session is executing on the Linux 4.18.0-553.155.1.el8_10.x86_64 (LIN X64) platform.
-
-
-
-NOTE: Analytical products:
-      
-      SAS/STAT 15.4
-
-NOTE: Additional host information:
-
- Linux LIN X64 4.18.0-553.155.1.el8_10.x86_64 #1 SMP Tue Aug 11 21:13:46 EDT 2026 x86_64 Red Hat Enterprise Linux release 8.10 
-      (Ootpa) 
-
-You are running SAS 9. Some SAS 8 files will be automatically converted 
-by the V9 engine; others are incompatible.  Please see 
-http://support.sas.com/rnd/migration/planning/platform/64bit.html
-
-PROC MIGRATE will preserve current SAS file attributes and is 
-recommended for converting all your SAS libraries from any 
-SAS 8 release to SAS 9.  For details and examples, please see
-http://support.sas.com/rnd/migration/index.html
-
-
-This message is contained in the SAS news file, and is presented upon
-initialization.  Edit the file "news" in the "misc/base" directory to
-display site-specific news and information in the program log.
-The command line option "-nonews" will prevent this display.
-
-
-
-
-NOTE: SAS initialization used:
-      real time           0.04 seconds
-      cpu time            0.03 seconds
-      
-NOTE: Library SASDATA does not exist.
-NOTE: Libref EGS_CRM successfully assigned from logical server.
-NOTE: Libref EGS_RMD successfully assigned from logical server.
-NOTE: Libref EGS_RFS successfully assigned from logical server.
-NOTE: Libref EGS_FD successfully assigned from logical server.
-NOTE: Libref EGTASK successfully assigned from logical server.
-NOTE: Libref EGS_ALM successfully assigned from logical server.
-
-NOTE: AUTOEXEC processing beginning; file is /sasapp/configEDW/Lev5/SASEDW/BatchServer/autoexec.sas.
-
-NOTE: Libref DWHCTL was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /sasdata/dwh/control
-2                                                          The SAS System                         11:35 Wednesday, September 2, 2026
-
-
-NOTE: Numeric values have been converted to character values at the places given by: (Line):(Column).
-      54:50    67:43    71:42    82:42    132:56   134:48   
-NOTE: Character values have been converted to numeric values at the places given by: (Line):(Column).
-      133:48   
-NOTE: There were 59 observations read from the data set DWHCTL.CTL_DWH_BATCH_DTTM.
-NOTE: The data set WORK.A has 59 observations and 18 variables.
-NOTE: Compressing data set WORK.A increased size by 100.00 percent. 
-      Compressed is 2 pages; un-compressed would require 1 pages.
-NOTE: DATA statement used (Total process time):
-      real time           0.02 seconds
-      cpu time            0.01 seconds
-      
-
-
-NOTE: Numeric values have been converted to character values at the places given by: (Line):(Column).
-      142:8   142:8   
-NOTE: There were 3 observations read from the data set DWHCTL.CTL_BATCH_MODE.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-DATEPART(RV38_TIMESTAMP)=24350
-DATEPART(APPROVESTMP)^=.
-NOTE: Data file DWHCTL.CTL_DWH_GLOBAL_HIGH_DTTM.DATA is in a format that is native to another host, or the file encoding does not 
-      match the session encoding. Cross Environment Data Access will be used, which might require additional CPU resources and 
-      might reduce performance.
-
-NOTE: There were 1 observations read from the data set DWHCTL.CTL_DWH_GLOBAL_HIGH_DTTM.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-NOTE: Libref DWHCTL has been deassigned.
-NOTE: Libref DWHCTL was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /sasdata/dwh/control
-
-3                                                          The SAS System                         11:35 Wednesday, September 2, 2026
-
-NOTE: There were 28 observations read from the data set DWHCTL.CTL_MART_BATCH_DTTM.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 1 observations read from the data set DWHCTL.CTL_EHP_BATCH_MODE.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: There were 3 observations read from the data set DWHCTL.CTL_BATCH_MODE.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: Numeric values have been converted to character values at the places given by: (Line):(Column).
-      294:39   295:35   
-NOTE: Variable folder_path is uninitialized.
-NOTE: There were 3 observations read from the data set DWHCTL.CTL_BATCH_MODE.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-._d
-NOTE: Libref DWHCTL has been deassigned.
-
-NOTE: AUTOEXEC processing completed.
-
-1          /****************************************************************************
-2           * Job:             ADHOC_SAS                             A57ZX8YI.BF0001N4 *
-3           * Description:                                                             *
-4           *                                                                          *
-5           * Metadata Server: svdwh002                                                *
-6           * Port:            8565                                                    *
-7           * Location:        /Shared Data/SAS Warehouse/02 Jobs/PROGRAMS/ADHOC       *
-8           *                                                                          *
-9           * Server:          SASEDW                                A57ZX8YI.AS000002 *
-10          *                                                                          *
-11          * Generated on:    Wednesday, August 5, 2020 6:23:50 PM SGT                *
-12          * Generated by:    sasdemo_edw                                             *
-13          * Version:         SAS Data Integration Studio 4.904                       *
-14          ****************************************************************************/
-15         
-16         /* Generate the process id for job  */
-17         %put Process ID: &SYSJOBID;
-Process ID: 814638
-18         
-19         /* General macro variables  */
-20         %let jobID = %quote(A57ZX8YI.BF0001N4);
-21         %let etls_jobName = %nrquote(ADHOC_SAS);
-22         %let etls_userID = %nrquote(sasdemo_edw);
-4                                                          The SAS System                         11:35 Wednesday, September 2, 2026
-
-23         
-24         /* Setup to capture return codes  */
-25         %global job_rc trans_rc sqlrc;
-26         %let sysrc = 0;
-27         %let job_rc = 0;
-28         %let trans_rc = 0;
-29         %let sqlrc = 0;
-30         %global etls_stepStartTime;
-31         /* initialize syserr to 0 */
-32         data _null_; run;
-
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-33         
-34         %macro rcSet(error);
-35            %if (&error gt &trans_rc) %then
-36               %let trans_rc = &error;
-37            %if (&error gt &job_rc) %then
-38               %let job_rc = &error;
-39         %mend rcSet;
-40         
-41         %macro rcSetDS(error);
-42            if &error gt input(symget('trans_rc'),12.) then
-43               call symput('trans_rc',trim(left(put(&error,12.))));
-44            if &error gt input(symget('job_rc'),12.) then
-45               call symput('job_rc',trim(left(put(&error,12.))));
-46         %mend rcSetDS;
-47         
-48         /* Create metadata macro variables */
-49         %let IOMServer      = %nrquote(SASEDW);
-50         %let metaPort       = %nrquote(8565);
-51         %let metaServer     = %nrquote(svdwh002);
-52         
-53         /* Setup for capturing job status  */
-54         %let etls_startTime = %sysfunc(datetime(),datetime.);
-55         %let etls_recordsBefore = 0;
-56         %let etls_recordsAfter = 0;
-57         %let etls_lib = 0;
-58         %let etls_table = 0;
-59         
-60         %global etls_debug;
-61         %macro etls_setDebug;
-62            %if %str(&etls_debug) ne 0 %then
-63               OPTIONS MPRINT%str(;);
-64         %mend;
-65         %etls_setDebug;
-66         
-67         /*==========================================================================*
-68          * Step:            ADHOC_SAS                             A57ZX8YI.BI000PZV *
-69          * Transform:       User Written                                            *
-70          * Description:                                                             *
-71          *                                                                          *
-72          * Target Table:    User Written - work.W11F9OI           A57ZX8YI.BK000AAT *
-73          *                                                                          *
-74          * User Written:    SourceCode                                              *
-5                                                          The SAS System                         11:35 Wednesday, September 2, 2026
-
-75          *==========================================================================*/
-76         
-77         %let transformID = %quote(A57ZX8YI.BI000PZV);
-78         %let trans_rc = 0;
-79         %let etls_stepStartTime = %sysfunc(datetime(), datetime20.);
-80         
-81         %let _INPUT_count = 0;
-82         %let _OUTPUT_count = 1;
-83         %let _OUTPUT = work.W11F9OI;
-84         %let _OUTPUT_connect = ;
-85         %let _OUTPUT_engine = ;
-86         %let _OUTPUT_memtype = DATA;
-87         %let _OUTPUT_options = %nrquote();
-88         %let _OUTPUT_alter = %nrquote();
-89         %let _OUTPUT_path = %nrquote(/User Written_A57ZX8YI.BK000AAT%(WorkTable%));
-90         %let _OUTPUT_type = 1;
-91         %let _OUTPUT_label = %nrquote();
-92         %let _OUTPUT_col_count = 0;
-93         %let _OUTPUT_filetype = WorkTable;
-94         
-95         %let _OUTPUT1 = work.W11F9OI;
-96         %let _OUTPUT1_connect = ;
-97         %let _OUTPUT1_engine = ;
-98         %let _OUTPUT1_memtype = DATA;
-99         %let _OUTPUT1_options = %nrquote();
-100        %let _OUTPUT1_alter = %nrquote();
-101        %let _OUTPUT1_path = %nrquote(/User Written_A57ZX8YI.BK000AAT%(WorkTable%));
-102        %let _OUTPUT1_type = 1;
-103        %let _OUTPUT1_label = %nrquote();
-104        %let _OUTPUT1_col_count = 0;
-105        %let _OUTPUT1_filetype = WorkTable;
-106        
-107        /*---- Start of User Written Code  ----*/
-108        
-109        x 'rm -f /stgsrcsys/host/holding/TRIGGER_SAS.txt'
-NOTE: A byte-order mark in the file "/stgsrcsys/host/holding/ADHOC_SAS.sas" (for fileref "#LN00014") indicates that the data is 
-      encoded in "utf-8".  This encoding will be used to process the file.
-109      !                                                  ;
-110        %include '/stgsrcsys/host/holding/ADHOC_SAS.sas';
-NOTE: Libref INPUT was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /host_pq/mis/input/OCM
-NOTE: Libref OUT was successfully assigned as follows: 
-      Engine:        V9 
-      Physical Name: /stgsrcsys/host/holding
-NOTE: Report date = 31AUG2026
-NOTE: Full output = out.ATMTRNX08**
-NOTE: Cash output = out.ATM_CASH202608
-NOTE: Format TYPE has been output.
-
-NOTE: PROCEDURE FORMAT used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.01 seconds
-      
-NOTE: At least one W.D format was too small for the number to be printed. The decimal may be shifted by the "BEST" format.
-
-NOTE: Line generated by the macro variable "REPORT_YEAR2".
-228         out.ATMTRNX08**
-6 The SAS System                                                                                  11:35 Wednesday, September 2, 2026
-
-                         __
-                         22
-                         200
-
-ERROR 22-322: Syntax error, expecting one of the following: a name, a quoted string, (, /, ;, _DATA_, _LAST_, _NULL_.  
-
-ERROR 200-322: The symbol is not recognized and will be ignored.
-
-NOTE: The SAS System stopped processing this step because of errors.
-NOTE: Due to ERROR(s) above, SAS set option OBS=0, enabling syntax check mode. 
-      This prevents execution of subsequent data modification statements.
-WARNING: The data set OUT.ATMTRNX08 may be incomplete.  When this step was stopped there were 0 observations and 15 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.01 seconds
-      
-
-NOTE: Line generated by the macro variable "REPORT_YEAR2".
-300         out.ATMTRNX08**
-                         __
-                         22
-                         200
-
-ERROR 22-322: Syntax error, expecting one of the following: a name, a quoted string, (, -, :, ;, CUROBS, END, INDSNAME, KEY, 
-              KEYRESET, KEYS, NOBS, OPEN, POINT, _DATA_, _LAST_, _NULL_.  
-
-ERROR 200-322: The symbol is not recognized and will be ignored.
-
-NOTE: The SAS System stopped processing this step because of errors.
-WARNING: The data set OUT.ATM_CASH202608 may be incomplete.  When this step was stopped there were 0 observations and 5 variables.
-NOTE: DATA statement used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-NOTE: PROC SQL set option NOEXEC and will continue to check the syntax of statements.
-NOTE: Line generated by the macro variable "REPORT_YEAR2".
-316         out.ATMTRNX08**
-                         __
-                         22
-                         200
-ERROR 22-322: Syntax error, expecting one of the following: a name, ;, (, ',', ANSIMISS, AS, CROSS, EXCEPT, FULL, GROUP, HAVING, 
-              INNER, INTERSECT, JOIN, LEFT, NATURAL, NOMISS, ORDER, OUTER, RIGHT, UNION, WHERE.  
-
-ERROR 200-322: The symbol is not recognized and will be ignored.
-
-NOTE: Statement not executed due to NOEXEC option.
-NOTE: The SAS System stopped processing this step because of errors.
-NOTE: PROCEDURE SQL used (Total process time):
-      real time           0.00 seconds
-      cpu time            0.00 seconds
-      
-
-
-NOTE: Line generated by the macro variable "REPORT_YEAR2".
-326        out.ATMTRNX08**
-                        __
-                        22
-7 The SAS System                                                                                  11:35 Wednesday, September 2, 2026
-
-                        200
-
-ERROR 22-322: Syntax error, expecting one of the following: ;, (, CENTILES, DATA, DETAILS, DIR, DIRECTORY, FMTLEN, LIB, MEMTYPE, 
-              MT, MTYPE, NODETAILS, NODS, NOPRINT, ORDER, OUT, OUT2, SHORT, VARNUM.  
-
-ERROR 200-322: The symbol is not recognized and will be ignored.
-
-NOTE: Statements not processed because of errors noted above.
-NOTE: PROCEDURE CONTENTS used (Total process time):
-      real time           0.02 seconds
-      cpu time            0.03 seconds
-      
-NOTE: The SAS System stopped processing this step because of errors.
-
-
-
-NOTE: PROCEDURE CONTENTS used (Total process time):
-      real time           0.01 seconds
-      cpu time            0.00 seconds
-      
-NOTE: The PROCEDURE CONTENTS printed page 1.
-
-NOTE: Fileref JNLMTH has been deassigned.
-NOTE: Libref INPUT has been deassigned.
-NOTE: Libref OUT has been deassigned.
-339        /*---- End of User Written Code  ----*/
-340        
-341        %rcSet(&syserr);
-342        %rcSet(&sqlrc);
-343        
-344        
-345        /** Step end ADHOC_SAS **/
-346        
-347        %let etls_endTime = %sysfunc(datetime(),datetime.);
-348        
-
-ERROR: Errors printed on pages 6,7.
-
-NOTE: SAS Institute Inc., SAS Campus Drive, Cary, NC USA 27513-2414
-NOTE: The SAS System used:
-      real time           1.37 seconds
-      cpu time            1.13 seconds
-      
-
-
+options yearcutoff=1950 nocenter obs=max;
+
+libname input "/host_pq/mis/input/OCM";
+libname out   "/dwh/pbcs";
+
+filename jnlmth "/host_pq/mis/input/OCM/JNL_MONTHLY"
+    recfm=f
+    lrecl=224;
+
+/* Previous month end */
+%let report_date  = %sysfunc(intnx(month,%sysfunc(today()),-1,e));
+%let report_month = %sysfunc(month(&report_date),z2.);
+%let report_year2 = %sysfunc(putn(&report_date,year2.));
+%let report_year4 = %sysfunc(year(&report_date),z4.);
+
+%put NOTE: Report date = %sysfunc(putn(&report_date,date9.));
+%put NOTE: Full output = OUT.ATMTRNX&report_month.&report_year2;
+%put NOTE: Cash output = OUT.ATM_CASH&report_year4.&report_month;
+
+
+proc format;
+    value type
+        0="INCOMPLETE TRXN"
+        1="CASH WITHDRAWAL"
+        2="BALANCE INQUIRY"
+        3="DEPOSIT"
+        4="TRANSFER"
+        5="PAYMENT ENCLOSED"
+        6="SPECIAL"
+        7="SECURITY EXPOSURE"
+        8="PAYMENT FROM"
+        9="CASH CHECK (USED SCWDRWL)"
+        10="1ST DEPOSIT(FOR DEP SLIP)"
+        11="LAST 6 TRANSACTIONS"
+        12="CELCOM PREPAID"
+        13="MAXIS  PREPAID"
+        14="DIGI   PREPAID"
+        17="POS PURCHASE W/CASH BACK"
+        21="PREAUTH FOR DAY2DAY"
+        31="2ND FIXED DEPOSIT"
+        32="2ND DEPOSIT"
+        33="1ST FIXED DEPOSIT"
+        34="1ST TRANSFER"
+        35="1ST GIRO"
+        36="1ST PISA"
+        50="CDT 1ST MSG"
+        51="CDT: ENCASH"
+        65="JARING PREPAID"
+        66="NEW IC ENTERED"
+        67="NEXTEL PREPAID"
+        68="TMNET PREPAID & PREP ONE"
+        69="ESA STATUS INQUIRY"
+        70="ESA CANCELLATION"
+        71="PINLESS TOPUP (1ST PART)"
+        72="PINLESS TOPUP (2ND PART)"
+        81="E-RIGHTS APPL (1ST PART)"
+        82="E-RIGHTS APPL (2ND PART)"
+        97="JOMPAY - 1ST PART"
+        98="JOMPAY - 2ND PART"
+        129="FAST CASH"
+        130="CHECK DEPOSIT (USED SCDEP)"
+        131="CHECK DEP W C/B (SCDEPCB)"
+        132="DEPOSIT WITH CASH BACK"
+        133="ENV DEP WITH CASH BACK"
+        135="PAYMENT FROM/TO"
+        136="BILL PAYMENT / GIRO"
+        137="PIN CHANGE"
+        138="CHEQUE BOOK ORDER"
+        139="FIXED DEPOSIT"
+        140="MINI STATEMENT"
+        141="GIRO 1ST"
+        142="CANCEL PRESSED"
+        143="CUST TIMEOUT"
+        144="HOST TIMEOUT"
+        145="RETURN CARD PRESSED"
+        146="GIRO CREDIT CARD PYMT"
+        147="CARD REMOVAL TOUT"
+        148="POS PURCHASE"
+        149="POS VOID"
+        150="EBNK REGISTRATION"
+        151="SMS TOPUP-REGISTRATION"
+        152="SMS TOPUP-TERMINATION"
+        153="REQUEST FOR TAC"
+        154="REGISTER PHONE FOR TAC"
+        155="LATEST PHONE# UPDATE"
+        156="CONFIRM LATEST PHONE#"
+        157="REGIONAL LINK REGN"
+        158="AIRASIA INQUIRY"
+        159="AIRASIA PAYMENT"
+        160="MP LOADING"
+        161="TOUCH N GO (LOADING)"
+        162="CHG DAILY W/D LIMIT"
+        163="CANCEL PRE-AUTH"
+        164="PMO HP REGISTRATION"
+        165="CHG DAILY RETAIL LIMIT"
+        166="ACTIVATE OVERSEAS W/D"
+        167="DEACTIVATE OVERSEAS W/D"
+        168="CONVERT BANKCARD TO D2D"
+        169="MYMOBILE REGISTRATION"
+        170="EBANK RESET PIN"
+        171="MYMOBILE RESET PIN"
+        172="CUSTOMER CONSENT"
+        173="OPT STATUS INQUIRY"
+        174="OPT STATUS UPDATE"
+        175="NEW DAILY XFER LIMIT"
+        176="CONTACTLESS PINLESS LIMIT"
+        225="MINI STATEMENT"
+        226="LAST TEN TRANS"
+        227="DEPOSITORY LISTING"
+    ;
+run;
+
+
+data out.ATMTRNX&report_month.&report_year2;
+    length
+        CARDNO $20 BRANCH 8 TERMNO 8 TRNXTIME 8 TRNXCODE 8
+        ATMTYPE 8 TRNXAMT 8 SUCCESS_TRAN_AMT 8 DENIAL_CD 8
+        CARDTYPE $2 ACCTNO 8 STATE_CD $2 TRNXTYPE $26
+        TRNXDATE 8 TRNXSTAT $1 COMPIND $1 AUTHIND $1
+        _ATMTYPE $2 _DENIAL_CD $3 _ACCTNO $16;
+
+    infile jnlmth truncover;
+
+    input
+        @001 TRNXDT           s370fpd5.
+        @006 TRNXTIME         s370fpd4.
+        @010 _ATMTYPE         $ebcdic2.
+        @012 BRANCH           s370fpd3.
+        @015 TERMNO           s370fib4.
+        @019 TRNXCODE         s370fib2.
+        @021 TRNXAMT          s370fpd8.2
+        @029 SUCCESS_TRAN_AMT s370fpd8.2
+        @038 COMPIND          $ebcdic1.
+        @039 AUTHIND          $ebcdic1.
+        @047 _DENIAL_CD       $ebcdic3.
+        @055 CARDTYPE         $ebcdic2.
+        @071 CARDNO           $ebcdic20.
+        @091 _ACCTNO          $ebcdic16.
+        @167 STATE_CD         $ebcdic2.;
+
+    ATMTYPE  = input(strip(_ATMTYPE),best32.);
+    DENIAL_CD = input(strip(_DENIAL_CD),best32.);
+    ACCTNO = input(strip(_ACCTNO),best32.);
+
+    TRNXTYPE = put(TRNXCODE,type.);
+
+    if not missing(TRNXDT) then
+        TRNXDATE = input(put(TRNXDT,z8.),yymmdd8.);
+
+    if COMPIND="S" and AUTHIND="A" then
+        TRNXSTAT="S";
+    else
+        TRNXSTAT="R";
+
+    format TERMNO z4. TRNXTIME z6.;
+
+    drop TRNXDT COMPIND AUTHIND
+         _ATMTYPE _DENIAL_CD _ACCTNO;
+run;
+
+
+data out.ATM_CASH&report_year4.&report_month;
+    set out.ATMTRNX&report_month.&report_year2;
+
+    where TRNXSTAT="S"
+      and CARDTYPE in ("00","02","03","04")
+      and TRNXCODE in (1,2,129);
+
+    keep CARDNO TRNXTIME TRNXAMT TRNXTYPE TRNXDATE;
+    format TRNXTIME z6. TRNXDATE ddmmyy10.;
+run;
+
+
+/* Row-count validation */
+proc sql;
+    select count(*) as ATMTRNX_ROWS format=comma20.
+    from out.ATMTRNX&report_month.&report_year2;
+
+    select count(*) as ATM_CASH_ROWS format=comma20.
+    from out.ATM_CASH&report_year4.&report_month;
+quit;
+
+
+/* Structure validation */
+proc contents
+    data=out.ATMTRNX&report_month.&report_year2
+    varnum;
+run;
+
+proc contents
+    data=out.ATM_CASH&report_year4.&report_month
+    varnum;
+run;
+
+
+/* Release references only; files are not deleted */
+filename jnlmth clear;
+libname input clear;
+libname out clear;
