@@ -544,3 +544,31 @@ RUN;
 FILENAME TRANFILE 'SAP.PBB.ATMCSFTP' DISP=OLD;
 PROC CPORT LIBRARY=TEMP FILE=TRANFILE; SELECT ATM_CASH&REPTYR1&REPTMON;
 RUN;
+
+
+
+
+                             Data Set Information                              
+Command ===>                                                                   
+                                                                   More:     + 
+Data Set Name . . . . : ATP.TCS.JNL.MONTHLY.EXTRACT.G0359V00                   
+                                                                               
+General Data                          Current Allocation                       
+ Management class . . : RELNOACT       Allocated cylinders : 9,225             
+ Storage class  . . . : FASTER         Allocated extents . : 92                
+  Volume serial . . . : PO1172 +                                               
+  Device type . . . . : 3390                                                   
+ Data class . . . . . : SEQ                                                    
+  Organization  . . . : PS            Current Utilization                      
+  Record format . . . : FB             Used cylinders  . . : 9,225             
+  Record length . . . : 224            Used extents  . . . : 92                
+  Block size  . . . . : 27776                                                  
+  1st extent cylinders: 200                                                    
+  Secondary cylinders : 100           Dates                                    
+  Data set name type  :                Creation date . . . : 2026/09/01        
+  Data set encryption : NO             Referenced date . . : 2026/09/02        
+                                       Expiration date . . : ***None***        
+                                                                               
+  SMS Compressible  . : NO                                                     
+                                                                               
+                                                                               
