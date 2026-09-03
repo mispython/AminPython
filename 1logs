@@ -1,211 +1,122 @@
-source /sas/python/virt_edw/bin/activate
-[sas_edw_dev@svdwh004 virt_edw]$ source /sas/python/virt_edw/bin/activate
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
-**********************************************************
-* Job:      EIAWOF13                                     *
-* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
-*                                                        *
-* Modified: Monday, August 17, 2026, 03:29:58 PM         *
-**********************************************************
-Program start : 2026/08/19 14:20:30
+import sys
+import subprocess
+import pandas as pd
+from pathlib import Path
+from datetime import datetime, time, timedelta
 
-1       """Controller for PBB EIAWOF13; keeps EIFMNP03/06/07 separate."""
-2       from __future__ import annotations
-3       import argparse
-4       import os
-5       import subprocess
-6       import sys
-7       from datetime import date, timedelta
-8       from pathlib import Path
-9       SCRIPT_DIR = Path(__file__).resolve().parent
-10      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
-11      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
-12      SCHEDULED_DAY = 17
-13      def run(
-14      def main() -> None:
-15      if __name__ == "__main__":
-16          main()
-17          today = date.today()
-18          if today.day != SCHEDULED_DAY:
-19              print(
-20                  f"EIAWOF13 skipped: job only runs on day {SCHEDULED_DAY} "
-21                  f"of each month. Today is {today:%Y-%m-%d}."
-EIAWOF13 skipped: job only runs on day 17 of each month. Today is 2026-08-19.
-22              return
+# For ROMS 2.0
+folder_path = Path("/sasdata/rawdata/deposit/roms")
+target_list = [
+    "Forex_Long_Format_DP_PBB",
+    "Forex_Long_Format_DP_PIB",
+    "Forex_Long_Format_DP_EXCP_PBB",
+    "Forex_Long_Format_DP_EXCP_PIB",
+    # "Counterparty_Profile_PBBDP",
+    # "Counterparty_Contact_PBBDP",
+    # "Counterparty_Profile_EXCP_PBBDP",
+    # "Counterparty_Contact_EXCP_PBBEDP",
+    # "Counterparty_Profile_PIBDP",
+    # "Counterparty_Contact_PIBDP",
+    # "Counterparty_Profile_EXCP_PIBDP",
+    # "Counterparty_Contact_EXCP_PIBDP",
+    "Counterparty_Profile_PBB_PIBB_DP",
+    "Counterparty_Contact_PBB_PIBB_DP",
+    "Counterparty_Profile_EXCP_PBB_PIBB_DP",
+    "Counterparty_Contact_EXCP_PBB_PIBB_DP"
+]
 
-Total time elapsed : 00:00:00
-Memory used: 0.58 MB
-Program end : 2026/08/19 14:20:30
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ /sas/python/virt_edw/bin/python /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIAWOF13.py
-**********************************************************
-* Job:      EIAWOF13                                     *
-* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
-*                                                        *
-* Modified: Wednesday, August 19, 2026, 02:20:43 PM      *
-**********************************************************
-Program start : 2026/08/19 14:20:49
+dttm = datetime.now() #- timedelta(days=1)
 
-1       """Controller for PBB EIAWOF13; keeps EIFMNP03/06/07 separate."""
-2       from __future__ import annotations
-3       import argparse
-4       import os
-5       import subprocess
-6       import sys
-7       from datetime import date, timedelta
-8       from pathlib import Path
-9       SCRIPT_DIR = Path(__file__).resolve().parent
-10      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
-11      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output"
-12      SCHEDULED_DAY = 19
-13      def run(
-14      def main() -> None:
-15      if __name__ == "__main__":
-16          main()
-17          today = date.today()
-18          if today.day != SCHEDULED_DAY:
-19          parser = argparse.ArgumentParser(
-20              description="Run separate PBB EIFMNP03/06/07 steps"
-21          parser.add_argument(
-22              "--input-dir",
-23              type=Path,
-24              default=DEFAULT_BASE,
-25          parser.add_argument(
-26              "--output-dir",
-27              type=Path,
-28              default=DEFAULT_OUTPUT_DIR,
-29          parser.add_argument(
-30              "--branch-map",
-31              type=Path,
-32          args = parser.parse_args()
-33          args.input_dir = args.input_dir.resolve()
-34          args.output_dir = args.output_dir.resolve()
-35          if not args.input_dir.is_dir():
-36          args.output_dir.mkdir(parents=True, exist_ok=True)
-37          print(f"EIAWOF13: run date         = {today:%Y-%m-%d}")
-EIAWOF13: run date         = 2026-08-19
-38          print(f"EIAWOF13: process date     = {today - timedelta(days=1):%Y-%m-%d}")
-EIAWOF13: process date     = 2026-08-18
-39          print(f"EIAWOF13: input directory  = {args.input_dir}")
-EIAWOF13: input directory  = /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod
-40          print(f"EIAWOF13: output directory = {args.output_dir}")
-EIAWOF13: output directory = /sas/python/virt_edw/Data_Warehouse/MIS/XMIS/input/prod/output
-41          step03 = args.output_dir / "eifmnp03"
-42          step06 = args.output_dir / "eifmnp06"
-43          step07 = args.output_dir / "eifmnp07"
-44              "XMIS_INPUT_DIR": str(args.input_dir),
-45          base_environment = {
-46          if args.branch_map:
-47          month = f"{(today - timedelta(days=1)).month:02d}"
-48          run(
-49              "EIFMNP06",
-50              {
-51                  **base_environment,
-52                  "XMIS_OUTPUT_DIR": str(step06),
-53                  "XMIS_IIS_FILE": str(step03 / f"iis{month}.csv"),
-54              SCRIPT_DIR / (program + ".py"),
-55              SCRIPT_DIR / (program.lower() + ".py"),
-56          candidates = [
-57          script = next(
-58              (candidate for candidate in candidates if candidate.is_file()),
-59              None,
-60          if script is None:
-61          print(f"EIAWOF13: starting {program}")
-EIAWOF13: starting EIFMNP06
-62          child_environment = os.environ.copy()
-63          if environment:
-64              child_environment.update(environment)
-65          result = subprocess.run(
-66              [sys.executable, str(script)],
-67              env=child_environment,
-68              check=False,
-**********************************************************
-* Job:      EIFMNP06                                     *
-* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
-*                                                        *
-* Modified: Saturday, August 15, 2026, 03:53:08 PM       *
-**********************************************************
-Program start : 2026/08/19 14:20:55
+def get_filename():
+    # Return YYMMDD_HHMMSS based on current time
+    if len(sys.argv[-1]) == 6:
+        suffix = sys.argv[-1]
+    elif dttm.time() < time( 9, 15):
+        suffix = "084500"
+    elif dttm.time() < time(16, 45):
+        suffix = "091500"       
+    elif dttm.time() < time(17, 15):
+        suffix = "164500" 
+    elif dttm.time() < time(17, 45):
+        suffix = "171500"
+    elif dttm.time() < time(18, 15):
+        suffix = "174500"
+    elif dttm.time() < time(18, 30):
+        suffix = "181500"
+    else:
+        suffix = "183000"
+    return dttm.strftime(f"%y%m%d_{suffix}")
 
-1       """PBB EIFMNP06: complete specific-provision job and reports."""
-2       from __future__ import annotations
-3       import argparse
-4       from datetime import date, timedelta
-5       from pathlib import Path
-6       from typing import Any
-7       import numpy as np
-8       import pandas as pd
-9       try:
-10          from EIFMNP03 import branch_label, load_branch_map, read_sas, risk, sas_date, sas_sum, val
-11      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
-12      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output" / "eifmnp06"
-13          128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
-14          700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
-15          380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
-16          720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
-17          993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
-18      LNTYP = {
-19          **{i: "HOUSING LOANS" for i in range(200, 300)},
-20      PIBB_PROFILE = False
-21      PROGRAM_NAME = "EIFMNP06"
-22      REPORT_ENTITY = "PUBLIC BANK"
-23          "ACCTNO":"MNI ACCOUNT NO", "VINNO":"AA NUMBER", "DAYS":"NO OF DAYS PAST DUE",
-24          "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
-25          "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)", "IIS":"IIS (E)",
-26          "OSPRIN":"PRINCIPAL OUTSTANDING (C-E=F)", "OTHERFEE":"OTHER FEES",
-27          "MARKETVL":"REALISABLE VALUE (G)", "NETEXP":"NET EXPOSURE (F-G=H)",
-28          "SPP2":"OPENING BAL FOR FINANCIAL YEAR (I)",
-29          "SPPL":"PROVISION MADE AGAINST PROFIT & LOSS (J)",
-30          "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (K)",
-31          "SPPW":"WRITTEN OFF AGAINST PROVISION (L)",
-32          "SP":"CLOSING BAL AS AT RPT DATE (I+J-K-L)",
-33      REPORT_LABELS = {
-34      def write_original_report(out: pd.DataFrame, report_date: pd.Timestamp, output_dir: Path) -> str:
-35      def read_table(path: Path) -> pd.DataFrame:
-36      def provision(row: pd.Series, report_date: pd.Timestamp, existing: bool) -> pd.Series:
-37      def main() -> None:
-38      if __name__=="__main__": main()
-39          p=argparse.ArgumentParser(); p.add_argument("--input-dir",type=Path,default=DEFAULT_BASE); p.add_argument("--output-dir",type=Path,default=DEFAULT_OUTPUT_DIR)
-40          p.add_argument("--iis-file",type=Path,help="Optional explicit IIS SAS7BDAT path")
-41          p.add_argument("--iis-pattern",default="iis{mm}.sas7bdat"); p.add_argument("--loan-pattern",default="loan{mm}.sas7bdat")
-42          p.add_argument("--wsp2-file",default="wsp2.sas7bdat"); p.add_argument("--previous-pattern",default="sp2{mm}.sas7bdat"); p.add_argument("--branch-map",type=Path); p.add_argument("--no-console-report",action="store_true")
-43          a=p.parse_args(); a.output_dir.mkdir(parents=True,exist_ok=True); rd=pd.Timestamp(date.today()-timedelta(days=1)); mm=f"{rd.month:02d}"; prev=f"{(rd.month-2)%12+1:02d}"
-44          loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm)); wsp=read_sas(a.input_dir/a.wsp2_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore"); wsp["_WSP"]=True
-/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py:156: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
-  loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm)); wsp=read_sas(a.input_dir/a.wsp2_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore"); wsp["_WSP"]=True
-45          data=loan.merge(wsp,on="ACCTNO",how="left",suffixes=("","_WSP")); data["WRITEOFF"]=np.where(data["_WSP"].fillna(False),"Y","N")
-/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py:157: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
-  data=loan.merge(wsp,on="ACCTNO",how="left",suffixes=("","_WSP")); data["WRITEOFF"]=np.where(data["_WSP"].fillna(False),"Y","N")
-46          iis_path = a.iis_file if a.iis_file else a.input_dir/a.iis_pattern.format(mm=mm)
-47          iis=read_table(iis_path)[["ACCTNO","IIS"]].drop_duplicates("ACCTNO"); data=data.merge(iis,on="ACCTNO",how="left",suffixes=("","_IIS")); data["IIS"]=data.get("IIS_IIS",data.get("IIS",0)).fillna(0)
-48          if path.suffix.lower() == ".csv":
-49          return read_sas(path)
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 173, in <module>
-    if __name__=="__main__": main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 159, in main
-    iis=read_table(iis_path)[["ACCTNO","IIS"]].drop_duplicates("ACCTNO"); data=data.merge(iis,on="ACCTNO",how="left",suffixes=("","_IIS")); data["IIS"]=data.get("IIS_IIS",data.get("IIS",0)).fillna(0)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 82, in read_table
-    return read_sas(path)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 56, in read_sas
-    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sasreader.py", line 164, in read_sas
-    reader = SAS7BDATReader(
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 207, in __init__
-    self.handles = get_handle(
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/common.py", line 882, in get_handle
-    handle = open(handle, ioargs.mode)
-FileNotFoundError: [Errno 2] No such file or directory: 'Data_Warehouse/MIS/XMIS/input/prod/iis08.sas7bdat'
+def xcmd(command: str):
+    try:
+        result = subprocess.run(command, shell=True, text=True, capture_output=True, check=True)
+        print(result.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"[ERROR] {e}")
+        print(e.stderr)
+        sys.exit(e.returncode)
+    return
+       
+def csv_to_excel(input_path):
+    print(f"[INFO] Searching for conversion in folder: {input_path}")
 
-Total time elapsed : 00:00:21
-Memory used: 758.36 MB
-Program end : 2026/08/19 14:21:16
-69          if result.returncode:
-70              raise SystemExit(
-71                  f"EIAWOF13: {program} failed "
-72                  f"with return code {result.returncode}"
-EIAWOF13: EIFMNP06 failed with return code 1
+    suffix = get_filename()
+    target_files = [f"{prefix}_{suffix}.CSV" for prefix in target_list]
+    print(target_files)
 
-Total time elapsed : 00:00:27
-Memory used: 0.81 MB
-Program end : 2026/08/19 14:21:17
-(virt_edw) [sas_edw_dev@svdwh004 virt_edw]$ 
+    converted_files = []
+
+    # Locate CSV files (case sensetive)
+    for csv_file in [f for f in input_path.glob("*.CSV") if f.name in target_files]:
+        print(f"[INFO] Processing: {csv_file.name}")
+
+        try:
+            # Read CSV
+            df = pd.read_csv(csv_file, encoding="utf-8", dtype=str)
+            df = df.loc[:, ~df.columns.str.match('Unnamed') & (df.columns.str.strip() != "")] #Drop unnamed columns
+            print(*df, sep='\n')
+            df = df.apply(lambda col: col.map(lambda x: x.strip() if isinstance(x, str) else x))
+
+            # Write to Excel            
+            xlsx_file = csv_file.with_suffix(".xlsx")
+
+            with pd.ExcelWriter(xlsx_file, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Sheet1")
+                ws = writer.sheets["Sheet1"]
+
+                # Autofit Columns
+                for column_cells in ws.columns:
+                    max_len = max(
+                        len(str(cell.value)) if cell.value is not None else 0
+                        for cell in column_cells
+                    )
+                    ws.column_dimensions[column_cells[0].column_letter].width = max_len + 2  # small padding
+                                                 
+            print(f"[INFO] Converted: {xlsx_file.name}\n")
+            converted_files.append(xlsx_file.name)
+
+        except Exception as e:
+            print(f"[ERROR] {csv_file}: {e}")
+          
+    if converted_files:
+        print("All CSV files converted successfully!")
+        # SFTP to Menara File Server
+        with open(f"/sasdata/dwh/sftp_cmd/sftp_roms_{suffix}.txt", "w", ) as f:
+            print(f"lcd {folder_path}", file=f)
+            print("cd ROMS2/UAT", file=f)
+            for excel in converted_files:
+                print(f"put {excel}", file=f)
+            print("bye", file=f)
+
+        sftp_id, sftp_pw, host_ip, host_key = get_sftp_info('Menara File Server (ROMS)')
+        xcmd(f"echo Y | psftp {sftp_id}@{host_ip} -pw {sftp_pw} -b /sasdata/dwh/sftp_cmd/sftp_roms_{suffix}.txt -be > /sasdata/dwh/logs/sftp_roms_{suffix}.log")        
+        print(f"SFTP log created at: /sasdata/dwh/logs/sftp_roms_{suffix}.log")
+    else:
+        print("No CSV files found for conversion!")
+        #sys.exit(1)
+
+# Execute Excel Conversion
+if __name__ == "__main__":
+    csv_to_excel(folder_path)
+
+
