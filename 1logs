@@ -1,261 +1,75 @@
-import sys
-import subprocess
-import pandas as pd
-
-from pathlib import Path
-from datetime import datetime, time
-from openpyxl import load_workbook
-
-
-# ============================================================
-# Configuration
-# ============================================================
-
-folder_path = Path("/sasdata/rawdata/deposit/roms")
-
-target_list = [
-    "Forex_Long_Format_DP_PBB",
-    "Forex_Long_Format_DP_PIB",
-    "Forex_Long_Format_DP_EXCP_PBB",
-    "Forex_Long_Format_DP_EXCP_PIB",
-    "Counterparty_Profile_PBB_PIBB_DP",
-    "Counterparty_Contact_PBB_PIBB_DP",
-    "Counterparty_Profile_EXCP_PBB_PIBB_DP",
-    "Counterparty_Contact_EXCP_PBB_PIBB_DP",
-]
-
-dttm = datetime.now()
-
-
-# ============================================================
-# Determine file suffix
-# ============================================================
-
-def get_filename():
-    """
-    Return YYMMDD_HHMMSS.
-
-    Manual example:
-        python ROMS_CONVERT.py 164500
-
-    Without parameter, the run time is selected automatically.
-    """
-
-    if len(sys.argv) > 1:
-        run_time = sys.argv[1]
-
-        if len(run_time) != 6 or not run_time.isdigit():
-            print("[ERROR] Time parameter must use HHMMSS format.")
-            print("[EXAMPLE] python ROMS_CONVERT.py 164500")
-            sys.exit(1)
-
-        suffix = run_time
-
-    elif dttm.time() < time(9, 15):
-        suffix = "084500"
-
-    elif dttm.time() < time(16, 45):
-        suffix = "091500"
-
-    elif dttm.time() < time(17, 15):
-        suffix = "164500"
-
-    elif dttm.time() < time(17, 45):
-        suffix = "171500"
-
-    elif dttm.time() < time(18, 15):
-        suffix = "174500"
-
-    elif dttm.time() < time(18, 30):
-        suffix = "181500"
-
-    else:
-        suffix = "183000"
-
-    return dttm.strftime(f"%y%m%d_{suffix}")
-
-
-# ============================================================
-# Execute shell command
-# ============================================================
-
-def xcmd(command: str):
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            text=True,
-            capture_output=True,
-            check=True,
-        )
-
-        if result.stdout:
-            print(result.stdout)
-
-        if result.stderr:
-            print(result.stderr)
-
-    except subprocess.CalledProcessError as e:
-        print(f"[ERROR] Command failed with return code: {e.returncode}")
-
-        if e.stdout:
-            print(e.stdout)
-
-        if e.stderr:
-            print(e.stderr)
-
-        sys.exit(e.returncode)
-
-
-# ============================================================
-# Convert CSV files to Excel
-# ============================================================
-
-def csv_to_excel(input_path: Path):
-    print(f"[INFO] Searching for conversion in folder: {input_path}")
-
-    suffix = get_filename()
-
-    target_files = [
-        f"{prefix}_{suffix}.CSV"
-        for prefix in target_list
-    ]
-
-    print(f"[INFO] Selected suffix: {suffix}")
-    print("[INFO] Target files:")
-
-    for target_file in target_files:
-        print(f"  {target_file}")
-
-    converted_files = []
-
-    # CSV extension is case-sensitive
-    csv_files = [
-        file
-        for file in input_path.glob("*.CSV")
-        if file.name in target_files
-    ]
-
-    for csv_file in csv_files:
-        print(f"\n[INFO] Processing: {csv_file.name}")
-
-        try:
-            df = pd.read_csv(
-                csv_file,
-                encoding="utf-8",
-                dtype=str,
-            )
-
-            # Drop unnamed and blank columns
-            valid_columns = (
-                ~df.columns.str.match(r"^Unnamed")
-                & (df.columns.str.strip() != "")
-            )
-
-            df = df.loc[:, valid_columns]
-
-            # Remove leading and trailing spaces
-            df = df.apply(
-                lambda column: column.map(
-                    lambda value: (
-                        value.strip()
-                        if isinstance(value, str)
-                        else value
-                    )
-                )
-            )
-
-            xlsx_file = csv_file.with_suffix(".xlsx")
-
-            with pd.ExcelWriter(
-                xlsx_file,
-                engine="openpyxl",
-            ) as writer:
-                df.to_excel(
-                    writer,
-                    index=False,
-                    sheet_name="Sheet1",
-                )
-
-                worksheet = writer.sheets["Sheet1"]
-
-                # Autofit columns
-                for column_cells in worksheet.columns:
-                    max_length = max(
-                        len(str(cell.value))
-                        if cell.value is not None
-                        else 0
-                        for cell in column_cells
-                    )
-
-                    column_letter = column_cells[0].column_letter
-                    worksheet.column_dimensions[column_letter].width = (
-                        min(max_length + 2, 100)
-                    )
-
-            # Validate the generated Excel file
-            workbook = load_workbook(
-                xlsx_file,
-                read_only=True,
-                data_only=False,
-            )
-            workbook.close()
-
-            print(f"[INFO] Converted and validated: {xlsx_file.name}")
-            converted_files.append(xlsx_file.name)
-
-        except Exception as e:
-            print(f"[ERROR] Failed to process {csv_file}: {e}")
-
-    if not converted_files:
-        print("[WARNING] No matching CSV files found!")
-        return
-
-    print("\n[INFO] All matching CSV files converted successfully.")
-
-    # ========================================================
-    # Create SFTP batch file
-    # ========================================================
-
-    sftp_command_file = Path(
-        f"/sasdata/dwh/sftp_cmd/sftp_roms_{suffix}.txt"
-    )
-
-    sftp_log_file = Path(
-        f"/sasdata/dwh/logs/sftp_roms_{suffix}.log"
-    )
-
-    with sftp_command_file.open("w", encoding="utf-8") as file:
-        print(f"lcd {folder_path}", file=file)
-        print("cd ROMS2/UAT", file=file)
-
-        for excel_file in converted_files:
-            print(f"put {excel_file}", file=file)
-
-        print("bye", file=file)
-
-    # Keep using your existing get_sftp_info() function
-    sftp_id, sftp_pw, host_ip, host_key = get_sftp_info(
-        "Menara File Server (ROMS)"
-    )
-
-    sftp_command = (
-        f"echo Y | "
-        f"psftp {sftp_id}@{host_ip} "
-        f"-pw '{sftp_pw}' "
-        f"-b {sftp_command_file} "
-        f"-be "
-        f"> {sftp_log_file} 2>&1"
-    )
-
-    xcmd(sftp_command)
-
-    print(f"[INFO] SFTP log created at: {sftp_log_file}")
-
-
-# ============================================================
-# Main
-# ============================================================
-
-if __name__ == "__main__":
-    csv_to_excel(folder_path)
+1                                                          The SAS System                          13:23 Thursday, September 3, 2026
+
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='Program';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='';
+9          %LET _SASPROGRAMFILEHOST='';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         
+29         data _null_;
+30                 infile "
+31         cd /sas/python/virt_edw;
+32         source bin/activate;
+33         python /stgsrcsys/host/holding/ROMS_CONVERT.py 164500
+34         " pipe;
+35                 input;
+36                 put _infile_;
+37         run;
+
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/ROMS_CONVERT.py 164500" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/ROMS_CONVERT.py 164500"
+
+  File "/stgsrcsys/host/holding/ROMS_CONVERT.py", line 31
+    Return YYMMDD_HHMMSS based on current time
+           ^
+SyntaxError: invalid syntax
+NOTE: 4 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/ROMS_CONVERT.py 164500".
+      The minimum record length was 12.
+      The maximum record length was 57.
+NOTE: DATA statement used (Total process time):
+      real time           1.56 seconds
+      cpu time            0.00 seconds
+      
+
+38         
+39         
+40         %LET _CLIENTTASKLABEL=;
+2                                                          The SAS System                          13:23 Thursday, September 3, 2026
+
+41         %LET _CLIENTPROCESSFLOWNAME=;
+42         %LET _CLIENTPROJECTPATH=;
+43         %LET _CLIENTPROJECTPATHHOST=;
+44         %LET _CLIENTPROJECTNAME=;
+45         %LET _SASPROGRAMFILE=;
+46         %LET _SASPROGRAMFILEHOST=;
+47         
+48         ;*';*";*/;quit;run;
+49         ODS _ALL_ CLOSE;
+50         
+51         
+52         QUIT; RUN;
+53         
