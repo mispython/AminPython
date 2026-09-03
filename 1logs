@@ -1,122 +1,48 @@
-import sys
-import subprocess
-import pandas as pd
-from pathlib import Path
-from datetime import datetime, time, timedelta
-
-# For ROMS 2.0
-folder_path = Path("/sasdata/rawdata/deposit/roms")
-target_list = [
-    "Forex_Long_Format_DP_PBB",
-    "Forex_Long_Format_DP_PIB",
-    "Forex_Long_Format_DP_EXCP_PBB",
-    "Forex_Long_Format_DP_EXCP_PIB",
-    # "Counterparty_Profile_PBBDP",
-    # "Counterparty_Contact_PBBDP",
-    # "Counterparty_Profile_EXCP_PBBDP",
-    # "Counterparty_Contact_EXCP_PBBEDP",
-    # "Counterparty_Profile_PIBDP",
-    # "Counterparty_Contact_PIBDP",
-    # "Counterparty_Profile_EXCP_PIBDP",
-    # "Counterparty_Contact_EXCP_PIBDP",
-    "Counterparty_Profile_PBB_PIBB_DP",
-    "Counterparty_Contact_PBB_PIBB_DP",
-    "Counterparty_Profile_EXCP_PBB_PIBB_DP",
-    "Counterparty_Contact_EXCP_PBB_PIBB_DP"
-]
-
-dttm = datetime.now() #- timedelta(days=1)
-
-def get_filename():
-    # Return YYMMDD_HHMMSS based on current time
-    if len(sys.argv[-1]) == 6:
-        suffix = sys.argv[-1]
-    elif dttm.time() < time( 9, 15):
-        suffix = "084500"
-    elif dttm.time() < time(16, 45):
-        suffix = "091500"       
-    elif dttm.time() < time(17, 15):
-        suffix = "164500" 
-    elif dttm.time() < time(17, 45):
-        suffix = "171500"
-    elif dttm.time() < time(18, 15):
-        suffix = "174500"
-    elif dttm.time() < time(18, 30):
-        suffix = "181500"
-    else:
-        suffix = "183000"
-    return dttm.strftime(f"%y%m%d_{suffix}")
-
-def xcmd(command: str):
-    try:
-        result = subprocess.run(command, shell=True, text=True, capture_output=True, check=True)
-        print(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(f"[ERROR] {e}")
-        print(e.stderr)
-        sys.exit(e.returncode)
-    return
-       
-def csv_to_excel(input_path):
-    print(f"[INFO] Searching for conversion in folder: {input_path}")
-
-    suffix = get_filename()
-    target_files = [f"{prefix}_{suffix}.CSV" for prefix in target_list]
-    print(target_files)
-
-    converted_files = []
-
-    # Locate CSV files (case sensetive)
-    for csv_file in [f for f in input_path.glob("*.CSV") if f.name in target_files]:
-        print(f"[INFO] Processing: {csv_file.name}")
-
-        try:
-            # Read CSV
-            df = pd.read_csv(csv_file, encoding="utf-8", dtype=str)
-            df = df.loc[:, ~df.columns.str.match('Unnamed') & (df.columns.str.strip() != "")] #Drop unnamed columns
-            print(*df, sep='\n')
-            df = df.apply(lambda col: col.map(lambda x: x.strip() if isinstance(x, str) else x))
-
-            # Write to Excel            
-            xlsx_file = csv_file.with_suffix(".xlsx")
-
-            with pd.ExcelWriter(xlsx_file, engine="openpyxl") as writer:
-                df.to_excel(writer, index=False, sheet_name="Sheet1")
-                ws = writer.sheets["Sheet1"]
-
-                # Autofit Columns
-                for column_cells in ws.columns:
-                    max_len = max(
-                        len(str(cell.value)) if cell.value is not None else 0
-                        for cell in column_cells
-                    )
-                    ws.column_dimensions[column_cells[0].column_letter].width = max_len + 2  # small padding
-                                                 
-            print(f"[INFO] Converted: {xlsx_file.name}\n")
-            converted_files.append(xlsx_file.name)
-
-        except Exception as e:
-            print(f"[ERROR] {csv_file}: {e}")
-          
-    if converted_files:
-        print("All CSV files converted successfully!")
-        # SFTP to Menara File Server
-        with open(f"/sasdata/dwh/sftp_cmd/sftp_roms_{suffix}.txt", "w", ) as f:
-            print(f"lcd {folder_path}", file=f)
-            print("cd ROMS2/UAT", file=f)
-            for excel in converted_files:
-                print(f"put {excel}", file=f)
-            print("bye", file=f)
-
-        sftp_id, sftp_pw, host_ip, host_key = get_sftp_info('Menara File Server (ROMS)')
-        xcmd(f"echo Y | psftp {sftp_id}@{host_ip} -pw {sftp_pw} -b /sasdata/dwh/sftp_cmd/sftp_roms_{suffix}.txt -be > /sasdata/dwh/logs/sftp_roms_{suffix}.log")        
-        print(f"SFTP log created at: /sasdata/dwh/logs/sftp_roms_{suffix}.log")
-    else:
-        print("No CSV files found for conversion!")
-        #sys.exit(1)
-
-# Execute Excel Conversion
-if __name__ == "__main__":
-    csv_to_excel(folder_path)
+Why inside all 0 but total got figures?
 
 
+15 MTHS					
+INDIVIDUAL		INDIVIDUAL (OF WHICH, STAFF)		NON-INDIVIDUAL	
+NO. OF A/C	AMT(RM)	NO. OF A/C	AMT(RM)	NO. OF A/C	AMT(RM)
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+0	0	0	0	0	0
+					
+5619	337408278.6	39	2149146.25	14	979070
+					
+0	0	0	0	0	0
+-5,619	-337,408,279	-39	-2,149,146	-14	-979,070
+
+
+TOTAL OUTSTANDING PLACEMENT AMOUNT SINCE CAMPAIGN LAUNCHED (ORIGAMT)					
+[BREAKDOWN BY TENURE]					
+PB eFD					
+15 MTHS					
+INDIVIDUAL		INDIVIDUAL (OF WHICH, STAFF)		NON-INDIVIDUAL	
+NO. OF A/C	AMT(RM)	NO. OF A/C	AMT(RM)	NO. OF A/C	AMT(RM)
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0.00
+0	0.00	0	0.00	0	0.00
+					
+5,691	342,113,964.23	39	2,214,146.25	14	979,070.00
+					
+0	0	0	0	0	0
+-5,691	-342,113,964	-39	-2,214,146	-14	-979,070
