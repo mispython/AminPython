@@ -1,48 +1,296 @@
-Why inside all 0 but total got figures?
+1                                                          The SAS System                          13:23 Thursday, September 3, 2026
 
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='Program';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='';
+9          %LET _SASPROGRAMFILEHOST='';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         /*x 'cp -p /stgsrcsys/host/holding/atmtrnx0826.sas7bdat /dwh/pbcs';*/
+29         /*x 'cp -p /stgsrcsys/host/holding/atm_cash202608.sas7bdat /dwh/pbcs';*/
+30         
+31         /**/
+32         /*x 'rm /dwh/elds/ELDS_EXCNPL';*/
+33         /*x 'rm /dwh/elds/TRIGGER_EIBMOVER.txt';*/
+34         /**/
+35         
+36         
+37         /**/
+38         /*data _null_;*/
+39         /*	sftp_cmd =  ". /stgsrcsys/host/holding/top_10_user.sh > /stgsrcsys/host/holding/top_10.log 2>&1";*/
+40         /*	rc = system(sftp_cmd);*/
+41         /*   if rc > 0 then abort;*/
+42         /*run;*/
+43         
+44         data _null_;
+45                 infile "
+46         cd /sas/python/virt_edw;
+47         source bin/activate;
+48         python /stgsrcsys/host/holding/ROMS_CONVERT.py
+49         " pipe;
+50                 input;
+51                 put _infile_;
+52         run;
 
-15 MTHS					
-INDIVIDUAL		INDIVIDUAL (OF WHICH, STAFF)		NON-INDIVIDUAL	
-NO. OF A/C	AMT(RM)	NO. OF A/C	AMT(RM)	NO. OF A/C	AMT(RM)
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-0	0	0	0	0	0
-					
-5619	337408278.6	39	2149146.25	14	979070
-					
-0	0	0	0	0	0
--5,619	-337,408,279	-39	-2,149,146	-14	-979,070
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/ROMS_CONVERT.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/ROMS_CONVERT.py"
 
+[INFO] Searching for conversion in folder: /sasdata/rawdata/deposit/roms
+2                                                          The SAS System                          13:23 Thursday, September 3, 2026
 
-TOTAL OUTSTANDING PLACEMENT AMOUNT SINCE CAMPAIGN LAUNCHED (ORIGAMT)					
-[BREAKDOWN BY TENURE]					
-PB eFD					
-15 MTHS					
-INDIVIDUAL		INDIVIDUAL (OF WHICH, STAFF)		NON-INDIVIDUAL	
-NO. OF A/C	AMT(RM)	NO. OF A/C	AMT(RM)	NO. OF A/C	AMT(RM)
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0.00
-0	0.00	0	0.00	0	0.00
-					
-5,691	342,113,964.23	39	2,214,146.25	14	979,070.00
-					
-0	0	0	0	0	0
--5,691	-342,113,964	-39	-2,214,146	-14	-979,070
+['Forex_Long_Format_DP_PBB_260903_164500.CSV', 'Forex_Long_Format_DP_PIB_260903_164500.CSV', 'Forex_Long_Format_DP_EXCP_PBB_260903_1
+64500.CSV', 'Forex_Long_Format_DP_EXCP_PIB_260903_164500.CSV', 'Counterparty_Profile_PBB_PIBB_DP_260903_164500.CSV', 'Counterparty_C
+ontact_PBB_PIBB_DP_260903_164500.CSV', 'Counterparty_Profile_EXCP_PBB_PIBB_DP_260903_164500.CSV', 'Counterparty_Contact_EXCP_PBB_PIB
+B_DP_260903_164500.CSV']
+[INFO] Processing: Forex_Long_Format_DP_PBB_260903_164500.CSV
+Action
+Transaction Date
+Line No
+AD Ref No
+ROMS Transaction ID
+Rollover from AD Ref No
+Rollover from Transaction ID
+Transaction Category
+Transaction Type
+Counterparty Code
+Value Date
+Expiry/Maturity Date
+End Beneficiary Code
+Currency Involved
+Currency Amount 
+USD Exchange Rate
+USD Equivalent
+Spot/Strike Rate
+Forward Exchange Rate
+Delta Option Position
+Purpose
+Other Purpose
+Sub Purpose
+Other Sub Purpose
+Description
+Execution Type
+Framework
+Appointed Overseas Office
+Partial Cancellation Amount
+Partial Early Take Up
+Partial Take Up (at maturity)
+Amendment Reason
+Approval Code
+[INFO] Converted: Forex_Long_Format_DP_PBB_260903_164500.xlsx
+
+[INFO] Processing: Forex_Long_Format_DP_PIB_260903_164500.CSV
+Action
+Transaction Date
+Line No
+AD Ref No
+ROMS Transaction ID
+Rollover from AD Ref No
+Rollover from Transaction ID
+Transaction Category
+Transaction Type
+Counterparty Code
+Value Date
+Expiry/Maturity Date
+End Beneficiary Code
+Currency Involved
+Currency Amount 
+USD Exchange Rate
+USD Equivalent
+3                                                          The SAS System                          13:23 Thursday, September 3, 2026
+
+Spot/Strike Rate
+Forward Exchange Rate
+Delta Option Position
+Purpose
+Other Purpose
+Sub Purpose
+Other Sub Purpose
+Description
+Execution Type
+Framework
+Appointed Overseas Office
+Partial Cancellation Amount
+Partial Early Take Up
+Partial Take Up (at maturity)
+Amendment Reason
+Approval Code
+[INFO] Converted: Forex_Long_Format_DP_PIB_260903_164500.xlsx
+
+[INFO] Processing: Counterparty_Profile_PBB_PIBB_DP_260903_164500.CSV
+Action
+CP Indicator
+AOO Counterparty Code
+Investor Type
+Full Name
+Location ID
+State Code
+ID Type
+ID Number
+Transaction Code ID
+[INFO] Converted: Counterparty_Profile_PBB_PIBB_DP_260903_164500.xlsx
+
+[INFO] Processing: Counterparty_Contact_PBB_PIBB_DP_260903_164500.CSV
+Action
+ID Type
+ID Number
+Previous Contact Person
+Contact Person
+Phone Number
+Mobile Number
+Email Address
+[INFO] Converted: Counterparty_Contact_PBB_PIBB_DP_260903_164500.xlsx
+
+[INFO] Processing: Counterparty_Profile_EXCP_PBB_PIBB_DP_260903_164500.CSV
+Action
+CP Indicator
+AOO Counterparty Code
+Investor Type
+Full Name
+Location ID
+State Code
+ID Type
+ID Number
+Transaction Code ID
+[INFO] Converted: Counterparty_Profile_EXCP_PBB_PIBB_DP_260903_164500.xlsx
+
+[INFO] Processing: Counterparty_Contact_EXCP_PBB_PIBB_DP_260903_164500.CSV
+Action
+ID Type
+4                                                          The SAS System                          13:23 Thursday, September 3, 2026
+
+ID Number
+Previous Contact Person
+Contact Person
+Phone Number
+Mobile Number
+Email Address
+[INFO] Converted: Counterparty_Contact_EXCP_PBB_PIBB_DP_260903_164500.xlsx
+
+[INFO] Processing: Forex_Long_Format_DP_EXCP_PBB_260903_164500.CSV
+Action
+Transaction Date
+Line No
+AD Ref No
+ROMS Transaction ID
+Rollover from AD Ref No
+Rollover from Transaction ID
+Transaction Category
+Transaction Type
+Counterparty Code
+Value Date
+Expiry/Maturity Date
+End Beneficiary Code
+Currency Involved
+Currency Amount 
+USD Exchange Rate
+USD Equivalent
+Spot/Strike Rate
+Forward Exchange Rate
+Delta Option Position
+Purpose
+Other Purpose
+Sub Purpose
+Other Sub Purpose
+Description
+Execution Type
+Framework
+Appointed Overseas Office
+Partial Cancellation Amount
+Partial Early Take Up
+Partial Take Up (at maturity)
+Amendment Reason
+Approval Code
+ID No
+Counterparty Name
+[INFO] Converted: Forex_Long_Format_DP_EXCP_PBB_260903_164500.xlsx
+
+[INFO] Processing: Forex_Long_Format_DP_EXCP_PIB_260903_164500.CSV
+Action
+Transaction Date
+Line No
+AD Ref No
+ROMS Transaction ID
+Rollover from AD Ref No
+Rollover from Transaction ID
+Transaction Category
+Transaction Type
+Counterparty Code
+Value Date
+5                                                          The SAS System                          13:23 Thursday, September 3, 2026
+
+Expiry/Maturity Date
+End Beneficiary Code
+Currency Involved
+Currency Amount 
+USD Exchange Rate
+USD Equivalent
+Spot/Strike Rate
+Forward Exchange Rate
+Delta Option Position
+Purpose
+Other Purpose
+Sub Purpose
+Other Sub Purpose
+Description
+Execution Type
+Framework
+Appointed Overseas Office
+Partial Cancellation Amount
+Partial Early Take Up
+Partial Take Up (at maturity)
+Amendment Reason
+Approval Code
+ID No
+Counterparty Name
+[INFO] Converted: Forex_Long_Format_DP_EXCP_PIB_260903_164500.xlsx
+
+All CSV files converted successfully!
+
+SFTP log created at: /sasdata/dwh/logs/sftp_roms_260903_164500.log
+NOTE: 201 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/ROMS_CONVERT.py".
+      The minimum record length was 0.
+      The maximum record length was 420.
+NOTE: DATA statement used (Total process time):
+      real time           4.25 seconds
+      cpu time            0.01 seconds
+      
+
+53         
+54         
+55         %LET _CLIENTTASKLABEL=;
+56         %LET _CLIENTPROCESSFLOWNAME=;
+57         %LET _CLIENTPROJECTPATH=;
+58         %LET _CLIENTPROJECTPATHHOST=;
+59         %LET _CLIENTPROJECTNAME=;
+60         %LET _SASPROGRAMFILE=;
+61         %LET _SASPROGRAMFILEHOST=;
+62         
+63         ;*';*";*/;quit;run;
+64         ODS _ALL_ CLOSE;
+65         
+66         
+67         QUIT; RUN;
+68         
