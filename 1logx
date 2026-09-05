@@ -320,3 +320,92 @@
 /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@01072026.TXT
 
 
+
+
+
+/* Run this block AFTER all required %DATE(...) calls have completed.
+   Keep the SFTP block inside %CHECKDATE commented. */
+
+%LET SEND_FROM = '01JUL26'D;
+%LET SEND_TO   = '31AUG26'D;
+%LET SEND_TXTFILE = PB-eFDFPX-0126;
+%LET SEND_FOLDER  = PBeFDFPX0126;
+%LET HOLD_DIR  = /stgsrcsys/host/holding/pas;
+%LET BATCHFILE = /sasdata/dwh/logs/&SEND_TXTFILE._report_list.txt;
+%LET SFTPLOG   = /sasdata/dwh/logs/&SEND_TXTFILE._report_list_log.txt;
+
+DATA _NULL_;
+    LENGTH LOCAL_PATH $300 BATCH_CMD $500 DATE_TEXT $8;
+    FILE "&BATCHFILE" TERMSTR=CRLF;
+
+    BATCH_CMD = CATS('cd "/WMTB-SA&S/DEP - SAS/CAMPAIGN/FD/',
+                     "&SEND_FOLDER",'"');
+    PUT BATCH_CMD;
+
+    DO REPORT_DT = &SEND_FROM TO &SEND_TO;
+        DATE_TEXT = PUT(REPORT_DT, DDMMYYN8.);
+
+        LOCAL_PATH = CATS("&HOLD_DIR/D-&SEND_TXTFILE",
+                          '-CUST@',DATE_TEXT,'.TXT');
+        IF FILEEXIST(LOCAL_PATH) THEN DO;
+            BATCH_CMD = CATS('put "',STRIP(LOCAL_PATH),'"');
+            PUT BATCH_CMD;
+        END;
+
+        LOCAL_PATH = CATS("&HOLD_DIR/D-&SEND_TXTFILE",
+                          '@',DATE_TEXT,'.TXT');
+        IF FILEEXIST(LOCAL_PATH) THEN DO;
+            BATCH_CMD = CATS('put "',STRIP(LOCAL_PATH),'"');
+            PUT BATCH_CMD;
+        END;
+
+        LOCAL_PATH = CATS("&HOLD_DIR/D-&SEND_TXTFILE",
+                          '-CWP@',DATE_TEXT,'.TXT');
+        IF FILEEXIST(LOCAL_PATH) THEN DO;
+            BATCH_CMD = CATS('put "',STRIP(LOCAL_PATH),'"');
+            PUT BATCH_CMD;
+        END;
+
+        /* Same weekly schedule used by %CHECKDATE:
+           report dates 8, 15, 22 and month-end. */
+        IF DAY(REPORT_DT) IN (8,15,22)
+           OR REPORT_DT = INTNX('MONTH',REPORT_DT,0,'E') THEN DO;
+
+            LOCAL_PATH = CATS("&HOLD_DIR/W-&SEND_TXTFILE",
+                              '-BR@',DATE_TEXT,'.TXT');
+            IF FILEEXIST(LOCAL_PATH) THEN DO;
+                BATCH_CMD = CATS('put "',STRIP(LOCAL_PATH),'"');
+                PUT BATCH_CMD;
+            END;
+
+            LOCAL_PATH = CATS("&HOLD_DIR/W-&SEND_TXTFILE",
+                              '-SUMM@',DATE_TEXT,'.TXT');
+            IF FILEEXIST(LOCAL_PATH) THEN DO;
+                BATCH_CMD = CATS('put "',STRIP(LOCAL_PATH),'"');
+                PUT BATCH_CMD;
+            END;
+        END;
+    END;
+RUN;
+
+DATA _NULL_;
+    SET CTL.CTL_DWH_SFTP_INFO;
+    WHERE INDEX(TRIM(HOST_DESC),'Data Report Repository (DRR)');
+    CALL SYMPUTX('IDx',COMPRESS(SFTP_ID));
+    CALL SYMPUTX('PASSWORDx',COMPRESS(SFTP_PW));
+    CALL SYMPUTX('HOSTx',COMPRESS(HOST_IP));
+RUN;
+
+DATA _NULL_;
+    LENGTH SFTP_CMD $1000;
+    SFTP_CMD = CATS('echo y|psftp -b "',"&BATCHFILE",
+                    '" -be -pw ',SYMGET('PASSWORDx'),' ',
+                    SYMGET('IDx'),'@',SYMGET('HOSTx'),
+                    ' > "',"&SFTPLOG",'"');
+    RC = SYSTEM(SFTP_CMD);
+    IF RC > 0 THEN DO;
+        PUT 'ERROR: Report-list SFTP failed. RC=' RC;
+        ABORT;
+    END;
+    ELSE PUT 'NOTE: Report-list SFTP completed successfully.';
+RUN;
