@@ -1,94 +1,322 @@
-66              [sys.executable, str(script)],
-67              env=child_environment,
-68              check=False,
-**********************************************************
-* Job:      EIFMNP06                                     *
-* Location: /sas/python/virt_edw/Data_Warehouse/MIS/XMIS *
-*                                                        *
-* Modified: Saturday, August 15, 2026, 03:53:08 PM       *
-**********************************************************
-Program start : 2026/08/17 15:30:09
 
-1       """PBB EIFMNP06: complete specific-provision job and reports."""
-2       from __future__ import annotations
-3       import argparse
-4       from datetime import date, timedelta
-5       from pathlib import Path
-6       from typing import Any
-7       import numpy as np
-8       import pandas as pd
-9       try:
-10          from EIFMNP03 import branch_label, load_branch_map, read_sas, risk, sas_date, sas_sum, val
-11      DEFAULT_BASE = Path("Data_Warehouse/MIS/XMIS/input/prod")
-12      DEFAULT_OUTPUT_DIR = DEFAULT_BASE / "output" / "eifmnp06"
-13          128: "HPD AITAB", 130: "HPD AITAB", 983: "HPD AITAB",
-14          700: "HPD CONVENTIONAL", 705: "HPD CONVENTIONAL",
-15          380: "HPD CONVENTIONAL", 381: "HPD CONVENTIONAL",
-16          720: "HPD CONVENTIONAL", 725: "HPD CONVENTIONAL",
-17          993: "HPD CONVENTIONAL", 996: "HPD CONVENTIONAL",
-18      LNTYP = {
-19          **{i: "HOUSING LOANS" for i in range(200, 300)},
-20      PIBB_PROFILE = False
-21      PROGRAM_NAME = "EIFMNP06"
-22      REPORT_ENTITY = "PUBLIC BANK"
-23          "ACCTNO":"MNI ACCOUNT NO", "VINNO":"AA NUMBER", "DAYS":"NO OF DAYS PAST DUE",
-24          "BORSTAT":"BORROWER'S STATUS", "NETPROC":"LIMIT", "CURBAL":"CURRENT BAL (A)",
-25          "UHC":"UNEARNED HIRING CHARGES (B)", "NETBAL":"NET BAL (A-B=C)", "IIS":"IIS (E)",
-26          "OSPRIN":"PRINCIPAL OUTSTANDING (C-E=F)", "OTHERFEE":"OTHER FEES",
-27          "MARKETVL":"REALISABLE VALUE (G)", "NETEXP":"NET EXPOSURE (F-G=H)",
-28          "SPP2":"OPENING BAL FOR FINANCIAL YEAR (I)",
-29          "SPPL":"PROVISION MADE AGAINST PROFIT & LOSS (J)",
-30          "RECOVER":"WRITTEN BACK TO PROFIT & LOSS (K)",
-31          "SPPW":"WRITTEN OFF AGAINST PROVISION (L)",
-32          "SP":"CLOSING BAL AS AT RPT DATE (I+J-K-L)",
-33      REPORT_LABELS = {
-34      def write_original_report(out: pd.DataFrame, report_date: pd.Timestamp, output_dir: Path) -> str:
-35      def read_table(path: Path) -> pd.DataFrame:
-36      def provision(row: pd.Series, report_date: pd.Timestamp, existing: bool) -> pd.Series:
-37      def main() -> None:
-38      if __name__=="__main__": main()
-39          p=argparse.ArgumentParser(); p.add_argument("--input-dir",type=Path,default=DEFAULT_BASE); p.add_argument("--output-dir",type=Path,default=DEFAULT_OUTPUT_DIR)
-40          p.add_argument("--iis-file",type=Path,help="Optional explicit IIS SAS7BDAT path")
-41          p.add_argument("--iis-pattern",default="iis{mm}.sas7bdat"); p.add_argument("--loan-pattern",default="loan{mm}.sas7bdat")
-42          p.add_argument("--wsp2-file",default="wsp2.sas7bdat"); p.add_argument("--previous-pattern",default="sp2{mm}.sas7bdat"); p.add_argument("--branch-map",type=Path); p.add_argument("--no-console-report",action="store_true")
-43          a=p.parse_args(); a.output_dir.mkdir(parents=True,exist_ok=True); rd=pd.Timestamp(date.today()-timedelta(days=1)); mm=f"{rd.month:02d}"; prev=f"{(rd.month-2)%12+1:02d}"
-44          loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm)); wsp=read_sas(a.input_dir/a.wsp2_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore"); wsp["_WSP"]=True
-/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py:156: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
-  loan=read_sas(a.input_dir/a.loan_pattern.format(mm=mm)); wsp=read_sas(a.input_dir/a.wsp2_file).drop(columns=["NOTENO","NTBRCH"],errors="ignore"); wsp["_WSP"]=True
-45          data=loan.merge(wsp,on="ACCTNO",how="left",suffixes=("","_WSP")); data["WRITEOFF"]=np.where(data["_WSP"].fillna(False),"Y","N")
-/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py:157: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, .bfill is deprecated and will change in a future version. Call result.infer_objects(copy=False) instead. To opt-in to the future behavior, set `pd.set_option('future.no_silent_downcasting', True)`
-  data=loan.merge(wsp,on="ACCTNO",how="left",suffixes=("","_WSP")); data["WRITEOFF"]=np.where(data["_WSP"].fillna(False),"Y","N")
-46          iis_path = a.iis_file if a.iis_file else a.input_dir/a.iis_pattern.format(mm=mm)
-47          iis=read_table(iis_path)[["ACCTNO","IIS"]].drop_duplicates("ACCTNO"); data=data.merge(iis,on="ACCTNO",how="left",suffixes=("","_IIS")); data["IIS"]=data.get("IIS_IIS",data.get("IIS",0)).fillna(0)
-48          if path.suffix.lower() == ".csv":
-49          return read_sas(path)
-Traceback (most recent call last):
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 173, in <module>
-    if __name__=="__main__": main()
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 159, in main
-    iis=read_table(iis_path)[["ACCTNO","IIS"]].drop_duplicates("ACCTNO"); data=data.merge(iis,on="ACCTNO",how="left",suffixes=("","_IIS")); data["IIS"]=data.get("IIS_IIS",data.get("IIS",0)).fillna(0)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP06.py", line 82, in read_table
-    return read_sas(path)
-  File "/sas/python/virt_edw/Data_Warehouse/MIS/XMIS/EIFMNP03.py", line 56, in read_sas
-    df = pd.read_sas(path, format="sas7bdat", encoding="latin1")
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sasreader.py", line 164, in read_sas
-    reader = SAS7BDATReader(
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/sas/sas7bdat.py", line 207, in __init__
-    self.handles = get_handle(
-  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/io/common.py", line 882, in get_handle
-    handle = open(handle, ioargs.mode)
-FileNotFoundError: [Errno 2] No such file or directory: 'Data_Warehouse/MIS/XMIS/input/prod/iis08.sas7bdat'
+/*DATA _NULL_;*/
+/*	FILE "/sasdata/dwh/logs/&TXTFILE..txt" TERMSTR=CRLF;*/
+/*	PUT @1 'cd "/WMTB-SA&S/DEP - SAS/CAMPAIGN/FD/"'"&FOLDERNME";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/pas/D-&TXTFILE.-CUST@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/pas/D-&TXTFILE@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/pas/D-&TXTFILE.-CWP@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/pas/W-&TXTFILE.-BR@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/pas/W-&TXTFILE.-SUMM@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*		;*/
+/*RUN;*/
 
-Total time elapsed : 00:00:20
-Memory used: 758.26 MB
-Program end : 2026/08/17 15:30:30
-69          if result.returncode:
-70              raise SystemExit(
-71                  f"EIAWOF13: {program} failed "
-72                  f"with return code {result.returncode}"
-EIAWOF13: EIFMNP06 failed with return code 1
+%END;
+%ELSE %DO;
 
-Total time elapsed : 00:00:26
-Memory used: 0.83 MB
-Program end : 2026/08/17 15:30:30
-You have mail in /var/spool/mail/sas_edw_dev
+/*DATA _NULL_;*/
+/*	FILE "/sasdata/dwh/logs/&TXTFILE..txt" TERMSTR=CRLF;*/
+/*	PUT @1 'cd "/WMTB-SA&S/DEP - SAS/CAMPAIGN/FD/"'"&FOLDERNME";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/pas/D-&TXTFILE.-CUST@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/pas/D-&TXTFILE@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /stgsrcsys/host/holding/pas/D-&TXTFILE.-CWP@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	;*/
+/*RUN;*/
+
+%END;
+
+%MEND;
+%CHECKDATE;
+
+/*data _null_;*/
+/*	set ctl.ctl_dwh_sftp_info;*/
+/*	where index(trim(host_desc),'Data Report Repository (DRR)');*/
+/*	*/
+/*	call symput('idx',compress(sftp_id));*/
+/*	call symput('passwordx',compress(sftp_pw));*/
+/*	call symput('hostx',compress(host_ip));*/
+/*run;*/
+/**/
+/*data _null_;*/
+/*   	sftp_cmd =  "echo y|psftp -b /sasdata/dwh/logs/&TXTFILE..txt -be -pw &passwordx. &idx.@&hostx. > /sasdata/dwh/logs/&TXTFILE._log.txt";*/
+/*   	rc = system(sftp_cmd);*/
+/*   	if rc > 0 then abort;*/
+/*run;*/
+
+
+%MEND;
+/*%DATE('01JUL26'D);*/
+/*%DATE('02JUL26'D);*/
+/*%DATE('03JUL26'D);*/
+/*%DATE('04JUL26'D);*/
+/*%DATE('05JUL26'D);*/
+/*%DATE('06JUL26'D);*/
+/*%DATE('07JUL26'D);*/
+/*%DATE('08JUL26'D);*/
+/*%DATE('09JUL26'D);*/
+/*%DATE('10JUL26'D);*/
+/*%DATE('11JUL26'D);*/
+/*%DATE('12JUL26'D);*/
+/*%DATE('13JUL26'D);*/
+/*%DATE('14JUL26'D);*/
+/*%DATE('15JUL26'D);*/
+/*%DATE('16JUL26'D);*/
+/*%DATE('17JUL26'D);*/
+/*%DATE('18JUL26'D);*/
+/*%DATE('19JUL26'D);*/
+/*%DATE('20JUL26'D);*/
+/*%DATE('21JUL26'D);*/
+/*%DATE('22JUL26'D);*/
+/*%DATE('23JUL26'D);*/
+/*%DATE('24JUL26'D);*/
+/*%DATE('25JUL26'D);*/
+/*%DATE('26JUL26'D);*/
+/*%DATE('27JUL26'D);*/
+/*%DATE('28JUL26'D);*/
+/*%DATE('29JUL26'D);*/
+/*%DATE('30JUL26'D);*/
+/*%DATE('31JUL26'D);*/
+
+
+
+%DATE('01AUG26'D);
+%DATE('02AUG26'D);
+%DATE('03AUG26'D);
+%DATE('04AUG26'D);
+%DATE('05AUG26'D);
+%DATE('06AUG26'D);
+%DATE('07AUG26'D);
+%DATE('08AUG26'D);
+%DATE('09AUG26'D);
+%DATE('10AUG26'D);
+%DATE('11AUG26'D);
+%DATE('12AUG26'D);
+%DATE('13AUG26'D);
+%DATE('14AUG26'D);
+%DATE('15AUG26'D);
+%DATE('16AUG26'D);
+%DATE('17AUG26'D);
+%DATE('18AUG26'D);
+%DATE('19AUG26'D);
+%DATE('20AUG26'D);
+%DATE('21AUG26'D);
+%DATE('22AUG26'D);
+%DATE('23AUG26'D);
+%DATE('24AUG26'D);
+%DATE('25AUG26'D);
+%DATE('26AUG26'D);
+%DATE('27AUG26'D);
+%DATE('28AUG26'D);
+%DATE('29AUG26'D);
+%DATE('30AUG26'D);
+%DATE('31AUG26'D);
+
+
+
+
+
+
+
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@31082026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@31082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@31082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@31082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@31082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@30082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@30082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@30082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@29082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@29082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@29082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@28082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@28082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@28082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@27082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@27082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@27082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@26082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@26082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@26082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@25082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@25082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@25082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@24082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@24082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@24082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@23082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@23082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@23082026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@22082026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@22082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@22082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@22082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@22082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@21082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@21082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@21082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@20082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@20082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@20082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@19082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@19082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@19082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@18082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@18082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@18082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@17082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@17082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@17082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@16082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@16082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@16082026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@15082026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@15082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@15082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@15082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@15082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@14082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@14082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@14082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@13082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@13082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@13082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@12082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@12082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@12082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@11082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@11082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@11082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@10082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@10082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@10082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@09082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@09082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@09082026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@08082026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@08082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@08082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@08082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@08082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@07082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@07082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@07082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@06082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@06082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@06082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@05082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@05082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@05082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@04082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@04082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@04082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@03082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@03082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@03082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@02082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@02082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@02082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@01082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@01082026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@01082026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@31072026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@31072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@31072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@31072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@31072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@30072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@30072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@30072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@29072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@29072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@29072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@28072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@28072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@28072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@27072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@27072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@27072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@26072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@26072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@26072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@25072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@25072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@25072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@24072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@24072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@24072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@23072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@23072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@23072026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@22072026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@22072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@22072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@22072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@22072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@21072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@21072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@21072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@20072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@20072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@20072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@19072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@19072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@19072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@18072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@18072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@18072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@17072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@17072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@17072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@16072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@16072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@16072026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@15072026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@15072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@15072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@15072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@15072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@14072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@14072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@14072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@13072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@13072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@13072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@12072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@12072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@12072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@11072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@11072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@11072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@10072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@10072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@10072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@09072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@09072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@09072026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@08072026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@08072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@08072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@08072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@08072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@07072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@07072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@07072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@06072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@06072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@06072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@05072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@05072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@05072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@04072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@04072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@04072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@03072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@03072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@03072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@02072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@02072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@02072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@01072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@01072026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@01072026.TXT
+
+
