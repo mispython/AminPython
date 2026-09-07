@@ -906,3 +906,87 @@ quit;
 
 %let etls_endTime = %sysfunc(datetime(),datetime.);
 
+
+
+
+
+
+Impact Analysis	
+   - Brief Description	New program created
+   - Detailed Description	1) Create new dataset CIR_CLOSE_yyyy into FCC_MART library on weekly append basis (DNA Mode)
+2) Extract historical data from January 2024 - Current
+Requires Technical Documentation?	Yes
+
+
+
+
+1. Introduction
+Currently, FCC Data Mart consists of ODD Alert Mart derived from BDS. However the risk level associated with these alerts is sourced from Detica and not BDS, which are updated on weekly basis.
+These alerts may not reflect the actual risk level at the time alert ingest into BDS.
+In order to obtain the actual risk level at the time alert ingested into BDS, ITD to incorporate new fields "BDS_CDD_RISK" in CIS_ODD dataset.
+Furthermore, alert status of the dataset is not up to date due to the dataset is monthly cut-off.
+In order to perform analysis and validation on the ODD closed alerts, a new data mart is required as per the following requirements.
+Additonal effort is required to validate the completeness of ODD alert data between Detica and BDS.
+Cross reference: SMR 2023-4345, SMR 2024-3862, SMR 2025-0850, Circular BPM/CIS/25/001.
+
+Functional Requirement
+Requirement 1
+ 
+1)	Extract "BDS_CDD_RISK" information from BDS.
+2)	Perform validation on data field of "BDS_CDD_RISK" to match BDS UI display as per attachment.
+3)	The above extraction/enhancement shall include backdated data from January 2024.
+ 
+ 
+Requirement 2
+ 
+1)	ITD to generate a new dataset under FCC_MART folder (AMLA application) in the SAS-warehouse source from BDS.  
+2)	The output shall be populated as shown in the Attachment I.
+3)	Generate a yearly dataset based on "APPROVE_DATE" and append on a weekly basis.
+4)	The generated dataset shall name as CIR_CLOSE_YYYY and save under FCC_MART folder in SAS-warehouse.
+5)	The above records shall stored for 2 years in SAS Data-Warehouse. 
+ 
+ 
+Remarks
+ 
+The FCC_MART folder in the SAS data warehouse can only be accessed by SAS users from Financial Crime Compliance, Compliance Division.
+
+This is enhancement is for data extraction only, no further impact on other operational system and logic.
+
+All the existing requirements for all the datasets stored in FCC_MART folder remain unchanged. 
+ 
+Kindly refer to the attachment for identify the source location for enhancement column. 
+
+
+
+
+2. Technical Design
+
+Technical Approach
+
+1)	Generate new dataset: CIR_CLOSE_yyyy on weekly basis into existing FCC_MART library
+
+  
+
+2)	Perform historical data extraction from January 2024 – current WEF implementation 
+
+Technical Architecture / Process flow diagram
+
+
+
+
+
+
+
+New Job to be created to cater for CIR_CLOSE_yyyy into Data Warehouse
+
+
+
+
+
+Scope
+1)	Generate  CIR_CLOSE_yyyy on weekly basis
+
+2)	Extract historical data from January 2024
+
+
+
