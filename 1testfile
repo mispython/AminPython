@@ -194,7 +194,7 @@ DATA _NULL_;
   SET LOANTEMP END=LAST;
   BY CAT BRANCH;
 
-  FILE CCDTXT2 HEADER=NEWPAGE;
+  FILE CCDTXT2 PRINT HEADER=NEWPAGE LINESIZE=133 PAGESIZE=60;
 
   IF FIRST.CAT    THEN DO;
      PUT _PAGE_;
@@ -363,7 +363,7 @@ RUN;
       SET LOANTEMP END=LAST;
       BY CAT BRANCH ARREAR2;
 
-      FILE CCDTXT2 HEADER=NEWPAGE;
+      FILE CCDTXT2 PRINT MOD HEADER=NEWPAGE LINESIZE=133 PAGESIZE=60;
 
       IF FIRST.CAT    THEN DO;
          PUT _PAGE_;
@@ -598,7 +598,7 @@ DATA _NULL_;
   SET LOAN1 END=LAST;
   BY CAT BRANCH;
 
-  FILE CCDTXT2 HEADER=NEWPAGE;
+  FILE CCDTXT2 PRINT MOD HEADER=NEWPAGE LINESIZE=133 PAGESIZE=60;
 
   IF FIRST.CAT    THEN DO;
      PUT _PAGE_;
@@ -755,21 +755,3 @@ DATA _NULL_;
 RUN;
 
 PROC DATASETS LIB=WORK NOLIST; DELETE LOAN1; RUN;
-
-
-
-
-
-
-
-Error
-ERROR: More than 10 LINK operations have been executed at line 4307 column 5 inside a HEADER= block.  Check your LINK/RETURN logic 
-       and use the /STACK= option on the DATA statement to specify a greater limit for LINK statement nesting. 
-       Ensure that any FILE statement specifying the HEADER= option also references a file with the PRINT attribute, and check any 
-       LINK/RETURN logic.
-
-
-ERROR: More than 10 LINK operations have been executed at line 4711 column 5 inside a HEADER= block.  Check your LINK/RETURN logic 
-       and use the /STACK= option on the DATA statement to specify a greater limit for LINK statement nesting. 
-       Ensure that any FILE statement specifying the HEADER= option also references a file with the PRINT attribute, and check any 
-       LINK/RETURN logic.
