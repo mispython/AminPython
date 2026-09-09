@@ -1,32 +1,72 @@
+libname cirsrc "/stgsrcys";
+libname cirout "/host1";
 
-Requirement 1
- 
-1) Extract "BDS_CDD_RISK" information from BDS.
- 
-2) Perform validation on data field of "BDS_CDD_RISK" to match BDS UI display as per attachment.
- 
-3) The above extraction/enhancement shall include backdated data from January 2024.
- 
- 
-Requirement 2
- 
-1) ITD to generate a new dataset under FCC_MART folder (AMLA application) in the SAS-warehouse source from BDS.  
- 
-2) The output shall be populated as shown in the Attachment I.
- 
-3) Generate a yearly dataset based on "APPROVE_DATE" and append on a weekly basis.
- 
-4) The generated dataset shall name as CIR_CLOSE_YYYY and save under FCC_MART folder in SAS-warehouse.
- 
-5) The above records shall stored for 2 years in SAS Data-Warehouse. 
- 
- 
-Remarks
- 
-- The FCC_MART folder in the SAS data warehouse can only be accessed by SAS users from Financial Crime Compliance, Compliance Division.
- 
-- This enhancement is for data extraction only, no further impact on other operational system and logic.
- 
-- All the existing requirements for all the datasets stored in FCC_MART folder remain unchanged. 
- 
-- Kindly refer to the attachment for identify the source location for enhancement column. 
+%macro update_cir_close;
+
+    %local current_mmyyyy source start_year end_year yr;
+
+    /* Source ikut bulan dan tahun semasa */
+    %let current_mmyyyy = %sysfunc(today(),mmyyn6.);
+    %let source = cirsrc.CIR_CLOSE_&current_mmyyyy;
+
+    %if not %sysfunc(exist(&source)) %then %do;
+        %put ERROR: Source &source tidak wujud.;
+        %return;
+    %end;
+
+    /* APPROVE_DATE mesti numeric SAS datetime */
+    %let start_year = .;
+    %let end_year = .;
+
+    proc sql noprint;
+        select min(year(datepart(APPROVE_DATE))),
+               max(year(datepart(APPROVE_DATE)))
+        into :start_year trimmed, :end_year trimmed
+        from &source
+        where not missing(APPROVE_DATE);
+    quit;
+
+    %if &start_year = . or &end_year = . %then %do;
+        %put NOTE: Tiada APPROVE_DATE yang boleh diproses dalam &source.;
+        %return;
+    %end;
+
+    %do yr = &start_year %to &end_year;
+
+        /* Asingkan data ikut tahun APPROVE_DATE */
+        data work.cir_year;
+            set &source;
+            if year(datepart(APPROVE_DATE)) = &yr;
+        run;
+
+        /* Append ke dataset tahunan dalam /host1 */
+        %if %sysfunc(exist(cirout.CIR_CLOSE_&yr)) %then %do;
+
+            proc append
+                base=cirout.CIR_CLOSE_&yr
+                data=work.cir_year;
+            run;
+
+        %end;
+        %else %do;
+
+            data cirout.CIR_CLOSE_&yr;
+                set work.cir_year;
+            run;
+
+        %end;
+
+        /* Buang duplicate hanya apabila semua field sama */
+        proc sort data=cirout.CIR_CLOSE_&yr nodupkey;
+            by _all_;
+        run;
+
+    %end;
+
+    proc datasets library=work nolist;
+        delete cir_year;
+    quit;
+
+%mend update_cir_close;
+
+%update_cir_close;
