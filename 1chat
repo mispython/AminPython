@@ -5,10 +5,11 @@ libname cirout "/host1";
 
     %local current_mmyyyy source start_year end_year yr;
 
-    /* Source ikut bulan dan tahun semasa */
+    /* Source automatik ikut bulan dan tahun semasa */
     %let current_mmyyyy = %sysfunc(today(),mmyyn6.);
     %let source = cirsrc.CIR_CLOSE_&current_mmyyyy;
 
+    /* Semak source wujud */
     %if not %sysfunc(exist(&source)) %then %do;
         %put ERROR: Source &source tidak wujud.;
         %return;
@@ -23,23 +24,27 @@ libname cirout "/host1";
                max(year(datepart(APPROVE_DATE)))
         into :start_year trimmed, :end_year trimmed
         from &source
-        where not missing(APPROVE_DATE);
+        where not missing(APPROVE_DATE)
+          and APPROVE_DATE >= '01JAN2024:00:00:00'dt;
     quit;
 
     %if &start_year = . or &end_year = . %then %do;
-        %put NOTE: Tiada APPROVE_DATE yang boleh diproses dalam &source.;
+        %put NOTE: Tiada rekod yang layak diproses dalam &source.;
         %return;
     %end;
 
     %do yr = &start_year %to &end_year;
 
-        /* Asingkan data ikut tahun APPROVE_DATE */
+        /* Asingkan rekod mengikut tahun APPROVE_DATE */
         data work.cir_year;
             set &source;
+
+            if missing(APPROVE_DATE) then delete;
+            if APPROVE_DATE >= '01JAN2024:00:00:00'dt;
             if year(datepart(APPROVE_DATE)) = &yr;
         run;
 
-        /* Append ke dataset tahunan dalam /host1 */
+        /* Append jika dataset tahunan sudah wujud */
         %if %sysfunc(exist(cirout.CIR_CLOSE_&yr)) %then %do;
 
             proc append
@@ -56,13 +61,14 @@ libname cirout "/host1";
 
         %end;
 
-        /* Buang duplicate hanya apabila semua field sama */
+        /* Buang duplicate hanya jika SEMUA field sama */
         proc sort data=cirout.CIR_CLOSE_&yr nodupkey;
             by _all_;
         run;
 
     %end;
 
+    /* Bersihkan temporary dataset */
     proc datasets library=work nolist;
         delete cir_year;
     quit;
