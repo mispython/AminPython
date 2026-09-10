@@ -1,1967 +1,394 @@
-#!/usr/bin/env python3
-# RUN EVERY 2ND OF THE MONTH, IMPLEMENT BY PAS
-
-"""Python replacement for the EIBMTCSM JCL/SAS job."""
-
-from __future__ import annotations
-
-import argparse
-from datetime import date, datetime, timedelta
-from decimal import Decimal
-from pathlib import Path
-
-import pandas as pd
-
-
-DEFAULT_INPUT = Path("/host_pq/mis/input/OCM/JNL_MONTHLY")
-DEFAULT_OUTPUT_DIR = Path("/dwh/pbcs")
-
-TYPE_FORMAT = {
-    0: "INCOMPLETE TRXN", 1: "CASH WITHDRAWAL", 2: "BALANCE INQUIRY",
-    3: "DEPOSIT", 4: "TRANSFER", 5: "PAYMENT ENCLOSED", 6: "SPECIAL",
-    7: "SECURITY EXPOSURE", 8: "PAYMENT FROM",
-    9: "CASH CHECK (USED SCWDRWL)", 10: "1ST DEPOSIT(FOR DEP SLIP)",
-    11: "LAST 6 TRANSACTIONS", 12: "CELCOM PREPAID",
-    13: "MAXIS  PREPAID", 14: "DIGI   PREPAID",
-    17: "POS PURCHASE W/CASH BACK", 21: "PREAUTH FOR DAY2DAY",
-    31: "2ND FIXED DEPOSIT", 32: "2ND DEPOSIT",
-    33: "1ST FIXED DEPOSIT", 34: "1ST TRANSFER", 35: "1ST GIRO",
-    36: "1ST PISA", 50: "CDT 1ST MSG", 51: "CDT: ENCASH",
-    65: "JARING PREPAID", 66: "NEW IC ENTERED", 67: "NEXTEL PREPAID",
-    68: "TMNET PREPAID & PREP ONE", 69: "ESA STATUS INQUIRY",
-    70: "ESA CANCELLATION", 71: "PINLESS TOPUP (1ST PART)",
-    72: "PINLESS TOPUP (2ND PART)", 81: "E-RIGHTS APPL (1ST PART)",
-    82: "E-RIGHTS APPL (2ND PART)", 97: "JOMPAY - 1ST PART",
-    98: "JOMPAY - 2ND PART", 129: "FAST CASH",
-    130: "CHECK DEPOSIT (USED SCDEP)", 131: "CHECK DEP W C/B (SCDEPCB)",
-    132: "DEPOSIT WITH CASH BACK", 133: "ENV DEP WITH CASH BACK",
-    135: "PAYMENT FROM/TO", 136: "BILL PAYMENT / GIRO",
-    137: "PIN CHANGE", 138: "CHEQUE BOOK ORDER", 139: "FIXED DEPOSIT",
-    140: "MINI STATEMENT", 141: "GIRO 1ST", 142: "CANCEL PRESSED",
-    143: "CUST TIMEOUT", 144: "HOST TIMEOUT",
-    145: "RETURN CARD PRESSED", 146: "GIRO CREDIT CARD PYMT",
-    147: "CARD REMOVAL TOUT", 148: "POS PURCHASE", 149: "POS VOID",
-    150: "EBNK REGISTRATION", 151: "SMS TOPUP-REGISTRATION",
-    152: "SMS TOPUP-TERMINATION", 153: "REQUEST FOR TAC",
-    154: "REGISTER PHONE FOR TAC", 155: "LATEST PHONE# UPDATE",
-    156: "CONFIRM LATEST PHONE#", 157: "REGIONAL LINK REGN",
-    158: "AIRASIA INQUIRY", 159: "AIRASIA PAYMENT", 160: "MP LOADING",
-    161: "TOUCH N GO (LOADING)", 162: "CHG DAILY W/D LIMIT",
-    163: "CANCEL PRE-AUTH", 164: "PMO HP REGISTRATION",
-    165: "CHG DAILY RETAIL LIMIT", 166: "ACTIVATE OVERSEAS W/D",
-    167: "DEACTIVATE OVERSEAS W/D", 168: "CONVERT BANKCARD TO D2D",
-    169: "MYMOBILE REGISTRATION", 170: "EBANK RESET PIN",
-    171: "MYMOBILE RESET PIN", 172: "CUSTOMER CONSENT",
-    173: "OPT STATUS INQUIRY", 174: "OPT STATUS UPDATE",
-    175: "NEW DAILY XFER LIMIT", 176: "CONTACTLESS PINLESS LIMIT",
-    225: "MINI STATEMENT", 226: "LAST TEN TRANS",
-    227: "DEPOSITORY LISTING",
-}
-
-
-def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
-    """Decode a mainframe packed-decimal value (SAS PD informat)."""
-    if not raw or all(byte == 0 for byte in raw):
-        return None
-    nibbles = [nibble for byte in raw for nibble in (byte >> 4, byte & 0x0F)]
-    sign = -1 if nibbles.pop() in (0x0B, 0x0D) else 1
-    if any(nibble > 9 for nibble in nibbles):
-        return None
-    value = Decimal("".join(map(str, nibbles)))
-    return sign * value.scaleb(-scale)
-
-
-def binary_integer(raw: bytes) -> int | None:
-    """Decode a mainframe big-endian signed integer (SAS IB informat)."""
-    return int.from_bytes(raw, byteorder="big", signed=True) if raw else None
-
-
-def decoded(raw: bytes, encoding: str) -> str:
-    return raw.decode(encoding, errors="replace").strip()
-
-
-def numeric_text(raw: bytes, encoding: str) -> int | None:
-    value = decoded(raw, encoding)
-    return int(value) if value else None
-
-
-def transaction_date(value: Decimal | None) -> str:
-    if value is None:
-        return ""
-    digits = str(abs(int(value))).zfill(8)[-8:]
-    try:
-        return datetime.strptime(digits, "%Y%m%d").date().isoformat()
-    except ValueError:
-        return ""
-
-
-def parse_record(record: bytes, encoding: str) -> dict[str, object]:
-    if len(record) < 168:
-        raise ValueError(f"Record is only {len(record)} bytes; expected at least 168")
-
-    trnxdt = packed_decimal(record[0:5])
-    trnxtime = packed_decimal(record[5:9])
-    branch = packed_decimal(record[11:14])
-    trnxcode = binary_integer(record[18:20])
-    compind = decoded(record[37:38], encoding)
-    authind = decoded(record[38:39], encoding)
-
-    return {
-        "CARDNO": decoded(record[70:90], encoding),
-        "BRANCH": int(branch) if branch is not None else None,
-        "TERMNO": binary_integer(record[14:18]),
-        "TRNXTIME": str(int(trnxtime)).zfill(6) if trnxtime is not None else "",
-        "TRNXCODE": trnxcode,
-        "ATMTYPE": numeric_text(record[9:11], encoding),
-        "TRNXAMT": float(packed_decimal(record[20:28], 2) or 0),
-        "SUCCESS_TRAN_AMT": float(packed_decimal(record[28:36], 2) or 0),
-        "DENIAL_CD": numeric_text(record[46:49], encoding),
-        "CARDTYPE": decoded(record[54:56], encoding),
-        "ACCTNO": decoded(record[90:106], encoding),
-        "STATE_CD": decoded(record[166:168], encoding),
-        "TRNXTYPE": TYPE_FORMAT.get(trnxcode, ""),
-        "TRNXDATE": transaction_date(trnxdt),
-        "TRNXSTAT": "S" if compind == "S" and authind == "A" else "R",
-    }
-
-
-def read_records(path: Path, record_length: int | None) -> list[bytes]:
-    if not path.is_file():
-        raise FileNotFoundError(f"Missing input file: {path}")
-    content = path.read_bytes()
-    if record_length:
-        if len(content) % record_length:
-            raise ValueError("Input size is not divisible by --record-length")
-        return [
-            content[offset:offset + record_length]
-            for offset in range(0, len(content), record_length)
-        ]
-    return [record.rstrip(b"\r") for record in content.split(b"\n") if record.strip()]
-
-
-def parse_date(value: str) -> date:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError as error:
-        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
-
-
-def write_sas7bdat(output_dir: Path, tables: dict[str, pd.DataFrame]) -> dict[str, Path]:
-    """Write DataFrames as SAS7BDAT through the configured SAS runtime."""
-    try:
-        import saspy
-    except ImportError as error:
-        raise RuntimeError(
-            "Writing SAS7BDAT requires saspy and a configured SAS runtime"
-        ) from error
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    sas = saspy.SASsession()
-    try:
-        sas_path = str(output_dir.resolve()).replace("'", "''")
-        result = sas.submit(f"libname OUT '{sas_path}';")
-        if "ERROR:" in result.get("LOG", ""):
-            raise RuntimeError(result["LOG"])
-        for table, frame in tables.items():
-            sas.df2sd(frame, table=table, libref="OUT")
-    finally:
-        sas.endsas()
-
-    return {table: output_dir / f"{table}.sas7bdat" for table in tables}
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument(
-        "--report-date", type=parse_date,
-        default=date.today().replace(day=1) - timedelta(days=1),
-    )
-    parser.add_argument("--encoding", default="cp037")
-    parser.add_argument(
-        "--record-length",
-        type=int,
-        help="fixed record length; omit when records are newline-delimited",
-    )
-    args = parser.parse_args()
-
-    rows = [
-        parse_record(record, args.encoding)
-        for record in read_records(args.input, args.record_length)
-    ]
-    transactions = pd.DataFrame(rows)
-    cash = transactions[
-        (transactions["TRNXSTAT"] == "S")
-        & transactions["CARDTYPE"].isin(["00", "02", "03", "04"])
-        & transactions["TRNXCODE"].isin([1, 2, 129])
-    ][["TRNXDATE", "TRNXTIME", "CARDNO", "TRNXAMT", "TRNXTYPE"]]
-
-    month, year2 = args.report_date.strftime("%m"), args.report_date.strftime("%y")
-    full_table = f"ATMTRNX{month}{year2}"
-    cash_table = f"ATM_CASH{args.report_date:%Y%m}"
-    outputs = write_sas7bdat(
-        args.output_dir, {full_table: transactions, cash_table: cash}
-    )
-
-    print(f"Input       : {args.input}")
-    print(f"Rows input  : {len(transactions):,}")
-    print(f"ATMTRNX     : {outputs[full_table]}")
-    print(f"ATM_CASH    : {outputs[cash_table]}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
-
-
-
-
-
-
-
-=========================================================================================================================
-
-
-
-****************************************************
-* Job:      EIBMTCSM                               *
-* Location: /sas/pythonITD/mis/Job                 *
-*                                                  *
-* Modified: Thursday, August 27, 2026, 11:20:16 AM *
-****************************************************
-Program start : 2026/09/02 06:09:10
-
-1	"""Python replacement for the EIBMTCSM JCL/SAS job."""
-2	from __future__ import annotations
-3	import argparse
-4	from datetime import date, datetime, timedelta
-5	from decimal import Decimal
-6	from pathlib import Path
-7	import pandas as pd
-8	DEFAULT_INPUT = Path("/host_pq/mis/input/OCM/JNL_MONTHLY")
-9	DEFAULT_OUTPUT_DIR = Path("/dwh/pbcs")
-10	    0: "INCOMPLETE TRXN", 1: "CASH WITHDRAWAL", 2: "BALANCE INQUIRY",
-11	    3: "DEPOSIT", 4: "TRANSFER", 5: "PAYMENT ENCLOSED", 6: "SPECIAL",
-12	    7: "SECURITY EXPOSURE", 8: "PAYMENT FROM",
-13	    9: "CASH CHECK (USED SCWDRWL)", 10: "1ST DEPOSIT(FOR DEP SLIP)",
-14	    11: "LAST 6 TRANSACTIONS", 12: "CELCOM PREPAID",
-15	    13: "MAXIS  PREPAID", 14: "DIGI   PREPAID",
-16	    17: "POS PURCHASE W/CASH BACK", 21: "PREAUTH FOR DAY2DAY",
-17	    31: "2ND FIXED DEPOSIT", 32: "2ND DEPOSIT",
-18	    33: "1ST FIXED DEPOSIT", 34: "1ST TRANSFER", 35: "1ST GIRO",
-19	    36: "1ST PISA", 50: "CDT 1ST MSG", 51: "CDT: ENCASH",
-20	    65: "JARING PREPAID", 66: "NEW IC ENTERED", 67: "NEXTEL PREPAID",
-21	    68: "TMNET PREPAID & PREP ONE", 69: "ESA STATUS INQUIRY",
-22	    70: "ESA CANCELLATION", 71: "PINLESS TOPUP (1ST PART)",
-23	    72: "PINLESS TOPUP (2ND PART)", 81: "E-RIGHTS APPL (1ST PART)",
-24	    82: "E-RIGHTS APPL (2ND PART)", 97: "JOMPAY - 1ST PART",
-25	    98: "JOMPAY - 2ND PART", 129: "FAST CASH",
-26	    130: "CHECK DEPOSIT (USED SCDEP)", 131: "CHECK DEP W C/B (SCDEPCB)",
-27	    132: "DEPOSIT WITH CASH BACK", 133: "ENV DEP WITH CASH BACK",
-28	    135: "PAYMENT FROM/TO", 136: "BILL PAYMENT / GIRO",
-29	    137: "PIN CHANGE", 138: "CHEQUE BOOK ORDER", 139: "FIXED DEPOSIT",
-30	    140: "MINI STATEMENT", 141: "GIRO 1ST", 142: "CANCEL PRESSED",
-31	    143: "CUST TIMEOUT", 144: "HOST TIMEOUT",
-32	    145: "RETURN CARD PRESSED", 146: "GIRO CREDIT CARD PYMT",
-33	    147: "CARD REMOVAL TOUT", 148: "POS PURCHASE", 149: "POS VOID",
-34	    150: "EBNK REGISTRATION", 151: "SMS TOPUP-REGISTRATION",
-35	    152: "SMS TOPUP-TERMINATION", 153: "REQUEST FOR TAC",
-36	    154: "REGISTER PHONE FOR TAC", 155: "LATEST PHONE# UPDATE",
-37	    156: "CONFIRM LATEST PHONE#", 157: "REGIONAL LINK REGN",
-38	    158: "AIRASIA INQUIRY", 159: "AIRASIA PAYMENT", 160: "MP LOADING",
-39	    161: "TOUCH N GO (LOADING)", 162: "CHG DAILY W/D LIMIT",
-40	    163: "CANCEL PRE-AUTH", 164: "PMO HP REGISTRATION",
-41	    165: "CHG DAILY RETAIL LIMIT", 166: "ACTIVATE OVERSEAS W/D",
-42	    167: "DEACTIVATE OVERSEAS W/D", 168: "CONVERT BANKCARD TO D2D",
-43	    169: "MYMOBILE REGISTRATION", 170: "EBANK RESET PIN",
-44	    171: "MYMOBILE RESET PIN", 172: "CUSTOMER CONSENT",
-45	    173: "OPT STATUS INQUIRY", 174: "OPT STATUS UPDATE",
-46	    175: "NEW DAILY XFER LIMIT", 176: "CONTACTLESS PINLESS LIMIT",
-47	    225: "MINI STATEMENT", 226: "LAST TEN TRANS",
-48	    227: "DEPOSITORY LISTING",
-49	TYPE_FORMAT = {
-50	def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
-51	def binary_integer(raw: bytes) -> int | None:
-52	def decoded(raw: bytes, encoding: str) -> str:
-53	def numeric_text(raw: bytes, encoding: str) -> int | None:
-54	def transaction_date(value: Decimal | None) -> str:
-55	def parse_record(record: bytes, encoding: str) -> dict[str, object]:
-56	def read_records(path: Path, record_length: int | None) -> list[bytes]:
-57	def parse_date(value: str) -> date:
-58	def write_sas7bdat(output_dir: Path, tables: dict[str, pd.DataFrame]) -> dict[str, Path]:
-59	def main() -> int:
-60	if __name__ == "__main__":
-61	    raise SystemExit(main())
-62	    parser = argparse.ArgumentParser(description=__doc__)
-63	    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-64	    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-65	    parser.add_argument(
-66	        "--report-date", type=parse_date,
-67	        default=date.today().replace(day=1) - timedelta(days=1),
-68	    parser.add_argument("--encoding", default="cp037")
-69	    parser.add_argument(
-70	        "--record-length",
-71	        type=int,
-72	        help="fixed record length; omit when records are newline-delimited",
-73	    args = parser.parse_args()
-74	    rows = [
-75	        for record in read_records(args.input, args.record_length)
-76	    if not path.is_file():
-77	    content = path.read_bytes()
-78	    if record_length:
-79	    return [record.rstrip(b"\r") for record in content.split(b"\n") if record.strip()]
-80	        parse_record(record, args.encoding)
-81	    if len(record) < 168:
-82	        raise ValueError(f"Record is only {len(record)} bytes; expected at least 168")
-Traceback (most recent call last):
-  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 214, in <module>
-    raise SystemExit(main())
-  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 188, in main
-    rows = [
-  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 189, in <listcomp>
-    parse_record(record, args.encoding)
-  File "/sas/pythonITD/mis/Job/EIBMTCSM.py", line 100, in parse_record
-    raise ValueError(f"Record is only {len(record)} bytes; expected at least 168")
-ValueError: Record is only 17 bytes; expected at least 168
-
-Total time elapsed : 00:02:57
-Program end : 2026/09/02 06:12:08
-
-
-
-
-=================================================================================================================================
-
-
-
-//EIBMTCSM JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                      JOB07068
-/*JOBPARM S=S1M2
-//**********************************************************************
-//* TITLE   : EXTRACT THE PB BANK CARD TRANSACTIONAL INFORMATION FROM
-//*           OCM TO SAS DATAWAREHOUSE
-//* DATASET : ATMTRNXmmyy
-//* ESMR    : 2010-4423
-//* DATE    : 24-02-2011 (PROGAAB)
+//EIHDASME JOB MISEIS,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
 //*
-//* TITLE   : GENERATE DAILY SAS EXTRACTION FILE FOR MASTERCARD
-//*           QUARTERLY REPORT - POPULATE DATA FIELDS INTO PBCS
-//* DATASET : ATM_CASHyyyymm
-//* ESMR    : 2018-562
-//* DATE    : 28-02-2018 (PROGJKA)
-//**********************************************************************
-//DELETE  EXEC PGM=IEFBR14
-//DEL01   DD DSN=SAP.PBB.ATMFTP,
-//           DISP=(MOD,DELETE,DELETE),
-//           SPACE=(CYL,(0))
-//DEL01   DD DSN=SAP.PBB.ATMCSFTP,
-//           DISP=(MOD,DELETE,DELETE),
-//           SPACE=(CYL,(0))
-//**********************************************************************
-//CREATE  EXEC PGM=IEFBR14
-//CRT01   DD DSN=SAP.PBB.ATMFTP,
-//           DISP=(NEW,CATLG,DELETE),
-//           DCB=(RECFM=FB,LRECL=80,BLKSIZE=27920),
-//           SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)
-//CRT01   DD DSN=SAP.PBB.ATMCSFTP,
-//           DISP=(NEW,CATLG,DELETE),
-//           DCB=(RECFM=FB,LRECL=80,BLKSIZE=27920),
-//           SPACE=(CYL,(100,100),RLSE),UNIT=(SYSDA,5)
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.DPACCEPT.SME.TEXT
+//DD2      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(100,100)),
+//            DSN=SAP.PBB.DPACCEPT.EQ.TEXT
+//DD3      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(1,10)),
+//            DSN=SAP.PBB.DPACCEPT.DCI.TEXT
+//DD4      DD DISP=(MOD,DELETE,DELETE),
+//            SPACE=(TRK,(100,100)),
+//            DSN=SAP.PBB.DPACCEPT.MNI.TEXT
 //*
-//EIBMTCSM  EXEC SAS609
-//DEPO      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
-//OCMTXT    DD DSN=ATP.TCS.JNL.MONTHLY.EXTRACT(0),DISP=SHR
-//OCM       DD DSN=SAP.PBB.OCM,DISP=OLD
-//TEMP      DD DSN=&&TEMP,DISP=(NEW,DELETE,DELETE),
-//             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
-//             SPACE=(CYL,(100,50)),UNIT=(SYSDA,5)
+//EIHDASME  EXEC SAS609,REGION=8M,WORK='250000,200000'
+//DP        DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//DCIWH     DD DSN=SAP.PBB.DCIWH,DISP=SHR
+//BNMK      DD DSN=SAP.PBB.KAPITI.SASDATA,DISP=SHR
+//EQWH      DD DSN=SAP.PBB.WEQUT(0),DISP=SHR
+//FORATE    DD DSN=SAP.PBB.FCYCA,DISP=SHR
+//CISEQ     DD DSN=SAP.PBB.CISBEXT.EQ,DISP=SHR
+//CISDP     DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
+//CISDP2    DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
+//SMETXT    DD DSN=SAP.PBB.DPACCEPT.SME.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//             SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
+//EQTXT     DD DSN=SAP.PBB.DPACCEPT.EQ.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=500,BLKSIZE=0),
+//             SPACE=(TRK,(100,100)),UNIT=(SYSDA,5)
+//DCITXT    DD DSN=SAP.PBB.DPACCEPT.DCI.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
+//             SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
+//MNITXT    DD DSN=SAP.PBB.DPACCEPT.MNI.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             DCB=(RECFM=FB,LRECL=500,BLKSIZE=0),
+//             SPACE=(TRK,(100,100)),UNIT=(SYSDA,5)
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD SYSOUT=X
 //SYSIN     DD *
 
-OPTIONS YEARCUTOFF=1950 NOCENTER;
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+
+DATA REPTDATE (KEEP=REPTDATE);
+  SET DP.REPTDATE;
+  PREVHALF = INTNX('MONTH',REPTDATE,-6,'E');
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
+  CALL SYMPUT('REPTMMMYY',PUT(REPTDATE,MONYY.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
+  CALL SYMPUT('REPTYYMM',PUT(REPTDATE,YYMMN.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DATE9.));
+  CALL SYMPUT('TDATE',REPTDATE);
+  FORMAT REPTDATE PREVHALF DATE9.;
+RUN;
+
+%INC PGM(PBBDPFMT);
 
 PROC FORMAT;
-   VALUE TYPE
-     0    =  'INCOMPLETE TRXN'
-     1    =  'CASH WITHDRAWAL'
-     2    =  'BALANCE INQUIRY'
-     3    =  'DEPOSIT'
-     4    =  'TRANSFER'
-     5    =  'PAYMENT ENCLOSED'
-     6    =  'SPECIAL'
-     7    =  'SECURITY EXPOSURE'
-     8    =  'PAYMENT FROM'
-     9    =  'CASH CHECK (USED SCWDRWL)'
-    11    =  'LAST 6 TRANSACTIONS'
-    12    =  'CELCOM PREPAID'
-    13    =  'MAXIS  PREPAID'
-    14    =  'DIGI   PREPAID'
-    17    =  'POS PURCHASE W/CASH BACK'
-    21    =  'PREAUTH FOR DAY2DAY'
-    10    =  '1ST DEPOSIT(FOR DEP SLIP)'
-    31    =  '2ND FIXED DEPOSIT'
-    32    =  '2ND DEPOSIT'
-    33    =  '1ST FIXED DEPOSIT'
-    34    =  '1ST TRANSFER'
-    35    =  '1ST GIRO'
-    36    =  '1ST PISA'
-    50    =  'CDT 1ST MSG'
-    51    =  'CDT: ENCASH'
-    65    =  'JARING PREPAID'
-    66    =  'NEW IC ENTERED'
-    67    =  'NEXTEL PREPAID'
-    68    =  'TMNET PREPAID & PREP ONE'
-    69    =  'ESA STATUS INQUIRY'
-    70    =  'ESA CANCELLATION'
-    71    =  'PINLESS TOPUP (1ST PART)'
-    72    =  'PINLESS TOPUP (2ND PART)'
-    81    =  'E-RIGHTS APPL (1ST PART)'
-    82    =  'E-RIGHTS APPL (2ND PART)'
-    97    =  'JOMPAY - 1ST PART'
-    98    =  'JOMPAY - 2ND PART'
-   129    =  'FAST CASH'
-   130    =  'CHECK DEPOSIT (USED SCDEP)'
-   131    =  'CHECK DEP W C/B (SCDEPCB)'
-   132    =  'DEPOSIT WITH CASH BACK'
-   133    =  'ENV DEP WITH CASH BACK'
-   135    =  'PAYMENT FROM/TO'
-   136    =  'BILL PAYMENT / GIRO'
-   137    =  'PIN CHANGE'
-   138    =  'CHEQUE BOOK ORDER'
-   139    =  'FIXED DEPOSIT'
-   140    =  'MINI STATEMENT'
-   141    =  'GIRO 1ST'
-   142    =  'CANCEL PRESSED'
-   143    =  'CUST TIMEOUT'
-   144    =  'HOST TIMEOUT'
-   145    =  'RETURN CARD PRESSED'
-   146    =  'GIRO CREDIT CARD PYMT'
-   147    =  'CARD REMOVAL TOUT'
-   148    =  'POS PURCHASE'
-   149    =  'POS VOID'
-   160    =  'MP LOADING'
-   150    =  'EBNK REGISTRATION'
-   151    =  'SMS TOPUP-REGISTRATION'
-   152    =  'SMS TOPUP-TERMINATION'
-   153    =  'REQUEST FOR TAC'
-   154    =  'REGISTER PHONE FOR TAC'
-   155    =  'LATEST PHONE# UPDATE'
-   156    =  'CONFIRM LATEST PHONE#'
-   157    =  'REGIONAL LINK REGN'
-   158    =  'AIRASIA INQUIRY'
-   159    =  'AIRASIA PAYMENT'
-   161    =  'TOUCH N GO (LOADING)'
-   162    =  'CHG DAILY W/D LIMIT'
-   163    =  'CANCEL PRE-AUTH'
-   164    =  'PMO HP REGISTRATION'
-   165    =  'CHG DAILY RETAIL LIMIT'
-   166    =  'ACTIVATE OVERSEAS W/D'
-   167    =  'DEACTIVATE OVERSEAS W/D'
-   168    =  'CONVERT BANKCARD TO D2D'
-   169    =  'MYMOBILE REGISTRATION'
-   170    =  'EBANK RESET PIN'
-   171    =  'MYMOBILE RESET PIN'
-   172    =  'CUSTOMER CONSENT'
-   173    =  'OPT STATUS INQUIRY'
-   174    =  'OPT STATUS UPDATE'
-   175    =  'NEW DAILY XFER LIMIT'
-   176    =  'CONTACTLESS PINLESS LIMIT'
-   225    =  'MINI STATEMENT'
-   226    =  'LAST TEN TRANS'
-   227    =  'DEPOSITORY LISTING'
+  VALUE $CUSTGROUP
+  '41','42','43','66',
+  '44','46','47','67',
+  '48','49','51','68',
+  '52','53','54','69'  = 'SMALL MEDIUM ENTERPRISE (SMES)'
+  '4','04','5','05','6','06','30',
+  '31','32','33','34',
+  '35','36','37','38',
+  '39','40','45'       = 'DOMESTIC (DNBFI)'
+  '87','88','89'       = 'NON-RESIDENT/FOREIGN ENTITIES'
+  ;
+
+  VALUE $CUSTTYPE
+   '41','42','43','66'  = 'BUMIPUTRA CONTROLLED SME'
+   '44','46','47','67'  = 'NON-BUMIPUTRA CONTROLLED SME'
+   '48','49','51','68'  = 'NON-RESIDENT CONTROLLED SME'
+   '52','53','54','69'  = 'GOVERNMENT CONTROLLED SME'
+   '04'                 = 'SUBSIDIARY STOCKBROKING COS.'
+   '05'                 = 'ASSOCIATE STOCKBROKING COS.'
+   '06'                 = 'OTHER STOCKBROKING COS.'
+   '30'                 = 'DOMESTIC OTHER NBFI'
+   '31'                 = 'SAVING INSTITUTIONS'
+   '32'                 = 'CREDIT CARD COMPANIES'
+   '33'                 = 'DEVELOPMENT FINANCE INSTITUTION'
+   '34'                 = 'BUILDING SOCIETIES'
+   '35'                 = 'CO-OPERATIVE SOCIESTIES'
+   '36'                 = 'STOCKBROKING COMPANIES'
+   '37'                 = 'COMMODITY BROKERS'
+   '38'                 = 'CREDIT AND LEASING COMPANIES'
+   '39'                 = 'UNIT TRUST COMPANIES'
+   '40'                 = 'INSURANCE COS AND INSURANCE RELATED ENT.'
+   '45'                 = 'REHABILITATION INSTITUTIONS'
+   '87','88','89'       = 'FOREIGN BUSINESS ENTERPRISES'
    ;
 RUN;
 
-DATA REPTDATE;
-   SET DEPO.REPTDATE;
-   DELTDATE = INTNX('MONTH',REPTDATE,-7,'E');
-   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
-   CALL SYMPUT('REPTYR1',PUT(REPTDATE,YEAR4.));
-   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-   CALL SYMPUT('NEXT_MTH',PUT(MONTH(DELTDATE),Z2.));
-   CALL SYMPUT('REPTDATE',REPTDATE);
-RUN;
+DATA CA;
+  SET DP.CURRENT;
+  WHERE OPENIND NOT IN ('B','C','P') AND
+        (PRODUCT IN &CURX OR 400<=PRODUCT<=444) AND CURBAL > 0;
+  IF PRODUCT NOT IN (63,163,413);
 
-PROC DATASETS LIBRARY=OCM;
-   DELETE ATMTRNX&NEXT_MTH;
-RUN;
-
-DATA TEMP.ATMTRNX&REPTMON&REPTYEAR
-      OCM.ATMTRNX&REPTMON;
-  DROP YY MM DD TRNXDT COMPIND AUTHIND;
-  INFILE OCMTXT;
-  INPUT @071 CARDNO    $20.
-        @012 BRANCH    PD3.
-        @015 TERMNO    IB4.
-        @001 TRNXDT    PD5.
-        @006 TRNXTIME  PD4.
-        @019 TRNXCODE  IB2.
-        @010 ATMTYPE     2.
-        @021 TRNXAMT   PD8.2
-        @029 SUCCESS_TRAN_AMT PD8.2
-        @038 COMPIND    $1.
-        @039 AUTHIND    $1.
-        @047 DENIAL_CD   3.
-        @055 CARDTYPE   $2.
-        @091 ACCTNO     16.
-        @167 STATE_CD   $2.
-        ;
-
-  TRNXTYPE = PUT(TRNXCODE,TYPE.);
-
-  IF TRNXDT NE . THEN DO;
-     YY = SUBSTR(TRNXDT, 5,4);
-     MM = SUBSTR(TRNXDT, 9,2);
-     DD = SUBSTR(TRNXDT,11,2);
-     TRNXDATE = MDY(MM,DD,YY);
+  SELECT(PRODUCT);
+     WHEN(104) CUSTFISS='02';
+     WHEN(105) CUSTFISS='81';
+     OTHERWISE CUSTFISS=PUT(CUSTCODE, DDCUSTCD.);
   END;
+  IF CUSTFISS IN ('41','42','43','44','46','47','48','49',
+                  '51','52','53','54','66','67','68','69',
+                  '87','88','89') OR
+     DNBFISME IN ('1','2','3');
 
-  FORMAT TERMNO     Z4.
-         TRNXTIME   Z6.;
-
-  IF COMPIND EQ 'S' AND AUTHIND EQ 'A' THEN
-     TRNXSTAT = 'S';
-  ELSE
-     TRNXSTAT = 'R';
+  PRODCD = PUT(PRODUCT,CAPROD.);
+  IF PRODCD IN ('42110','42610');
+  KEEP ACCTNO PRODCD CUSTFISS DNBFISME CURBAL;
 RUN;
 
-DATA TEMP.ATM_CASH&REPTYR1&REPTMON;
-   SET TEMP.ATMTRNX&REPTMON&REPTYEAR;
-
-   WHERE TRNXSTAT = 'S' AND
-         CARDTYPE IN ('00','02','03','04') AND
-         TRNXCODE IN (001,002,129);
-
-   FORMAT TRNXDATE DDMMYY10.;
-
-   KEEP TRNXDATE TRNXTIME CARDNO TRNXAMT TRNXTYPE;
+DATA SA;
+  SET DP.SAVING;
+  WHERE OPENIND NOT IN ('B','C','P') AND CURBAL > 0;
+  PRODCD=PUT(PRODUCT,SAPROD.);
+  CUSTFISS = PUT(CUSTCODE,SACUSTCD.);
+  IF CUSTFISS IN ('41','42','43','44','46','47','48','49',
+                  '51','52','53','54','66','67','68','69',
+                  '87','88','89') OR
+     DNBFISME IN ('1','2','3');
+  KEEP ACCTNO PRODCD CUSTFISS DNBFISME CURBAL;
 RUN;
 
-FILENAME TRANFILE 'SAP.PBB.ATMFTP' DISP=OLD;
-PROC CPORT LIBRARY=TEMP FILE=TRANFILE; SELECT ATMTRNX&REPTMON&REPTYEAR;
+DATA UMA;
+  SET DP.UMA;
+  WHERE OPENIND IN ('D','O') AND CURBAL > 0;
+  IF PRODUCT = 297 THEN CUSTFISS = PUT(CUSTCODE, FDCUSTCD.);
+  ELSE                  CUSTFISS = PUT(CUSTCODE, IFDCUSCD.);
+  CUSTFISS = PUT(CUSTCODE,SACUSTCD.);
+  IF CUSTFISS IN ('41','42','43','44','46','47','48','49',
+                  '51','52','53','54','66','67','68','69',
+                  '87','88','89') OR
+     DNBFISME IN ('1','2','3');
+  KEEP ACCTNO CUSTFISS DNBFISME CURBAL;
 RUN;
 
-FILENAME TRANFILE 'SAP.PBB.ATMCSFTP' DISP=OLD;
-PROC CPORT LIBRARY=TEMP FILE=TRANFILE; SELECT ATM_CASH&REPTYR1&REPTMON;
+DATA FD;
+  SET DP.FD;
+  WHERE OPENIND IN ('D','O');
+  CUSTFISS = PUT(CUSTCODE, FDCUSTCD.);
+  IF CUSTFISS IN ('41','42','43','44','46','47','48','49',
+                  '51','52','53','54','66','67','68','69',
+                  '87','88','89') OR
+     DNBFISME IN ('1','2','3');
+  KEEP ACCTNO CUSTFISS DNBFISME CURBAL;
 RUN;
 
-
-
-
-                             Data Set Information                              
-Command ===>                                                                   
-                                                                   More:     + 
-Data Set Name . . . . : ATP.TCS.JNL.MONTHLY.EXTRACT.G0359V00                   
-                                                                               
-General Data                          Current Allocation                       
- Management class . . : RELNOACT       Allocated cylinders : 9,225             
- Storage class  . . . : FASTER         Allocated extents . : 92                
-  Volume serial . . . : PO1172 +                                               
-  Device type . . . . : 3390                                                   
- Data class . . . . . : SEQ                                                    
-  Organization  . . . : PS            Current Utilization                      
-  Record format . . . : FB             Used cylinders  . . : 9,225             
-  Record length . . . : 224            Used extents  . . . : 92                
-  Block size  . . . . : 27776                                                  
-  1st extent cylinders: 200                                                    
-  Secondary cylinders : 100           Dates                                    
-  Data set name type  :                Creation date . . . : 2026/09/01        
-  Data set encryption : NO             Referenced date . . : 2026/09/02        
-                                       Expiration date . . : ***None***        
-                                                                               
-  SMS Compressible  . : NO                                                     
-                                                                               
-                                                                               
-=================================================================================================
-
-
-#!/usr/bin/env python3
-# RUN EVERY 2ND OF THE MONTH, IMPLEMENT BY PAS
-
-"""Python replacement for the EIBMTCSM JCL/SAS job."""
-
-from __future__ import annotations
-
-import argparse
-from datetime import date, datetime, timedelta
-from decimal import Decimal
-from pathlib import Path
-
-import pandas as pd
-
-
-DEFAULT_INPUT = Path("/host_pq/mis/input/OCM/JNL_MONTHLY")
-DEFAULT_OUTPUT_DIR = Path("/dwh/pbcs")
-DEFAULT_RECORD_LENGTH = 224  # ATP.TCS.JNL.MONTHLY.EXTRACT: RECFM=FB,LRECL=224
-MINIMUM_PARSED_LENGTH = 168  # Last SAS INPUT field ends at byte 168.
-
-OUTPUT_COLUMNS = [
-    "CARDNO",
-    "BRANCH",
-    "TERMNO",
-    "TRNXTIME",
-    "TRNXCODE",
-    "ATMTYPE",
-    "TRNXAMT",
-    "SUCCESS_TRAN_AMT",
-    "DENIAL_CD",
-    "CARDTYPE",
-    "ACCTNO",
-    "STATE_CD",
-    "TRNXTYPE",
-    "TRNXDATE",
-    "TRNXSTAT",
-]
-
-TYPE_FORMAT = {
-    0: "INCOMPLETE TRXN",
-    1: "CASH WITHDRAWAL",
-    2: "BALANCE INQUIRY",
-    3: "DEPOSIT",
-    4: "TRANSFER",
-    5: "PAYMENT ENCLOSED",
-    6: "SPECIAL",
-    7: "SECURITY EXPOSURE",
-    8: "PAYMENT FROM",
-    9: "CASH CHECK (USED SCWDRWL)",
-    10: "1ST DEPOSIT(FOR DEP SLIP)",
-    11: "LAST 6 TRANSACTIONS",
-    12: "CELCOM PREPAID",
-    13: "MAXIS  PREPAID",
-    14: "DIGI   PREPAID",
-    17: "POS PURCHASE W/CASH BACK",
-    21: "PREAUTH FOR DAY2DAY",
-    31: "2ND FIXED DEPOSIT",
-    32: "2ND DEPOSIT",
-    33: "1ST FIXED DEPOSIT",
-    34: "1ST TRANSFER",
-    35: "1ST GIRO",
-    36: "1ST PISA",
-    50: "CDT 1ST MSG",
-    51: "CDT: ENCASH",
-    65: "JARING PREPAID",
-    66: "NEW IC ENTERED",
-    67: "NEXTEL PREPAID",
-    68: "TMNET PREPAID & PREP ONE",
-    69: "ESA STATUS INQUIRY",
-    70: "ESA CANCELLATION",
-    71: "PINLESS TOPUP (1ST PART)",
-    72: "PINLESS TOPUP (2ND PART)",
-    81: "E-RIGHTS APPL (1ST PART)",
-    82: "E-RIGHTS APPL (2ND PART)",
-    97: "JOMPAY - 1ST PART",
-    98: "JOMPAY - 2ND PART",
-    129: "FAST CASH",
-    130: "CHECK DEPOSIT (USED SCDEP)",
-    131: "CHECK DEP W C/B (SCDEPCB)",
-    132: "DEPOSIT WITH CASH BACK",
-    133: "ENV DEP WITH CASH BACK",
-    135: "PAYMENT FROM/TO",
-    136: "BILL PAYMENT / GIRO",
-    137: "PIN CHANGE",
-    138: "CHEQUE BOOK ORDER",
-    139: "FIXED DEPOSIT",
-    140: "MINI STATEMENT",
-    141: "GIRO 1ST",
-    142: "CANCEL PRESSED",
-    143: "CUST TIMEOUT",
-    144: "HOST TIMEOUT",
-    145: "RETURN CARD PRESSED",
-    146: "GIRO CREDIT CARD PYMT",
-    147: "CARD REMOVAL TOUT",
-    148: "POS PURCHASE",
-    149: "POS VOID",
-    150: "EBNK REGISTRATION",
-    151: "SMS TOPUP-REGISTRATION",
-    152: "SMS TOPUP-TERMINATION",
-    153: "REQUEST FOR TAC",
-    154: "REGISTER PHONE FOR TAC",
-    155: "LATEST PHONE# UPDATE",
-    156: "CONFIRM LATEST PHONE#",
-    157: "REGIONAL LINK REGN",
-    158: "AIRASIA INQUIRY",
-    159: "AIRASIA PAYMENT",
-    160: "MP LOADING",
-    161: "TOUCH N GO (LOADING)",
-    162: "CHG DAILY W/D LIMIT",
-    163: "CANCEL PRE-AUTH",
-    164: "PMO HP REGISTRATION",
-    165: "CHG DAILY RETAIL LIMIT",
-    166: "ACTIVATE OVERSEAS W/D",
-    167: "DEACTIVATE OVERSEAS W/D",
-    168: "CONVERT BANKCARD TO D2D",
-    169: "MYMOBILE REGISTRATION",
-    170: "EBANK RESET PIN",
-    171: "MYMOBILE RESET PIN",
-    172: "CUSTOMER CONSENT",
-    173: "OPT STATUS INQUIRY",
-    174: "OPT STATUS UPDATE",
-    175: "NEW DAILY XFER LIMIT",
-    176: "CONTACTLESS PINLESS LIMIT",
-    225: "MINI STATEMENT",
-    226: "LAST TEN TRANS",
-    227: "DEPOSITORY LISTING",
-}
-
-
-def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
-    """Decode a signed mainframe packed-decimal value (SAS PD informat)."""
-    if not raw:
-        return None
-
-    nibbles = [nibble for byte in raw for nibble in (byte >> 4, byte & 0x0F)]
-    sign_nibble = nibbles.pop()
-
-    # Standard signed/unsigned packed-decimal sign nibbles.
-    if sign_nibble in (0x0B, 0x0D):
-        sign = -1
-    elif sign_nibble in (0x0A, 0x0C, 0x0E, 0x0F):
-        sign = 1
-    else:
-        return None
-
-    if any(nibble > 9 for nibble in nibbles):
-        return None
-
-    digits = "".join(str(nibble) for nibble in nibbles)
-    value = Decimal(digits or "0").scaleb(-scale)
-    return value if sign > 0 else -value
-
-
-def binary_integer(raw: bytes) -> int | None:
-    """Decode a mainframe big-endian signed integer (SAS IB informat)."""
-    if not raw:
-        return None
-    return int.from_bytes(raw, byteorder="big", signed=True)
-
-
-def decoded(raw: bytes, encoding: str) -> str:
-    """Decode an EBCDIC character field and remove surrounding blanks."""
-    return raw.decode(encoding, errors="replace").strip()
-
-
-def numeric_text(raw: bytes, encoding: str) -> int | None:
-    """Decode a SAS numeric display field such as INPUT field 2. or 16."""
-    value = decoded(raw, encoding)
-    if not value:
-        return None
-    try:
-        return int(value)
-    except ValueError as error:
-        raise ValueError(f"Invalid numeric text field: {value!r}") from error
-
-
-def transaction_date(value: Decimal | None) -> pd.Timestamp:
-    """Convert the packed YYYYMMDD transaction date to a pandas date."""
-    if value is None:
-        return pd.NaT
-
-    digits = str(abs(int(value))).zfill(8)[-8:]
-    try:
-        return pd.Timestamp(datetime.strptime(digits, "%Y%m%d").date())
-    except ValueError:
-        return pd.NaT
-
-
-def parse_record(record: bytes, encoding: str) -> dict[str, object]:
-    """Apply the original SAS column offsets to one physical input record."""
-    if len(record) < MINIMUM_PARSED_LENGTH:
-        raise ValueError(
-            f"Record is only {len(record)} bytes; expected at least "
-            f"{MINIMUM_PARSED_LENGTH}"
-        )
-
-    trnxdt = packed_decimal(record[0:5])
-    trnxtime = packed_decimal(record[5:9])
-    branch = packed_decimal(record[11:14])
-    trnxcode = binary_integer(record[18:20])
-    compind = decoded(record[37:38], encoding)
-    authind = decoded(record[38:39], encoding)
-
-    return {
-        "CARDNO": decoded(record[70:90], encoding),
-        "BRANCH": int(branch) if branch is not None else None,
-        "TERMNO": binary_integer(record[14:18]),
-        "TRNXTIME": int(trnxtime) if trnxtime is not None else None,
-        "TRNXCODE": trnxcode,
-        "ATMTYPE": numeric_text(record[9:11], encoding),
-        "TRNXAMT": float(packed_decimal(record[20:28], 2) or Decimal(0)),
-        "SUCCESS_TRAN_AMT": float(
-            packed_decimal(record[28:36], 2) or Decimal(0)
-        ),
-        "DENIAL_CD": numeric_text(record[46:49], encoding),
-        "CARDTYPE": decoded(record[54:56], encoding),
-        # Original SAS uses ACCTNO 16. (numeric), not ACCTNO $16.
-        "ACCTNO": numeric_text(record[90:106], encoding),
-        "STATE_CD": decoded(record[166:168], encoding),
-        "TRNXTYPE": TYPE_FORMAT.get(trnxcode, ""),
-        "TRNXDATE": transaction_date(trnxdt),
-        "TRNXSTAT": "S" if compind == "S" and authind == "A" else "R",
-    }
-
-
-def _fixed_blocks(content: bytes, record_length: int, separator: bytes) -> list[bytes] | None:
-    """Read fixed records with an optional separator added during extraction."""
-    stride = record_length + len(separator)
-    if not content or len(content) % stride:
-        return None
-
-    records: list[bytes] = []
-    for offset in range(0, len(content), stride):
-        block = content[offset : offset + stride]
-        if separator and block[record_length:] != separator:
-            return None
-        records.append(block[:record_length])
-    return records
-
-
-def read_records(path: Path, record_length: int) -> list[bytes]:
-    """Read FB records without interpreting binary 0A bytes as newlines."""
-    if not path.is_file():
-        raise FileNotFoundError(f"Missing input file: {path}")
-    if record_length < MINIMUM_PARSED_LENGTH:
-        raise ValueError(
-            f"Record length {record_length} is smaller than the required "
-            f"{MINIMUM_PARSED_LENGTH} bytes"
-        )
-
-    content = path.read_bytes()
-    if not content:
-        return []
-
-    # Raw FB is preferred. LF/CRLF variants support extractors that append a
-    # delimiter after each complete record; the data itself is never split on LF.
-    for separator in (b"", b"\n", b"\r\n"):
-        records = _fixed_blocks(content, record_length, separator)
-        if records is not None:
-            return records
-
-    raise ValueError(
-        f"Input contains {len(content):,} bytes and is incompatible with "
-        f"RECFM=FB,LRECL={record_length}. Expected raw {record_length}-byte "
-        "records, or complete records followed by LF/CRLF. Confirm that the "
-        "mainframe file was extracted in binary mode."
-    )
-
-
-def parse_date(value: str) -> date:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError as error:
-        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
-
-
-def write_sas7bdat(
-    output_dir: Path, tables: dict[str, pd.DataFrame]
-) -> dict[str, Path]:
-    """Write DataFrames as SAS7BDAT through a configured SAS runtime."""
-    try:
-        import saspy
-    except ImportError as error:
-        raise RuntimeError(
-            "Writing SAS7BDAT requires saspy and a configured SAS runtime"
-        ) from error
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    sas = saspy.SASsession()
-    try:
-        sas_path = str(output_dir.resolve()).replace("'", "''")
-        result = sas.submit(f"libname OUT '{sas_path}';")
-        if "ERROR:" in result.get("LOG", ""):
-            raise RuntimeError(result["LOG"])
-
-        for table, frame in tables.items():
-            sas.df2sd(frame, table=table, libref="OUT")
-
-        # Match the formats used by the original SAS job.
-        format_statements = []
-        for table in tables:
-            if table.startswith("ATMTRNX"):
-                format_statements.append(
-                    f"proc datasets library=OUT nolist; modify {table}; "
-                    "format TERMNO z4. TRNXTIME z6.; quit;"
-                )
-            elif table.startswith("ATM_CASH"):
-                format_statements.append(
-                    f"proc datasets library=OUT nolist; modify {table}; "
-                    "format TRNXDATE ddmmyy10. TRNXTIME z6.; quit;"
-                )
-        result = sas.submit("\n".join(format_statements))
-        if "ERROR:" in result.get("LOG", ""):
-            raise RuntimeError(result["LOG"])
-    finally:
-        sas.endsas()
-
-    return {table: output_dir / f"{table}.sas7bdat" for table in tables}
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument(
-        "--report-date",
-        type=parse_date,
-        default=date.today().replace(day=1) - timedelta(days=1),
-        help="reporting month end in YYYY-MM-DD (default: previous month end)",
-    )
-    parser.add_argument(
-        "--encoding",
-        default="cp037",
-        help="encoding of character fields (default: cp037 EBCDIC)",
-    )
-    parser.add_argument(
-        "--record-length",
-        type=int,
-        default=DEFAULT_RECORD_LENGTH,
-        help="physical FB record length (default: 224)",
-    )
-    args = parser.parse_args()
-
-    records = read_records(args.input, args.record_length)
-    rows = [parse_record(record, args.encoding) for record in records]
-    transactions = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
-
-    cash = transactions.loc[
-        (transactions["TRNXSTAT"] == "S")
-        & transactions["CARDTYPE"].isin(["00", "02", "03", "04"])
-        & transactions["TRNXCODE"].isin([1, 2, 129]),
-        ["TRNXDATE", "TRNXTIME", "CARDNO", "TRNXAMT", "TRNXTYPE"],
-    ].copy()
-
-    month = args.report_date.strftime("%m")
-    year2 = args.report_date.strftime("%y")
-    full_table = f"ATMTRNX{month}{year2}"
-    cash_table = f"ATM_CASH{args.report_date:%Y%m}"
-
-    outputs = write_sas7bdat(
-        args.output_dir,
-        {full_table: transactions, cash_table: cash},
-    )
-
-    print(f"Input       : {args.input}")
-    print(f"Record form : FB")
-    print(f"Record size : {args.record_length}")
-    print(f"Rows input  : {len(transactions):,}")
-    print(f"Cash rows   : {len(cash):,}")
-    print(f"ATMTRNX     : {outputs[full_table]}")
-    print(f"ATM_CASH    : {outputs[cash_table]}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
-==============================================================================================================================
-
-
-1                                                          The SAS System                         09:19 Wednesday, September 2, 2026
-
-1          ;*';*";*/;quit;run;
-2          OPTIONS PAGENO=MIN;
-3          %LET _CLIENTTASKLABEL='ADHOC_SAS2.sas';
-4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
-5          %LET _CLIENTPROJECTPATH='';
-6          %LET _CLIENTPROJECTPATHHOST='';
-7          %LET _CLIENTPROJECTNAME='';
-8          %LET _SASPROGRAMFILE='C:\Users\pas68728\AppData\Local\Temp\scp16422\stgsrcsys\host\holding\ADHOC_SAS2.sas';
-9          %LET _SASPROGRAMFILEHOST='ITDNBVPN065';
-10         
-11         ODS _ALL_ CLOSE;
-12         OPTIONS DEV=SVG;
-13         GOPTIONS XPIXELS=0 YPIXELS=0;
-14         %macro HTML5AccessibleGraphSupported;
-15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
-16         %mend;
-17         FILENAME EGHTML TEMP;
-18         ODS HTML5(ID=EGHTML) FILE=EGHTML
-19             OPTIONS(BITMAP_MODE='INLINE')
-20             %HTML5AccessibleGraphSupported
-21             ENCODING='utf-8'
-22             STYLE=HTMLBlue
-23             NOGTITLE
-24             NOGFOOTNOTE
-25             GPATH=&sasworklocation
-26         ;
-NOTE: Writing HTML5(EGHTML) Body file: EGHTML
-27         
-28         data _null_;
-29                 infile "
-30         cd /sas/python/virt_edw;
-31         source bin/activate;
-32         python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py
-33         " pipe;
-34                 input;
-35                 put _infile_;
-36         run;
-
-NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py" is:
-      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py"
-
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 172, in numeric_text
-    return int(value)
-ValueError: invalid literal for int() with base 10: '\x90\x91'
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 376, in <module>
-    raise SystemExit(main())
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 345, in main
-    rows = [parse_record(record, args.encoding) for record in records]
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 345, in <listcomp>
-    rows = [parse_record(record, args.encoding) for record in records]
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 210, in parse_record
-    "ATMTYPE": numeric_text(record[9:11], encoding),
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 174, in numeric_text
-2                                                          The SAS System                         09:19 Wednesday, September 2, 2026
-
-    raise ValueError(f"Invalid numeric text field: {value!r}") from error
-ValueError: Invalid numeric text field: '\x90\x91'
-NOTE: 19 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
-      /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py".
-      The minimum record length was 0.
-      The maximum record length was 77.
-NOTE: DATA statement used (Total process time):
-      real time           1:23.66
-      cpu time            0.01 seconds
-      
-
-37         
-38         %LET _CLIENTTASKLABEL=;
-39         %LET _CLIENTPROCESSFLOWNAME=;
-40         %LET _CLIENTPROJECTPATH=;
-41         %LET _CLIENTPROJECTPATHHOST=;
-42         %LET _CLIENTPROJECTNAME=;
-43         %LET _SASPROGRAMFILE=;
-44         %LET _SASPROGRAMFILEHOST=;
-45         
-46         ;*';*";*/;quit;run;
-47         ODS _ALL_ CLOSE;
-48         
-49         
-50         QUIT; RUN;
-51         
-
-
-
--------------------------------------------------------------------------------------------------------------------------------
-
-
-#!/usr/bin/env python3
-# RUN EVERY 2ND OF THE MONTH, IMPLEMENT BY PAS
-
-"""Python replacement for the EIBMTCSM JCL/SAS job."""
-
-from __future__ import annotations
-
-import argparse
-from datetime import date, datetime, timedelta
-from decimal import Decimal
-from pathlib import Path
-
-import pandas as pd
-
-
-DEFAULT_INPUT = Path("/host_pq/mis/input/OCM/JNL_MONTHLY")
-DEFAULT_OUTPUT_DIR = Path("/dwh/pbcs")
-DEFAULT_RECORD_LENGTH = 224  # ATP.TCS.JNL.MONTHLY.EXTRACT: RECFM=FB,LRECL=224
-MINIMUM_PARSED_LENGTH = 168  # Last SAS INPUT field ends at byte 168.
-
-OUTPUT_COLUMNS = [
-    "CARDNO",
-    "BRANCH",
-    "TERMNO",
-    "TRNXTIME",
-    "TRNXCODE",
-    "ATMTYPE",
-    "TRNXAMT",
-    "SUCCESS_TRAN_AMT",
-    "DENIAL_CD",
-    "CARDTYPE",
-    "ACCTNO",
-    "STATE_CD",
-    "TRNXTYPE",
-    "TRNXDATE",
-    "TRNXSTAT",
-]
-
-TYPE_FORMAT = {
-    0: "INCOMPLETE TRXN",
-    1: "CASH WITHDRAWAL",
-    2: "BALANCE INQUIRY",
-    3: "DEPOSIT",
-    4: "TRANSFER",
-    5: "PAYMENT ENCLOSED",
-    6: "SPECIAL",
-    7: "SECURITY EXPOSURE",
-    8: "PAYMENT FROM",
-    9: "CASH CHECK (USED SCWDRWL)",
-    10: "1ST DEPOSIT(FOR DEP SLIP)",
-    11: "LAST 6 TRANSACTIONS",
-    12: "CELCOM PREPAID",
-    13: "MAXIS  PREPAID",
-    14: "DIGI   PREPAID",
-    17: "POS PURCHASE W/CASH BACK",
-    21: "PREAUTH FOR DAY2DAY",
-    31: "2ND FIXED DEPOSIT",
-    32: "2ND DEPOSIT",
-    33: "1ST FIXED DEPOSIT",
-    34: "1ST TRANSFER",
-    35: "1ST GIRO",
-    36: "1ST PISA",
-    50: "CDT 1ST MSG",
-    51: "CDT: ENCASH",
-    65: "JARING PREPAID",
-    66: "NEW IC ENTERED",
-    67: "NEXTEL PREPAID",
-    68: "TMNET PREPAID & PREP ONE",
-    69: "ESA STATUS INQUIRY",
-    70: "ESA CANCELLATION",
-    71: "PINLESS TOPUP (1ST PART)",
-    72: "PINLESS TOPUP (2ND PART)",
-    81: "E-RIGHTS APPL (1ST PART)",
-    82: "E-RIGHTS APPL (2ND PART)",
-    97: "JOMPAY - 1ST PART",
-    98: "JOMPAY - 2ND PART",
-    129: "FAST CASH",
-    130: "CHECK DEPOSIT (USED SCDEP)",
-    131: "CHECK DEP W C/B (SCDEPCB)",
-    132: "DEPOSIT WITH CASH BACK",
-    133: "ENV DEP WITH CASH BACK",
-    135: "PAYMENT FROM/TO",
-    136: "BILL PAYMENT / GIRO",
-    137: "PIN CHANGE",
-    138: "CHEQUE BOOK ORDER",
-    139: "FIXED DEPOSIT",
-    140: "MINI STATEMENT",
-    141: "GIRO 1ST",
-    142: "CANCEL PRESSED",
-    143: "CUST TIMEOUT",
-    144: "HOST TIMEOUT",
-    145: "RETURN CARD PRESSED",
-    146: "GIRO CREDIT CARD PYMT",
-    147: "CARD REMOVAL TOUT",
-    148: "POS PURCHASE",
-    149: "POS VOID",
-    150: "EBNK REGISTRATION",
-    151: "SMS TOPUP-REGISTRATION",
-    152: "SMS TOPUP-TERMINATION",
-    153: "REQUEST FOR TAC",
-    154: "REGISTER PHONE FOR TAC",
-    155: "LATEST PHONE# UPDATE",
-    156: "CONFIRM LATEST PHONE#",
-    157: "REGIONAL LINK REGN",
-    158: "AIRASIA INQUIRY",
-    159: "AIRASIA PAYMENT",
-    160: "MP LOADING",
-    161: "TOUCH N GO (LOADING)",
-    162: "CHG DAILY W/D LIMIT",
-    163: "CANCEL PRE-AUTH",
-    164: "PMO HP REGISTRATION",
-    165: "CHG DAILY RETAIL LIMIT",
-    166: "ACTIVATE OVERSEAS W/D",
-    167: "DEACTIVATE OVERSEAS W/D",
-    168: "CONVERT BANKCARD TO D2D",
-    169: "MYMOBILE REGISTRATION",
-    170: "EBANK RESET PIN",
-    171: "MYMOBILE RESET PIN",
-    172: "CUSTOMER CONSENT",
-    173: "OPT STATUS INQUIRY",
-    174: "OPT STATUS UPDATE",
-    175: "NEW DAILY XFER LIMIT",
-    176: "CONTACTLESS PINLESS LIMIT",
-    225: "MINI STATEMENT",
-    226: "LAST TEN TRANS",
-    227: "DEPOSITORY LISTING",
-}
-
-
-def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
-    """Decode a signed mainframe packed-decimal value (SAS PD informat)."""
-    if not raw:
-        return None
-
-    nibbles = [nibble for byte in raw for nibble in (byte >> 4, byte & 0x0F)]
-    sign_nibble = nibbles.pop()
-
-    # Standard signed/unsigned packed-decimal sign nibbles.
-    if sign_nibble in (0x0B, 0x0D):
-        sign = -1
-    elif sign_nibble in (0x0A, 0x0C, 0x0E, 0x0F):
-        sign = 1
-    else:
-        return None
-
-    if any(nibble > 9 for nibble in nibbles):
-        return None
-
-    digits = "".join(str(nibble) for nibble in nibbles)
-    value = Decimal(digits or "0").scaleb(-scale)
-    return value if sign > 0 else -value
-
-
-def binary_integer(raw: bytes) -> int | None:
-    """Decode a mainframe big-endian signed integer (SAS IB informat)."""
-    if not raw:
-        return None
-    return int.from_bytes(raw, byteorder="big", signed=True)
-
-
-def decoded(raw: bytes, encoding: str) -> str:
-    """Decode an EBCDIC character field and remove surrounding blanks."""
-    return raw.decode(encoding, errors="replace").strip()
-
-
-def numeric_text(raw: bytes, encoding: str) -> int | None:
-    """Decode a SAS numeric display field such as INPUT field 2. or 16."""
-    value = decoded(raw, encoding)
-    if not value:
-        return None
-    try:
-        return int(value)
-    except ValueError as error:
-        raise ValueError(f"Invalid numeric text field: {value!r}") from error
-
-
-def transaction_date(value: Decimal | None) -> pd.Timestamp:
-    """Convert the packed YYYYMMDD transaction date to a pandas date."""
-    if value is None:
-        return pd.NaT
-
-    digits = str(abs(int(value))).zfill(8)[-8:]
-    try:
-        return pd.Timestamp(datetime.strptime(digits, "%Y%m%d").date())
-    except ValueError:
-        return pd.NaT
-
-
-def parse_record(record: bytes, encoding: str) -> dict[str, object]:
-    """Apply the original SAS column offsets to one physical input record."""
-    if len(record) < MINIMUM_PARSED_LENGTH:
-        raise ValueError(
-            f"Record is only {len(record)} bytes; expected at least "
-            f"{MINIMUM_PARSED_LENGTH}"
-        )
-
-    trnxdt = packed_decimal(record[0:5])
-    trnxtime = packed_decimal(record[5:9])
-    branch = packed_decimal(record[11:14])
-    trnxcode = binary_integer(record[18:20])
-    compind = decoded(record[37:38], encoding)
-    authind = decoded(record[38:39], encoding)
-
-    return {
-        "CARDNO": decoded(record[70:90], encoding),
-        "BRANCH": int(branch) if branch is not None else None,
-        "TERMNO": binary_integer(record[14:18]),
-        "TRNXTIME": int(trnxtime) if trnxtime is not None else None,
-        "TRNXCODE": trnxcode,
-        "ATMTYPE": numeric_text(record[9:11], encoding),
-        "TRNXAMT": float(packed_decimal(record[20:28], 2) or Decimal(0)),
-        "SUCCESS_TRAN_AMT": float(
-            packed_decimal(record[28:36], 2) or Decimal(0)
-        ),
-        "DENIAL_CD": numeric_text(record[46:49], encoding),
-        "CARDTYPE": decoded(record[54:56], encoding),
-        # Original SAS uses ACCTNO 16. (numeric), not ACCTNO $16.
-        "ACCTNO": numeric_text(record[90:106], encoding),
-        "STATE_CD": decoded(record[166:168], encoding),
-        "TRNXTYPE": TYPE_FORMAT.get(trnxcode, ""),
-        "TRNXDATE": transaction_date(trnxdt),
-        "TRNXSTAT": "S" if compind == "S" and authind == "A" else "R",
-    }
-
-
-def _fixed_blocks(content: bytes, record_length: int, separator: bytes) -> list[bytes] | None:
-    """Read fixed records with an optional separator added during extraction."""
-    stride = record_length + len(separator)
-    if not content or len(content) % stride:
-        return None
-
-    records: list[bytes] = []
-    for offset in range(0, len(content), stride):
-        block = content[offset : offset + stride]
-        if separator and block[record_length:] != separator:
-            return None
-        records.append(block[:record_length])
-    return records
-
-
-def read_records(path: Path, record_length: int) -> list[bytes]:
-    """Read FB records without interpreting binary 0A bytes as newlines."""
-    if not path.is_file():
-        raise FileNotFoundError(f"Missing input file: {path}")
-    if record_length < MINIMUM_PARSED_LENGTH:
-        raise ValueError(
-            f"Record length {record_length} is smaller than the required "
-            f"{MINIMUM_PARSED_LENGTH} bytes"
-        )
-
-    content = path.read_bytes()
-    if not content:
-        return []
-
-    # Test framed extracts first. A large LF-framed file can coincidentally have
-    # a total size divisible by 224; accepting it as raw FB would shift every
-    # record after the first separator. We validate separators only at exact
-    # LRECL boundaries, so binary 0A bytes inside records remain data.
-    for separator in (b"\r\n", b"\n", b""):
-        records = _fixed_blocks(content, record_length, separator)
-        if records is not None:
-            return records
-
-    raise ValueError(
-        f"Input contains {len(content):,} bytes and is incompatible with "
-        f"RECFM=FB,LRECL={record_length}. Expected raw {record_length}-byte "
-        "records, or complete records followed by LF/CRLF. Confirm that the "
-        "mainframe file was extracted in binary mode."
-    )
-
-
-def parse_date(value: str) -> date:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError as error:
-        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
-
-
-def write_sas7bdat(
-    output_dir: Path, tables: dict[str, pd.DataFrame]
-) -> dict[str, Path]:
-    """Write DataFrames as SAS7BDAT through a configured SAS runtime."""
-    try:
-        import saspy
-    except ImportError as error:
-        raise RuntimeError(
-            "Writing SAS7BDAT requires saspy and a configured SAS runtime"
-        ) from error
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    sas = saspy.SASsession()
-    try:
-        sas_path = str(output_dir.resolve()).replace("'", "''")
-        result = sas.submit(f"libname OUT '{sas_path}';")
-        if "ERROR:" in result.get("LOG", ""):
-            raise RuntimeError(result["LOG"])
-
-        for table, frame in tables.items():
-            sas.df2sd(frame, table=table, libref="OUT")
-
-        # Match the formats used by the original SAS job.
-        format_statements = []
-        for table in tables:
-            if table.startswith("ATMTRNX"):
-                format_statements.append(
-                    f"proc datasets library=OUT nolist; modify {table}; "
-                    "format TERMNO z4. TRNXTIME z6.; quit;"
-                )
-            elif table.startswith("ATM_CASH"):
-                format_statements.append(
-                    f"proc datasets library=OUT nolist; modify {table}; "
-                    "format TRNXDATE ddmmyy10. TRNXTIME z6.; quit;"
-                )
-        result = sas.submit("\n".join(format_statements))
-        if "ERROR:" in result.get("LOG", ""):
-            raise RuntimeError(result["LOG"])
-    finally:
-        sas.endsas()
-
-    return {table: output_dir / f"{table}.sas7bdat" for table in tables}
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument(
-        "--report-date",
-        type=parse_date,
-        default=date.today().replace(day=1) - timedelta(days=1),
-        help="reporting month end in YYYY-MM-DD (default: previous month end)",
-    )
-    parser.add_argument(
-        "--encoding",
-        default="cp037",
-        help="encoding of character fields (default: cp037 EBCDIC)",
-    )
-    parser.add_argument(
-        "--record-length",
-        type=int,
-        default=DEFAULT_RECORD_LENGTH,
-        help="physical FB record length (default: 224)",
-    )
-    args = parser.parse_args()
-
-    records = read_records(args.input, args.record_length)
-    rows = []
-    for record_number, record in enumerate(records, start=1):
-        try:
-            rows.append(parse_record(record, args.encoding))
-        except ValueError as error:
-            raise ValueError(
-                f"Failed to parse physical record {record_number:,} "
-                f"(zero-based byte offset "
-                f"{(record_number - 1) * args.record_length:,}): {error}"
-            ) from error
-    transactions = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
-
-    cash = transactions.loc[
-        (transactions["TRNXSTAT"] == "S")
-        & transactions["CARDTYPE"].isin(["00", "02", "03", "04"])
-        & transactions["TRNXCODE"].isin([1, 2, 129]),
-        ["TRNXDATE", "TRNXTIME", "CARDNO", "TRNXAMT", "TRNXTYPE"],
-    ].copy()
-
-    month = args.report_date.strftime("%m")
-    year2 = args.report_date.strftime("%y")
-    full_table = f"ATMTRNX{month}{year2}"
-    cash_table = f"ATM_CASH{args.report_date:%Y%m}"
-
-    outputs = write_sas7bdat(
-        args.output_dir,
-        {full_table: transactions, cash_table: cash},
-    )
-
-    print(f"Input       : {args.input}")
-    print(f"Record form : FB")
-    print(f"Record size : {args.record_length}")
-    print(f"Rows input  : {len(transactions):,}")
-    print(f"Cash rows   : {len(cash):,}")
-    print(f"ATMTRNX     : {outputs[full_table]}")
-    print(f"ATM_CASH    : {outputs[cash_table]}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-======================================================================================================
-
-1                                                          The SAS System                         09:19 Wednesday, September 2, 2026
-
-1          ;*';*";*/;quit;run;
-2          OPTIONS PAGENO=MIN;
-3          %LET _CLIENTTASKLABEL='ADHOC_SAS2.sas';
-4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
-5          %LET _CLIENTPROJECTPATH='';
-6          %LET _CLIENTPROJECTPATHHOST='';
-7          %LET _CLIENTPROJECTNAME='';
-8          %LET _SASPROGRAMFILE='C:\Users\pas68728\AppData\Local\Temp\scp16422\stgsrcsys\host\holding\ADHOC_SAS2.sas';
-9          %LET _SASPROGRAMFILEHOST='ITDNBVPN065';
-10         
-11         ODS _ALL_ CLOSE;
-12         OPTIONS DEV=SVG;
-13         GOPTIONS XPIXELS=0 YPIXELS=0;
-14         %macro HTML5AccessibleGraphSupported;
-15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
-16         %mend;
-17         FILENAME EGHTML TEMP;
-18         ODS HTML5(ID=EGHTML) FILE=EGHTML
-19             OPTIONS(BITMAP_MODE='INLINE')
-20             %HTML5AccessibleGraphSupported
-21             ENCODING='utf-8'
-22             STYLE=HTMLBlue
-23             NOGTITLE
-24             NOGFOOTNOTE
-25             GPATH=&sasworklocation
-26         ;
-NOTE: Writing HTML5(EGHTML) Body file: EGHTML
-27         
-28         data _null_;
-29                 infile "
-30         cd /sas/python/virt_edw;
-31         source bin/activate;
-32         python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py
-33         " pipe;
-34                 input;
-35                 put _infile_;
-36         run;
-
-NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py" is:
-      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py"
-
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 172, in numeric_text
-    return int(value)
-ValueError: invalid literal for int() with base 10: '\x90\x91'
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 350, in main
-    rows.append(parse_record(record, args.encoding))
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 210, in parse_record
-    "ATMTYPE": numeric_text(record[9:11], encoding),
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 174, in numeric_text
-    raise ValueError(f"Invalid numeric text field: {value!r}") from error
-ValueError: Invalid numeric text field: '\x90\x91'
-
-The above exception was the direct cause of the following exception:
-2                                                          The SAS System                         09:19 Wednesday, September 2, 2026
-
-
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 387, in <module>
-    raise SystemExit(main())
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 352, in main
-    raise ValueError(
-ValueError: Failed to parse physical record 1 (zero-based byte offset 0): Invalid numeric text field: '\x90\x91'
-NOTE: 24 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
-      /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py".
-      The minimum record length was 0.
-      The maximum record length was 112.
-NOTE: DATA statement used (Total process time):
-      real time           1:19.98
-      cpu time            0.01 seconds
-      
-
-37         
-38         %LET _CLIENTTASKLABEL=;
-39         %LET _CLIENTPROCESSFLOWNAME=;
-40         %LET _CLIENTPROJECTPATH=;
-41         %LET _CLIENTPROJECTPATHHOST=;
-42         %LET _CLIENTPROJECTNAME=;
-43         %LET _SASPROGRAMFILE=;
-44         %LET _SASPROGRAMFILEHOST=;
-45         
-46         ;*';*";*/;quit;run;
-47         ODS _ALL_ CLOSE;
-48         
-49         
-50         QUIT; RUN;
-51         
-
-
-
-
-
-
-
-
-
-
-
-
-
--=========================================================================================
-
-
-
-#!/usr/bin/env python3
-# RUN EVERY 2ND OF THE MONTH, IMPLEMENT BY PAS
-
-"""Python replacement for the EIBMTCSM JCL/SAS job."""
-
-from __future__ import annotations
-
-import argparse
-from datetime import date, datetime, timedelta
-from decimal import Decimal
-from pathlib import Path
-
-import pandas as pd
-
-
-DEFAULT_INPUT = Path("/host_pq/mis/input/OCM/JNL_MONTHLY")
-DEFAULT_OUTPUT_DIR = Path("/dwh/pbcs")
-DEFAULT_RECORD_LENGTH = 224  # ATP.TCS.JNL.MONTHLY.EXTRACT: RECFM=FB,LRECL=224
-MINIMUM_PARSED_LENGTH = 168  # Last SAS INPUT field ends at byte 168.
-
-OUTPUT_COLUMNS = [
-    "CARDNO",
-    "BRANCH",
-    "TERMNO",
-    "TRNXTIME",
-    "TRNXCODE",
-    "ATMTYPE",
-    "TRNXAMT",
-    "SUCCESS_TRAN_AMT",
-    "DENIAL_CD",
-    "CARDTYPE",
-    "ACCTNO",
-    "STATE_CD",
-    "TRNXTYPE",
-    "TRNXDATE",
-    "TRNXSTAT",
-]
-
-TYPE_FORMAT = {
-    0: "INCOMPLETE TRXN",
-    1: "CASH WITHDRAWAL",
-    2: "BALANCE INQUIRY",
-    3: "DEPOSIT",
-    4: "TRANSFER",
-    5: "PAYMENT ENCLOSED",
-    6: "SPECIAL",
-    7: "SECURITY EXPOSURE",
-    8: "PAYMENT FROM",
-    9: "CASH CHECK (USED SCWDRWL)",
-    10: "1ST DEPOSIT(FOR DEP SLIP)",
-    11: "LAST 6 TRANSACTIONS",
-    12: "CELCOM PREPAID",
-    13: "MAXIS  PREPAID",
-    14: "DIGI   PREPAID",
-    17: "POS PURCHASE W/CASH BACK",
-    21: "PREAUTH FOR DAY2DAY",
-    31: "2ND FIXED DEPOSIT",
-    32: "2ND DEPOSIT",
-    33: "1ST FIXED DEPOSIT",
-    34: "1ST TRANSFER",
-    35: "1ST GIRO",
-    36: "1ST PISA",
-    50: "CDT 1ST MSG",
-    51: "CDT: ENCASH",
-    65: "JARING PREPAID",
-    66: "NEW IC ENTERED",
-    67: "NEXTEL PREPAID",
-    68: "TMNET PREPAID & PREP ONE",
-    69: "ESA STATUS INQUIRY",
-    70: "ESA CANCELLATION",
-    71: "PINLESS TOPUP (1ST PART)",
-    72: "PINLESS TOPUP (2ND PART)",
-    81: "E-RIGHTS APPL (1ST PART)",
-    82: "E-RIGHTS APPL (2ND PART)",
-    97: "JOMPAY - 1ST PART",
-    98: "JOMPAY - 2ND PART",
-    129: "FAST CASH",
-    130: "CHECK DEPOSIT (USED SCDEP)",
-    131: "CHECK DEP W C/B (SCDEPCB)",
-    132: "DEPOSIT WITH CASH BACK",
-    133: "ENV DEP WITH CASH BACK",
-    135: "PAYMENT FROM/TO",
-    136: "BILL PAYMENT / GIRO",
-    137: "PIN CHANGE",
-    138: "CHEQUE BOOK ORDER",
-    139: "FIXED DEPOSIT",
-    140: "MINI STATEMENT",
-    141: "GIRO 1ST",
-    142: "CANCEL PRESSED",
-    143: "CUST TIMEOUT",
-    144: "HOST TIMEOUT",
-    145: "RETURN CARD PRESSED",
-    146: "GIRO CREDIT CARD PYMT",
-    147: "CARD REMOVAL TOUT",
-    148: "POS PURCHASE",
-    149: "POS VOID",
-    150: "EBNK REGISTRATION",
-    151: "SMS TOPUP-REGISTRATION",
-    152: "SMS TOPUP-TERMINATION",
-    153: "REQUEST FOR TAC",
-    154: "REGISTER PHONE FOR TAC",
-    155: "LATEST PHONE# UPDATE",
-    156: "CONFIRM LATEST PHONE#",
-    157: "REGIONAL LINK REGN",
-    158: "AIRASIA INQUIRY",
-    159: "AIRASIA PAYMENT",
-    160: "MP LOADING",
-    161: "TOUCH N GO (LOADING)",
-    162: "CHG DAILY W/D LIMIT",
-    163: "CANCEL PRE-AUTH",
-    164: "PMO HP REGISTRATION",
-    165: "CHG DAILY RETAIL LIMIT",
-    166: "ACTIVATE OVERSEAS W/D",
-    167: "DEACTIVATE OVERSEAS W/D",
-    168: "CONVERT BANKCARD TO D2D",
-    169: "MYMOBILE REGISTRATION",
-    170: "EBANK RESET PIN",
-    171: "MYMOBILE RESET PIN",
-    172: "CUSTOMER CONSENT",
-    173: "OPT STATUS INQUIRY",
-    174: "OPT STATUS UPDATE",
-    175: "NEW DAILY XFER LIMIT",
-    176: "CONTACTLESS PINLESS LIMIT",
-    225: "MINI STATEMENT",
-    226: "LAST TEN TRANS",
-    227: "DEPOSITORY LISTING",
-}
-
-
-def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
-    """Decode a signed mainframe packed-decimal value (SAS PD informat)."""
-    if not raw:
-        return None
-
-    nibbles = [nibble for byte in raw for nibble in (byte >> 4, byte & 0x0F)]
-    sign_nibble = nibbles.pop()
-
-    # Standard signed/unsigned packed-decimal sign nibbles.
-    if sign_nibble in (0x0B, 0x0D):
-        sign = -1
-    elif sign_nibble in (0x0A, 0x0C, 0x0E, 0x0F):
-        sign = 1
-    else:
-        return None
-
-    if any(nibble > 9 for nibble in nibbles):
-        return None
-
-    digits = "".join(str(nibble) for nibble in nibbles)
-    value = Decimal(digits or "0").scaleb(-scale)
-    return value if sign > 0 else -value
-
-
-def binary_integer(raw: bytes) -> int | None:
-    """Decode a mainframe big-endian signed integer (SAS IB informat)."""
-    if not raw:
-        return None
-    return int.from_bytes(raw, byteorder="big", signed=True)
-
-
-def decoded(raw: bytes, encoding: str) -> str:
-    """Decode an EBCDIC character field and remove surrounding blanks."""
-    return raw.decode(encoding, errors="replace").strip()
-
-
-def numeric_text(raw: bytes, encoding: str) -> int | None:
-    """Decode a SAS numeric display field such as INPUT field 2. or 16."""
-    value = decoded(raw, encoding)
-    if not value:
-        return None
-    try:
-        return int(value)
-    except ValueError as error:
-        raise ValueError(f"Invalid numeric text field: {value!r}") from error
-
-
-def transaction_date(value: Decimal | None) -> pd.Timestamp:
-    """Convert the packed YYYYMMDD transaction date to a pandas date."""
-    if value is None:
-        return pd.NaT
-
-    digits = str(abs(int(value))).zfill(8)[-8:]
-    try:
-        return pd.Timestamp(datetime.strptime(digits, "%Y%m%d").date())
-    except ValueError:
-        return pd.NaT
-
-
-def parse_record(record: bytes, encoding: str) -> dict[str, object]:
-    """Apply the original SAS column offsets to one physical input record."""
-    if len(record) < MINIMUM_PARSED_LENGTH:
-        raise ValueError(
-            f"Record is only {len(record)} bytes; expected at least "
-            f"{MINIMUM_PARSED_LENGTH}"
-        )
-
-    trnxdt = packed_decimal(record[0:5])
-    trnxtime = packed_decimal(record[5:9])
-    branch = packed_decimal(record[11:14])
-    trnxcode = binary_integer(record[18:20])
-    compind = decoded(record[37:38], encoding)
-    authind = decoded(record[38:39], encoding)
-
-    return {
-        "CARDNO": decoded(record[70:90], encoding),
-        "BRANCH": int(branch) if branch is not None else None,
-        "TERMNO": binary_integer(record[14:18]),
-        "TRNXTIME": int(trnxtime) if trnxtime is not None else None,
-        "TRNXCODE": trnxcode,
-        "ATMTYPE": numeric_text(record[9:11], encoding),
-        "TRNXAMT": float(packed_decimal(record[20:28], 2) or Decimal(0)),
-        "SUCCESS_TRAN_AMT": float(
-            packed_decimal(record[28:36], 2) or Decimal(0)
-        ),
-        "DENIAL_CD": numeric_text(record[46:49], encoding),
-        "CARDTYPE": decoded(record[54:56], encoding),
-        # Original SAS uses ACCTNO 16. (numeric), not ACCTNO $16.
-        "ACCTNO": numeric_text(record[90:106], encoding),
-        "STATE_CD": decoded(record[166:168], encoding),
-        "TRNXTYPE": TYPE_FORMAT.get(trnxcode, ""),
-        "TRNXDATE": transaction_date(trnxdt),
-        "TRNXSTAT": "S" if compind == "S" and authind == "A" else "R",
-    }
-
-
-def _fixed_blocks(content: bytes, record_length: int, separator: bytes) -> list[bytes] | None:
-    """Read fixed records with an optional separator added during extraction."""
-    stride = record_length + len(separator)
-    if not content or len(content) % stride:
-        return None
-
-    records: list[bytes] = []
-    for offset in range(0, len(content), stride):
-        block = content[offset : offset + stride]
-        if separator and block[record_length:] != separator:
-            return None
-        records.append(block[:record_length])
-    return records
-
-
-def read_records(path: Path, record_length: int) -> list[bytes]:
-    """Read FB records without interpreting binary 0A bytes as newlines."""
-    if not path.is_file():
-        raise FileNotFoundError(f"Missing input file: {path}")
-    if record_length < MINIMUM_PARSED_LENGTH:
-        raise ValueError(
-            f"Record length {record_length} is smaller than the required "
-            f"{MINIMUM_PARSED_LENGTH} bytes"
-        )
-
-    content = path.read_bytes()
-    if not content:
-        return []
-
-    # Test framed extracts first. A large LF-framed file can coincidentally have
-    # a total size divisible by 224; accepting it as raw FB would shift every
-    # record after the first separator. We validate separators only at exact
-    # LRECL boundaries, so binary 0A bytes inside records remain data.
-    for separator in (b"\r\n", b"\n", b""):
-        records = _fixed_blocks(content, record_length, separator)
-        if records is not None:
-            return records
-
-    raise ValueError(
-        f"Input contains {len(content):,} bytes and is incompatible with "
-        f"RECFM=FB,LRECL={record_length}. Expected raw {record_length}-byte "
-        "records, or complete records followed by LF/CRLF. Confirm that the "
-        "mainframe file was extracted in binary mode."
-    )
-
-
-def parse_date(value: str) -> date:
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError as error:
-        raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from error
-
-
-def _bytes_after_first_record(path: Path, record_length: int) -> str:
-    """Return a small raw hex sample at the first physical FB boundary."""
-    with path.open("rb") as source:
-        source.seek(record_length)
-        return source.read(4).hex(" ") or "<end of file>"
-
-
-def write_sas7bdat(
-    output_dir: Path, tables: dict[str, pd.DataFrame]
-) -> dict[str, Path]:
-    """Write DataFrames as SAS7BDAT through a configured SAS runtime."""
-    try:
-        import saspy
-    except ImportError as error:
-        raise RuntimeError(
-            "Writing SAS7BDAT requires saspy and a configured SAS runtime"
-        ) from error
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    sas = saspy.SASsession()
-    try:
-        sas_path = str(output_dir.resolve()).replace("'", "''")
-        result = sas.submit(f"libname OUT '{sas_path}';")
-        if "ERROR:" in result.get("LOG", ""):
-            raise RuntimeError(result["LOG"])
-
-        for table, frame in tables.items():
-            sas.df2sd(frame, table=table, libref="OUT")
-
-        # Match the formats used by the original SAS job.
-        format_statements = []
-        for table in tables:
-            if table.startswith("ATMTRNX"):
-                format_statements.append(
-                    f"proc datasets library=OUT nolist; modify {table}; "
-                    "format TERMNO z4. TRNXTIME z6.; quit;"
-                )
-            elif table.startswith("ATM_CASH"):
-                format_statements.append(
-                    f"proc datasets library=OUT nolist; modify {table}; "
-                    "format TRNXDATE ddmmyy10. TRNXTIME z6.; quit;"
-                )
-        result = sas.submit("\n".join(format_statements))
-        if "ERROR:" in result.get("LOG", ""):
-            raise RuntimeError(result["LOG"])
-    finally:
-        sas.endsas()
-
-    return {table: output_dir / f"{table}.sas7bdat" for table in tables}
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument(
-        "--report-date",
-        type=parse_date,
-        default=date.today().replace(day=1) - timedelta(days=1),
-        help="reporting month end in YYYY-MM-DD (default: previous month end)",
-    )
-    parser.add_argument(
-        "--encoding",
-        default="cp037",
-        help="encoding of character fields (default: cp037 EBCDIC)",
-    )
-    parser.add_argument(
-        "--record-length",
-        type=int,
-        default=DEFAULT_RECORD_LENGTH,
-        help="physical FB record length (default: 224)",
-    )
-    parser.add_argument(
-        "--diagnostic",
-        action="store_true",
-        help="print the first record's raw layout before parsing",
-    )
-    args = parser.parse_args()
-
-    records = read_records(args.input, args.record_length)
-
-    if args.diagnostic:
-        print(f"File size           : {args.input.stat().st_size:,}")
-        print(f"Number of records   : {len(records):,}")
-        if records:
-            first_record = records[0]
-            print(f"First record length : {len(first_record)}")
-            print(f"First 32 bytes      : {first_record[:32].hex(' ')}")
-            print(f"TRNXDT bytes 1-5    : {first_record[0:5].hex(' ')}")
-            print(f"TRNXTIME bytes 6-9  : {first_record[5:9].hex(' ')}")
-            print(f"ATMTYPE bytes 10-11 : {first_record[9:11].hex(' ')}")
-            print(f"BRANCH bytes 12-14  : {first_record[11:14].hex(' ')}")
-            print(f"TERMNO bytes 15-18  : {first_record[14:18].hex(' ')}")
-            print(f"TRNXCODE bytes 19-20: {first_record[18:20].hex(' ')}")
-            print(f"Byte after record   : {_bytes_after_first_record(args.input, args.record_length)}")
-
-    rows = []
-    for record_number, record in enumerate(records, start=1):
-        try:
-            rows.append(parse_record(record, args.encoding))
-        except ValueError as error:
-            raise ValueError(
-                f"Failed to parse physical record {record_number:,} "
-                f"(zero-based byte offset "
-                f"{(record_number - 1) * args.record_length:,}): {error}"
-            ) from error
-    transactions = pd.DataFrame(rows, columns=OUTPUT_COLUMNS)
-
-    cash = transactions.loc[
-        (transactions["TRNXSTAT"] == "S")
-        & transactions["CARDTYPE"].isin(["00", "02", "03", "04"])
-        & transactions["TRNXCODE"].isin([1, 2, 129]),
-        ["TRNXDATE", "TRNXTIME", "CARDNO", "TRNXAMT", "TRNXTYPE"],
-    ].copy()
-
-    month = args.report_date.strftime("%m")
-    year2 = args.report_date.strftime("%y")
-    full_table = f"ATMTRNX{month}{year2}"
-    cash_table = f"ATM_CASH{args.report_date:%Y%m}"
-
-    outputs = write_sas7bdat(
-        args.output_dir,
-        {full_table: transactions, cash_table: cash},
-    )
-
-    print(f"Input       : {args.input}")
-    print(f"Record form : FB")
-    print(f"Record size : {args.record_length}")
-    print(f"Rows input  : {len(transactions):,}")
-    print(f"Cash rows   : {len(cash):,}")
-    print(f"ATMTRNX     : {outputs[full_table]}")
-    print(f"ATM_CASH    : {outputs[cash_table]}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+DATA EQ42150;
+  SET EQWH.UTMS&REPTMON.4&REPTYEAR(DROP=CUSTNAME);
+  IF SECTYPE IN ('IFD','ILD','ISD','IZD','IDC','IDP','IZP') AND
+     PORTREF IN ('PFD','PLD','PSD','PZD','PDC');
+  IF CUSTFISS IN ('04','05','06','41','42','43','44','46',
+                  '47','48','49','51','52','53','54','66',
+                  '67','68','69','87','88','89') OR
+     30 <= INPUT(CUSTFISS,8.) <=45;
+  AMOUNT = AMTOWNED;
+  ACCTNO = CUSTEQNO;
+RUN;
+
+DATA K1TBL(DROP=GWAN);
+  SET BNMK.K1TBL&REPTMON.4(RENAME=(GWBALC=AMOUNT));
+  IF (GWCCY='MYR' AND GWMVT='P' AND GWMVTS='M' AND
+     GWDLP IN ('BCQ','BCD')) OR
+     (SUBSTR(GWDLP,2,2) IN ('MI','MT') AND GWCCY='MYR' AND
+      GWMVT='P' AND GWMVTS='M');
+  CUSTFISS = GWC2R;
+  IF CUSTFISS IN ('04','05','06','41','42','43','44','46',
+                  '47','48','49','51','52','53','54','66',
+                  '67','68','69','87','88','89') OR
+     30 <= INPUT(CUSTFISS,8.) <=45;
+     ACCTNO = INPUT(GWAN,8.);
+RUN;
+
+PROC SORT DATA=CISEQ.DEPOSIT OUT=CISEQ(KEEP=ACCTNO CUSTNAME);
+   BY ACCTNO;
+RUN;
+
+PROC SORT DATA=CISDP.DEPOSIT OUT=CISDP(KEEP=ACCTNO CUSTNAME);
+   BY ACCTNO;
+RUN;
+
+PROC SORT DATA=CISDP2.DEPOSIT OUT=CISDP2(KEEP=ACCTNO CUSTNAME);
+   BY ACCTNO;
+RUN;
+
+DATA CISDP;
+   SET CISDP CISDP2;
+RUN;
+
+PROC SORT DATA=CISDP; BY ACCTNO; RUN;
+
+PROC SORT DATA=FORATE.FORATEBKP OUT=FORATE;
+   BY CURCODE DESCENDING REPTDATE;
+   WHERE REPTDATE<= &TDATE;
+RUN;
+PROC SORT DATA=FORATE NODUPKEY; BY CURCODE; RUN;
+
+DATA FOFMT;
+  LENGTH START $3. LABEL $13.7 FMTNAME $6. TYPE $1.;
+  SET FORATE;
+  START = CURCODE;
+  LABEL = SPOTRATE;
+  FMTNAME = 'FORATE';
+  TYPE = 'C';
+RUN;
+PROC FORMAT CNTLIN=FOFMT;RUN;
+
+DATA DCI;
+  SET DCIWH.DCI&REPTMON.4;
+  REPTDATE = &TDATE;
+  IF MATDT > REPTDATE AND STARTDT <= REPTDATE;
+  CUSTCD = PUT(CUSTCODE,Z2.);
+  IF CUSTCD IN (04,05,06,41,42,43,44,46,47,48,49,51,52,53,54,
+                66,67,68,69,87,88,89) OR
+     30 <= CUSTCD <= 45;
+
+  CUSTFISS=PUT(CUSTCD,2.);
+  AMOUNT = INVAMT;
+RUN;
+
+DATA CONSO_MNI;
+  SET CA SA FD UMA;
+  CUSTGROUP = PUT(CUSTFISS,$CUSTGROUP.);
+  CUSTTYPE = PUT(CUSTFISS,$CUSTTYPE.);
+  RENAME CURBAL = AMOUNT;
+RUN;
+
+PROC SORT DATA=CONSO_MNI; BY ACCTNO;
+RUN;
+
+DATA CONSO_MNI;
+  MERGE CONSO_MNI(IN=A) CISDP;
+  BY ACCTNO;
+  IF A THEN OUTPUT;
+RUN;
+
+DATA CONSO_EQ;
+  SET EQ42150 K1TBL;
+  CUSTGROUP = PUT(CUSTFISS,$CUSTGROUP.);
+  CUSTTYPE = PUT(CUSTFISS,$CUSTTYPE.);
+RUN;
+PROC SORT DATA=CONSO_EQ; BY ACCTNO; RUN;
+
+DATA CONSO_EQ;
+  MERGE CONSO_EQ(IN=A) CISEQ;
+  BY ACCTNO;
+  IF A THEN OUTPUT;
+RUN;
+
+DATA CONSO_DCI;
+  SET DCI;
+  CUSTGROUP = PUT(CUSTFISS,$CUSTGROUP.);
+  CUSTTYPE = PUT(CUSTFISS,$CUSTTYPE.);
+RUN;
+
+DATA CONSO_ALL;
+  SET CONSO_MNI CONSO_EQ CONSO_DCI;
+  KEEP CUSTGROUP CUSTTYPE AMOUNT;
+RUN;
+
+PROC SUMMARY DATA=CONSO_ALL NWAY;
+  CLASS CUSTGROUP CUSTTYPE;
+  VAR AMOUNT;
+  OUTPUT OUT=CONSO_SUM SUM=;
+RUN;
+
+PROC SUMMARY DATA=CONSO_ALL NWAY;
+  VAR AMOUNT;
+  OUTPUT OUT=GRANDTOT SUM=;
+RUN;
+
+DATA GRANDTOT;
+  SET GRANDTOT;
+  CUSTTYPE = 'GRAND TOTAL';
+RUN;
+
+DATA SME_TOTAL DNBFI_TOTAL FX_TOTAL;
+  SET CONSO_SUM;
+  IF CUSTGROUP = 'SMALL MEDIUM ENTERPRISE (SMES)' THEN
+     OUTPUT SME_TOTAL;
+  ELSE IF CUSTGROUP = 'DOMESTIC (DNBFI)' THEN
+     OUTPUT DNBFI_TOTAL;
+  ELSE OUTPUT FX_TOTAL;
+RUN;
+
+%MACRO GRANDTOTAL(DS);
+DATA &DS;
+  SET &DS END=EOF;
+  IF _N_ = 1 THEN SUMTOTAL = 0;
+  SUMTOTAL + AMOUNT;
+  OUTPUT;
+  IF EOF THEN DO;
+     CUSTTYPE = 'TOTAL';
+     AMOUNT = SUMTOTAL;
+     OUTPUT;
+  END;
+RUN;
+%MEND;
+%GRANDTOTAL(SME_TOTAL);
+%GRANDTOTAL(DNBFI_TOTAL);
+%GRANDTOTAL(FX_TOTAL);
+
+PROC PRINTTO FILE=SMETXT;
+PROC REPORT DATA=SME_TOTAL;
+  TITLE1 'PUBLIC BANK BERHAD';
+  TITLE2 "DEPOSITS ACCEPTED FROM SMALL MEDIUM ENTERPRISES (SME)"
+         " @ &REPTMMMYY";
+  TITLE3 ' ';
+  TITLE4 'SMALL MEDIUM ENTERPRISE (SMES)';
+  COLUMN CUSTTYPE AMOUNT;
+  DEFINE CUSTTYPE / 'CUSTOMER' FORMAT=$40.;
+  DEFINE AMOUNT   / 'TOTAL OS MYR' FORMAT=COMMA18.2;
+RUN;
+
+PROC REPORT DATA=DNBFI_TOTAL;
+  TITLE1 '------------------------------------------------------'
+         '----------';
+  TITLE2 'DOMESTIC (DNBFI)';
+  COLUMN CUSTTYPE AMOUNT;
+  DEFINE CUSTTYPE / 'CUSTOMER' FORMAT=$40.;
+  DEFINE AMOUNT   / 'TOTAL OS MYR' FORMAT=COMMA18.2;
+RUN;
+
+PROC REPORT DATA=FX_TOTAL;
+  TITLE1 '------------------------------------------------------'
+         '----------';
+  TITLE2 'NON-RESIDENT/FOREIGN ENTITIES';
+  COLUMN CUSTTYPE AMOUNT;
+  DEFINE CUSTTYPE / 'CUSTOMER' FORMAT=$40.;
+  DEFINE AMOUNT   / 'TOTAL OS MYR' FORMAT=COMMA18.2;
+RUN;
+
+PROC REPORT DATA=GRANDTOT;
+  TITLE;
+  COLUMN CUSTTYPE AMOUNT;
+  DEFINE CUSTTYPE / ' ' FORMAT=$40.;
+  DEFINE AMOUNT   / ' ' FORMAT=COMMA18.2;
+RUN;
+
+PROC PRINTTO FILE=EQTXT;
+PROC REPORT DATA=CONSO_EQ NOWD HEADSKIP HEADLINE SPLIT='*';
+  TITLE1 'PUBLIC BANK BERHAD';
+  TITLE2 "EQ CUSTOMER LIST"
+         " @ &REPTMMMYY";
+  TITLE3 ' ';
+  COLUMN GWDLP GWDLR AMOUNT GWC2R CUSTTYPE CUSTNAME;
+  DEFINE CUSTNAME / 'CUST NAME' FORMAT=$40.;
+RUN;
+
+PROC PRINTTO FILE=DCITXT;
+PROC REPORT DATA=CONSO_DCI NOWD HEADSKIP HEADLINE SPLIT='*';
+  TITLE1 'PUBLIC BANK BERHAD';
+  TITLE2 "DCI CUSTOMER LIST"
+         " @ &REPTMMMYY";
+  TITLE3 ' ';
+  COLUMN TICKETNO CUSTNAME AMOUNT CUSTTYPE;
+RUN;
+
+PROC PRINTTO FILE=MNITXT;
+PROC REPORT DATA=CONSO_MNI NOWD HEADSKIP HEADLINE SPLIT='*';
+  TITLE1 'PUBLIC BANK BERHAD';
+  TITLE2 "MNI CUSTOMER LIST"
+         " @ &REPTMMMYY";
+  TITLE3 ' ';
+  COLUMN ACCTNO AMOUNT DNBFISME CUSTFISS PRODCD CUSTTYPE CUSTNAME;
+  DEFINE  ACCTNO / 'ACCTNO' FORMAT=10.;
+  DEFINE CUSTNAME / 'CUST NAME' FORMAT=$40.;
+RUN;
+
+//*----------------------------------------------------------------
+//* FTP TO SAS DATAWAREHOUSE
+//*----------------------------------------------------------------
+//*%OPC SCAN
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+cd "FD-GFTA\DSIB TA3"
+PUT //SAP.PBB.DPACCEPT.SME.TEXT SME@%ODD.%OMM.%OYY..TXT
+PUT //SAP.PBB.DPACCEPT.EQ.TEXT  EQ@%ODD.%OMM.%OYY..TXT
+PUT //SAP.PBB.DPACCEPT.DCI.TEXT DCI@%ODD.%OMM.%OYY..TXT
+PUT //SAP.PBB.DPACCEPT.MNI.TEXT MNI@%ODD.%OMM.%OYY..TXT
+EOB
+/*
