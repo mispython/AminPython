@@ -1,7 +1,139 @@
-REPTDATE	DATASET	STAGE	ROWS	MISSING_CURBAL	SUBCENT_INDICATOR_ROWS	SEQUENTIAL_SUM	CHUNK_FSUM	FSUM_MINUS_SEQUENTIAL
-31/08/2026	SAVING	PBB_BEFORE_FILTER	4382301	0	0	34666808746.398293	34666808746	0.031707764
-31/08/2026	SAVING	PBB_AFTER_FILTER_BEFORE_CIS	1080882	0	0	7027668074.4761572	7027668074.4699993	-0.006157875
-31/08/2026	CURRENT	PBB_BEFORE_FILTER	967521	0	0	72650346462.517044	72650346462.519989	0.002944946
-31/08/2026	CURRENT	PBB_AFTER_FILTER_BEFORE_CIS	854339	0	0	53636934594.837082	53636934594.839996	0.002914429
-31/08/2026	FD	PBB_BEFORE_FILTER	1608094	0	0	183072751868.42154	183072751868.42999	0.008453369
-31/08/2026	FD	PBB_AFTER_FILTER_BEFORE_CIS	1120397	0	0	144981779816.78522	144981779816.78998	0.004760742
+"""Diagnose EIBMDPFF summation; keep beside combine.py and its three libraries.
+
+First run: python check_eibmdpff_sum.py --run-date 2026-09-04
+Repeat without SAS reads/merge: add --reuse-cache
+
+Only diagnostic outputs are written. Never changes production reports or inputs.
+The embedded SASLIST reference applies ONLY to 2026-08-31.
+Sequential IEEE arithmetic is an experiment, not emulation of mainframe arithmetic.
+"""
+import argparse
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+import time
+
+import numpy as np
+import pandas as pd
+import combine as job
+
+REFERENCE_DATE = '2026-08-31'
+SAS_COUNTS = [2028757,237328,205736,92992,53884,32187,21913,15363,10812,8230,6426,26675,6615,2780,1467,800,519,397,263,204,1110]
+SAS_AMOUNTS = ['9841751731.51','16679921443.86','28742516836.43','22548711779.70','18485227043.80','14308902315.67','11933370170.72','9916193734.39','8066085402.11','6966049322.78','6089934973.69','36111938026.10','15958715908.25','9525487812.22','6516982744.99','4359704749.50','3360002703.83','2945569432.51','2228539972.19','1930729461.02','45163085835.22']
+SAS_TOTAL = Decimal('281679421400.48')
+
+
+def customer_balances(merged):
+    """Keep account order within customer; return balances in sorted CUSTNO order."""
+    codes, customers = pd.factorize(merged.CUSTNO.map(job.key), sort=True, use_na_sentinel=False)
+    # SAS numeric/character missing customer sorts before nonmissing customers.
+    absent = np.flatnonzero(pd.isna(customers))
+    if len(absent):
+        missing_code = absent[0]
+        codes = np.where(codes==missing_code,0,np.where(codes<missing_code,codes+1,codes))
+    values = pd.to_numeric(merged.CURBAL,errors='raise').to_numpy(dtype=float)
+    values = np.where(np.isnan(values),0.0,values)
+    if not np.isfinite(values).all():
+        raise ValueError('Nonfinite CURBAL encountered')
+    sequential = np.zeros(len(customers),dtype=float)
+    # Explicit running addition, with no rounding or adjustment.
+    for code, value in zip(codes, values):
+        sequential[code] += value
+    compensated = pd.Series(values).groupby(codes,sort=True).sum().to_numpy(dtype=float)
+    return compensated, sequential
+
+
+def aggregate(balances, sequential):
+    buckets = np.searchsorted(np.asarray(job.LIMITS),balances,side='right')
+    counts = np.bincount(buckets,minlength=21)
+    if sequential:
+        amounts = np.zeros(21,dtype=float)
+        for bucket,balance in zip(buckets,balances):
+            amounts[bucket] += balance
+    else:
+        amounts = pd.Series(balances).groupby(buckets).sum().reindex(range(21),fill_value=0).to_numpy(dtype=float)
+    return counts, amounts
+
+
+def compare(compensated, sequential):
+    details, summaries = [], []
+    for customer_method, balances in [('PANDAS',compensated),('SEQUENTIAL',sequential)]:
+        for summary_method in ['PANDAS','SEQUENTIAL']:
+            variant = customer_method + '_CUSTOMER__' + summary_method + '_SUMMARY'
+            counts, amounts = aggregate(balances,summary_method=='SEQUENTIAL')
+            count_matches = amount_matches = 0
+            absolute_delta = Decimal(0)
+            for i in range(21):
+                shown = Decimal(format(amounts[i],'.2f'))
+                delta = shown - Decimal(SAS_AMOUNTS[i])
+                count_matches += int(counts[i] == SAS_COUNTS[i])
+                amount_matches += int(delta == 0)
+                absolute_delta += abs(delta)
+                details.append(dict(VARIANT=variant,RANGE=i,SAS_COUNT=SAS_COUNTS[i],PY_COUNT=int(counts[i]),COUNT_DIFF=int(counts[i])-SAS_COUNTS[i],SAS_AMOUNT=SAS_AMOUNTS[i],PY_AMOUNT=str(shown),AMOUNT_DIFF=str(delta)))
+            # Try both grand-total addition methods too; never sum rounded display rows.
+            for total_method in ['NUMPY','SEQUENTIAL']:
+                total = float(np.sum(amounts))
+                if total_method == 'SEQUENTIAL':
+                    total = 0.0
+                    for amount in amounts:
+                        total += float(amount)
+                shown = Decimal(format(total,'.2f'))
+                summaries.append(dict(VARIANT=variant,TOTAL_METHOD=total_method,COUNT_RANGES_MATCH=count_matches,AMOUNT_RANGES_MATCH=amount_matches,SUM_ABSOLUTE_RANGE_DIFF=str(absolute_delta),SAS_TOTAL=str(SAS_TOTAL),PY_TOTAL=str(shown),TOTAL_DIFF=str(shown-SAS_TOTAL)))
+    return pd.DataFrame(details), pd.DataFrame(summaries)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--run-date',type=date.fromisoformat,default=date.today())
+    parser.add_argument('--report-date',type=date.fromisoformat)
+    parser.add_argument('--deposit-dir',type=Path,default=Path('/sas/deposit/dwh/integration'))
+    parser.add_argument('--cis-dir',type=Path,default=Path('/dwh/rsd_cis'))
+    parser.add_argument('--encoding',default='latin1')
+    parser.add_argument('--output-dir',type=Path,default=Path('/stgsrcsys/host/holding'))
+    parser.add_argument('--reuse-cache',action='store_true',help='Use previous diagnostic balances; only if source snapshot is unchanged')
+    args = parser.parse_args()
+    reporting_date = args.report_date or job.previous_month_end(args.run_date)
+    if str(reporting_date) != REFERENCE_DATE:
+        parser.error('This checker compares the supplied SASLIST for 2026-08-31 only')
+    args.output_dir.mkdir(parents=True,exist_ok=True)
+    cache = args.output_dir / 'CHECK_EIBMDPFF_BALANCES_20260831.npz'
+    if args.reuse_cache:
+        print('Using saved balances; no SAS input files read. Ensure the source snapshot has not changed.',flush=True)
+        with np.load(cache,allow_pickle=False) as saved:
+            if str(saved['report_date']) != REFERENCE_DATE:
+                raise ValueError('Cache date mismatch')
+            compensated, sequential = saved['pandas'],saved['sequential']
+    else:
+        started = time.monotonic()
+        print('Reading six inputs once; EIBMDPFF only. First run still needs the CIS merge.',flush=True)
+        paths = job.daily_paths(reporting_date,args.deposit_dir,args.cis_dir)
+        datasets = job.load_inputs(paths,args.encoding)
+        print('Filtering deposits and deduplicating CIS...',flush=True)
+        # USER3 is irrelevant to EIBMDPFF; allow missing USER3 in this check.
+        for name in ('saving','current','fd'):
+            if 'USER3' not in datasets[name]:
+                datasets[name] = datasets[name].assign(USER3='')
+        dp, cis = job.prepare_common(**datasets)
+        del datasets
+        dp = dp.loc[(dp.BRANCH>1)&(dp.BRANCH<271)].copy()
+        dp['BRCHCD'] = 'XX'
+        columns = ['ACCTNO','CURBAL','BRCHCD'] + (['CUSTNO'] if 'CUSTNO' in dp else [])
+        dp = dp[columns].sort_values('ACCTNO',kind='stable',na_position='first')
+        print(f'Merging {len(dp):,} eligible deposit rows with CIS...',flush=True)
+        merged = job.sas_merge(dp,cis)
+        del dp, cis
+        print(f'Comparing customer accumulation for {len(merged):,} merged rows...',flush=True)
+        compensated, sequential = customer_balances(merged)
+        del merged
+        np.savez(cache,pandas=compensated,sequential=sequential,report_date=str(reporting_date))
+        print(f'Balances cached; elapsed {time.monotonic()-started:.1f}s',flush=True)
+    details, summary = compare(compensated,sequential)
+    details.to_csv(args.output_dir/'CHECK_EIBMDPFF_RANGE_COMPARISON.csv',index=False)
+    summary.to_csv(args.output_dir/'CHECK_EIBMDPFF_SUMMARY_COMPARISON.csv',index=False)
+    print(summary.to_string(index=False))
+    print('Send CHECK_EIBMDPFF_SUMMARY_COMPARISON.csv and CHECK_EIBMDPFF_RANGE_COMPARISON.csv for review.')
+    print('A closer match is evidence only; no production calculation has been changed.')
+
+
+if __name__ == '__main__':
+    main()
