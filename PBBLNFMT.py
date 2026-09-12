@@ -5,7 +5,80 @@ Call a named function or format_value(name, value) to apply a format.
 Character format keys retain "$"; Python function names omit that prefix.
 """
 
-from format_runtime import library_cli, lookup
+"""Common evaluator for the converted VALUE, INVALUE and PICTURE tables.
+
+Overlapping source ranges use first-listed match. See README for SAS parity limits.
+"""
+import argparse
+import math
+from decimal import Decimal, ROUND_DOWN
+
+
+def missing(value):
+    return value is None or (isinstance(value, float) and math.isnan(value))
+
+
+def resolve(value, macros):
+    if isinstance(value, dict) and 'macro' in value:
+        return macros[value['macro']]
+    return value
+
+
+def matches(value, lo, hi, exlo, exhi):
+    if isinstance(lo, dict) and 'missing' in lo:
+        return missing(value) if lo['missing'] == '.' else value == lo['missing']
+    if missing(value):
+        return False  # SAS LOW excludes numeric missing values.
+    lower = isinstance(lo, dict) and lo.get('special') == 'LOW'
+    upper = isinstance(hi, dict) and hi.get('special') == 'HIGH'
+    return (lower or (value > lo if exlo else value >= lo)) and (upper or (value < hi if exhi else value <= hi))
+
+
+def lookup(formats, name, value, macros=None):
+    name = name.upper().rstrip('.')
+    spec = formats[name]
+    macros = macros or {}
+    if isinstance(value, bytes):
+        value = value.decode('utf-8')
+    if name.startswith('$'):
+        value = '' if missing(value) else str(value).rstrip()
+    elif not missing(value):
+        value = float(value)
+    fallback = None
+    for lo, hi, exlo, exhi, label, options in spec['rules']:
+        lo, hi = resolve(lo, macros), resolve(hi, macros)
+        if isinstance(lo, dict) and lo.get('special') == 'OTHER':
+            fallback = label
+            continue
+        if matches(value, lo, hi, exlo, exhi):
+            if spec['kind'] == 'PICTURE':
+                # Source pictures use MULT explicitly and no ROUND option.
+                n = (abs(Decimal(str(value))) * Decimal(str(options.get('MULT', 1)))).to_integral_value(rounding=ROUND_DOWN)
+                decimals = len(label.split('.')[1]) if '.' in label else 0
+                return options.get('PREFIX', '') + format(n / Decimal(10)**decimals, f',.{decimals}f')
+            return label
+    if fallback is not None:
+        return fallback
+    if spec['kind'] == 'INVALUE':
+        return value
+    if missing(value):
+        return '.'
+    return str(value) if name.startswith('$') else format(value, 'g')
+
+
+def library_cli(formats, macros):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--list', action='store_true')
+    parser.add_argument('format', nargs='?')
+    parser.add_argument('value', nargs='?')
+    args = parser.parse_args()
+    if args.list:
+        print('\n'.join(formats))
+    elif args.format is not None and args.value is not None:
+        print(lookup(formats, args.format, args.value, macros))
+    else:
+        parser.error('Use --list or FORMAT VALUE')
+
 
 
 # SAS macro constants

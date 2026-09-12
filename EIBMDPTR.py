@@ -96,12 +96,15 @@ join. A CUSTNO read from CIS overwrites the deposit value on that iteration.
     return pd.DataFrame(result, columns=['ACCTNO','CUSTNO','CURBAL','BRCHCD'])
 
 
-def build_profile(saving, current, fd, cisdp, cissa):
+def build_profile(saving, current, fd, cisca, cissa, cisfd=None):
     for name, df in [('SAVING',saving),('CURRENT',current),('FD',fd)]:
         require(df, ['ACCTNO','CURBAL','BRANCH','OPENIND', 'INTPLAN' if name=='FD' else 'PRODUCT'],name)
-    for name, df in [('CISDP.DEPOSIT',cisdp),('CISSA.DEPOSIT',cissa)]:
+    cis_sources = [('CIS.CA', cisca), ('CIS.SA', cissa)]
+    if cisfd is not None:
+        cis_sources.append(('CIS.FD', cisfd))
+    for name, df in cis_sources:
         require(df,['ACCTNO','CUSTNO'],name)
-    cis = pd.concat([cisdp[['ACCTNO','CUSTNO']],cissa[['ACCTNO','CUSTNO']]],ignore_index=True).copy()
+    cis = pd.concat([df[['ACCTNO','CUSTNO']] for _, df in cis_sources],ignore_index=True).copy()
     # SAS character comparisons ignore trailing blanks.
     for col in ['ACCTNO','CUSTNO']:
         cis[col] = cis[col].map(key)
@@ -148,15 +151,72 @@ def render_report(profile, reporting_date):
     return '\n'.join(line.ljust(133) for line in lines)+'\n'
 
 
+def daily_paths(reporting_date, deposit_dir, cis_dir):
+    """Select Ddd deposit members and YYMMDD CIS extracts for the same date."""
+    paths = {
+        name: Path(deposit_dir) / f'INTG_DP_ACCT_{name.upper()}_D{reporting_date:%d}.sas7bdat'
+        for name in ('saving', 'current', 'fd')
+    }
+    paths.update({
+        'cis' + name: Path(cis_dir) / f'cisr1{name}{reporting_date:%y%m%d}.sas7bdat'
+        for name in ('ca', 'sa', 'fd')
+    })
+    return paths
+
+
+def previous_month_end(run_date):
+    """Monthly run on the 4th reports the preceding calendar month end."""
+    return run_date.replace(day=1) - timedelta(days=1)
+
+
+def resolve_dataset_path(path):
+    """Accept SAS member filenames stored in lower case on Linux."""
+    if path.is_file():
+        return path
+    matches = [p for p in path.parent.iterdir() if p.is_file() and p.name.lower() == path.name.lower()] if path.parent.is_dir() else []
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(f'Ambiguous filename: {path}. Supply its exact path.')
+    raise FileNotFoundError(f'Missing input dataset: {path}')
+
+
+def load_inputs(paths, encoding):
+    datasets = {name: read_dataset(resolve_dataset_path(path), encoding) for name, path in paths.items()}
+    for name in ('saving', 'current', 'fd'):
+        frame = datasets[name]
+        require(frame, ['ENTITY_CD'], name.upper())
+        # Original job reads SAP.PBB.MNITB: exclude PIBB in the combined DWH files.
+        # Blank/missing entity codes satisfy SAS NE 'PIBB' and are retained.
+        datasets[name] = frame.loc[~frame.ENTITY_CD.map(key).isin(['PIBB'])].copy()
+    return datasets
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    for dataset in ['reptdate','saving','current','fd','cisdp','cissa']:
-        parser.add_argument('--'+dataset,required=True,type=Path,help='Path to '+dataset.upper()+'.sas7bdat')
+    parser.add_argument('--run-date', type=date.fromisoformat, default=date.today(), help='Execution date YYYY-MM-DD; default server date. REPTDATE defaults to prior month end.')
+    parser.add_argument('--report-date', type=date.fromisoformat, help='Explicit REPTDATE override for reruns; otherwise prior month end of --run-date')
+    parser.add_argument('--deposit-dir', type=Path, default=Path('/sas/deposit/dwh/integration'))
+    parser.add_argument('--cis-dir', type=Path, default=Path('/dwh/rsd_cis'))
+    for dataset in ['saving','current','fd','cisca','cissa','cisfd']:
+        parser.add_argument('--'+dataset,type=Path,help='Override the derived '+dataset.upper()+'.sas7bdat path')
+    parser.add_argument('--reptdate', type=Path, help='Optional REPTDATE.sas7bdat; must agree with --report-date')
+    parser.add_argument('--show-inputs', action='store_true', help='Print selected paths and exit without reading data')
     parser.add_argument('--encoding',default='latin1',help='SAS text encoding; default latin1')
     parser.add_argument('--output-dir',type=Path,default=Path('report_output'))
     args=parser.parse_args()
-    datasets={name:read_dataset(getattr(args,name),args.encoding) for name in ['reptdate','saving','current','fd','cisdp','cissa']}
-    reporting_date=report_date(datasets.pop('reptdate'))
+    reporting_date = args.report_date or previous_month_end(args.run_date)
+    print(f'RUN DATE: {args.run_date}; REPTDATE: {reporting_date}')
+    paths = daily_paths(reporting_date, args.deposit_dir, args.cis_dir)
+    paths = {name: getattr(args, name) or path for name, path in paths.items()}
+    for name, path in paths.items():
+        print(f'{name.upper()}: {path}')
+    print("Deposit filter: ENTITY_CD NE 'PIBB'")
+    if args.show_inputs:
+        return
+    if args.reptdate and report_date(read_dataset(resolve_dataset_path(args.reptdate),args.encoding)) != reporting_date:
+        parser.error('REPTDATE dataset does not match the selected month end or explicit --report-date')
+    datasets = load_inputs(paths, args.encoding)
     profile=build_profile(**datasets)
     args.output_dir.mkdir(parents=True,exist_ok=True)
     profile.to_csv(args.output_dir/'DPBR.csv',index=False,float_format='%.2f')
