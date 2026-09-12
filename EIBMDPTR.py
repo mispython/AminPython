@@ -1,6 +1,21 @@
 """Deposit range profile; translated from the supplied EIBMDPBR SAS job.
 
-Inputs are SAS7BDAT files. Run --help for dataset arguments.
+Keep EIBMDPTR.py, PBBLNFMT.py, PBBDPFMT.py and PBMISFMT.py together.
+Dependency: install pandas with "python -m pip install pandas" (Python 3.10+).
+
+Monthly execution on the 4th reports the previous month end:
+    python EIBMDPTR.py --run-date 2026-09-04
+    python EIBMDPTR.py --run-date 2026-09-04 --show-inputs
+
+Default inputs: /sas/deposit/dwh/integration/INTG_DP_ACCT_*_Ddd.sas7bdat
+and /dwh/rsd_cis/cisr1{ca,sa,fd}YYMMDD.sas7bdat. Date suffixes use REPTDATE.
+Deposit inputs require ENTITY_CD, ACCTNO, CURBAL, BRANCH, OPENIND, plus PRODUCT
+for SAVING/CURRENT or INTPLAN for FD. CIS requires ACCTNO and CUSTNO.
+The PBB deposit filter is ENTITY_CD NE 'PIBB'. Inputs are loaded into memory.
+Output directory: /stgsrcsys/host/holding (override with --output-dir).
+Outputs: DPBR.csv, DPBR_branch_totals.csv, DPBR_report.txt; replaced per run.
+Actual DWH schemas and output parity must still be verified on the server.
+Run --help for dataset path overrides and other arguments.
 """
 import argparse
 from collections import defaultdict
@@ -203,7 +218,7 @@ def main():
     parser.add_argument('--reptdate', type=Path, help='Optional REPTDATE.sas7bdat; must agree with --report-date')
     parser.add_argument('--show-inputs', action='store_true', help='Print selected paths and exit without reading data')
     parser.add_argument('--encoding',default='latin1',help='SAS text encoding; default latin1')
-    parser.add_argument('--output-dir',type=Path,default=Path('report_output'))
+    parser.add_argument('--output-dir',type=Path,default=Path('/stgsrcsys/host/holding'))
     args=parser.parse_args()
     reporting_date = args.report_date or previous_month_end(args.run_date)
     print(f'RUN DATE: {args.run_date}; REPTDATE: {reporting_date}')
