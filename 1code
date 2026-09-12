@@ -1,137 +1,133 @@
-//EIBMDPRC  JOB 224T,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
-//          NOTIFY=&SYSUID,REGION=32M
-//*
-//* SMR 2006-1400. RED CARPET BANKING.
-//*
-//DELETE   EXEC PGM=IEFBR14
-//DD1      DD DSN=SAP.PBB.PROFILE.DPRC,
-//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
-//            SPACE=(CYL,1,RLSE)
-//*
-//EIBMDPBR EXEC SAS609
-//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-//CISDP    DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
-//CISSA    DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
-//DEP      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
-//SASLIST  DD DSN=SAP.PBB.PROFILE.DPRC,
-//          DISP=(NEW,CATLG,DELETE),
-//          SPACE=(CYL,(1,1),RLSE),UNIT=SYSDA,
-//          DCB=(LRECL=133,RECFM=FB,BLKSIZE=0)
-//SYSIN     DD *
+"""Fast first-stage EIBMDPFF input check; does not run the report or modify inputs.
 
-OPTIONS NOCENTER;
-*;
-%INC PGM(PBBLNFMT,PBBDPFMT,PBMISFMT);
-*;
-PROC FORMAT;
-     VALUE DEPRAN
+python check_eibmdpff.py --run-date 2026-09-04
+Requires pandas and numpy. Reads three SAS7BDAT files once, in bounded chunks.
+Compare CHECK_EIBMDPFF_INPUTS.csv to SAS counts and sums at the same stages.
+This does NOT reproduce customer merging or prove the cause of report differences.
+"""
+import argparse
+import csv
+import math
+import time
+from datetime import date, timedelta
+from pathlib import Path
 
-         LOW   - <   50000  = ' 0.              BELOW RM 50,000 '
-         50000 - <  100000  = ' 1. RM  50,000 - BELOW RM100,000 '
-        100000 - <  200000  = ' 2. RM 100,000 - BELOW RM200,000 '
-        200000 - <  300000  = ' 3. RM 200,000 - BELOW RM300,000 '
-        300000 - <  400000  = ' 4. RM 300,000 - BELOW RM400,000 '
-        400000 - <  500000  = ' 5. RM 400,000 - BELOW RM500,000 '
-        500000 - <  600000  = ' 6. RM 500,000 - BELOW RM600,000 '
-        600000 - <  700000  = ' 7. RM 600,000 - BELOW RM700,000 '
-        700000 - <  800000  = ' 8. RM 700,000 - BELOW RM800,000 '
-        800000 - <  900000  = ' 9. RM 800,000 - BELOW RM900,000 '
-        900000 - < 1000000  = '10. RM 900,000 - BELOW RM 1 MILL '
-       1000000 - <  2000000 = '11. RM  1 MILL - BELOW RM 2 MILL'
-       2000000 - <  3000000 = '12. RM  2 MILL - BELOW RM 3 MILL'
-       3000000 - <  4000000 = '13. RM  3 MILL - BELOW RM 4 MILL'
-       4000000 - <  5000000 = '14. RM  4 MILL - BELOW RM 5 MILL'
-       5000000 - <  6000000 = '15. RM  5 MILL - BELOW RM 6 MILL'
-       6000000 - <  7000000 = '16. RM  6 MILL - BELOW RM 7 MILL'
-       7000000 - <  8000000 = '17. RM  7 MILL - BELOW RM 8 MILL'
-       8000000 - <  9000000 = '18. RM  8 MILL - BELOW RM 9 MILL'
-       9000000 - < 10000000 = '19. RM  9 MILL - BELOW RM10 MILL'
-      10000000 -   HIGH     = '20. RM 10 MILL & ABOVE           ';
-*;
-DATA DATES;
-   SET DEP.REPTDATE;
-   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
-RUN;
-*;
-DATA CISDP;
-   KEEP ACCTNO CUSTNO;
-   SET  CISDP.DEPOSIT
-        CISSA.DEPOSIT;
-PROC SORT DATA=CISDP OUT=CISDP NODUPKEY; BY CUSTNO ACCTNO;
-PROC SORT; BY ACCTNO;
-*;
-%LET BRH=(13,15,28,33,54,60,66,68,90,94,110,123,129,130,135,136,
-          145,153,157,168,78,79,
-          179,183,185,187,198,200,207,216);
+import numpy as np
+import pandas as pd
 
-%LET STFSA=(151,181,200,201,215);
-%LET STFCA=(50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,
-            101,103,106,151,158,164,180,181,182);
-*;
-DATA SA;
-   SET DEP.SAVING;
-   IF PRODUCT IN &STFSA       THEN DELETE;
-*;
-DATA CA;
-   SET DEP.CURRENT;
-   IF PRODUCT IN &STFCA       THEN DELETE;
-*;
-DATA FD;
-   SET DEP.FD;
-   IF (400<=INTPLAN<=428)  OR
-      (448<=INTPLAN<=469)  OR
-      (600<=INTPLAN<=639)  OR
-      (720<=INTPLAN<=740)  OR
-      (470<=INTPLAN<=499)  OR
-      (548<=INTPLAN<=573)  THEN DELETE;
-*;
-DATA DPBR;
-   KEEP ACCTNO CUSTNO CURBAL BRCHCD;
-   SET SA CA FD;
-   IF  BRANCH IN (66,168);
-   IF  OPENIND NOT IN ('B','C','P');
-   IF  USER3 IN ('3','4','6','7','8');
-   BRCHCD=PUT(BRANCH,BRCHCD.);
-*;
-PROC SORT; BY ACCTNO;
-*;
-DATA DPBR;
-   MERGE DPBR(IN=A) CISDP; BY ACCTNO;
-   IF A;
-*;
-PROC SORT; BY BRCHCD CUSTNO;
-DATA DPBR;
-   SET DPBR; BY BRCHCD CUSTNO;
-   IF  FIRST.BRCHCD OR FIRST.CUSTNO THEN BALANCE=0;
-   BALANCE+CURBAL;
-   IF  LAST.BRCHCD OR LAST.CUSTNO THEN DO;
-       DRANGE=PUT(BALANCE,DEPRAN.);
-       ACCT=1;
-       OUTPUT;
-   END;
-*;
-PROC SUMMARY DATA=DPBR NWAY;
-CLASS BRCHCD DRANGE; VAR BALANCE ACCT;
-OUTPUT OUT=DPBR (DROP=_TYPE_ _FREQ_) SUM=;
-*;
-PROC SORT; BY BRCHCD DRANGE;
-*;
-TITLE1 'PUBLIC BANK BERHAD';
-TITLE2 'DEVELOPMENT OF WEALTH MANAGEMENT CENTRES- RCB FOR KLC/BDA';
-TITLE3 'PROFILE FOR BDA (066) AND KLC (168) -' &RDATE;
-PROC REPORT DATA=DPBR NOWD HEADSKIP HEADLINE SPLIT='*';
-COLUMN BRCHCD DRANGE ACCT BALANCE;
-DEFINE BRCHCD   / ORDER    FORMAT=$5.        'BRH CODE';
-DEFINE DRANGE   / DISPLAY  FORMAT=$35.       'DEPOSIT RANGE ';
-DEFINE ACCT     / SUM      FORMAT=COMMA8.0   'NO. OF  CUSTOMER';
-DEFINE BALANCE  / SUM      FORMAT=COMMA18.2  'OUTSTANDING AMOUNT';
-BREAK  AFTER BRCHCD/;
-COMPUTE AFTER BRCHCD;
-LINE @010 65*'-';
-LINE @010  'TOTAL    '
-LINE @045   ACCT.SUM    COMMA10.0
-LINE @057   BALANCE.SUM COMMA18.2;
-LINE @010 65*'-';
-ENDCOMP;
-*;
-*;
+STFSA = {151, 181, 200, 201, 215}
+STFCA = {*range(50, 66), 101, 103, 106, 151, 158, 164, 180, 181, 182}
+FD_EXCLUSIONS = ((400,428), (448,469), (600,639), (720,740), (470,499), (548,573))
+
+
+class SumCheck:
+    def __init__(self):
+        self.rows = 0
+        self.missing = 0
+        self.sequential = 0.0
+        self.partials = []
+        self.subcent = 0
+
+    def add(self, values):
+        values = np.asarray(values, dtype=np.float64)
+        self.rows += len(values)
+        self.missing += int(np.isnan(values).sum())
+        values = values[~np.isnan(values)]
+        if not np.isfinite(values).all():
+            raise ValueError('Non-finite CURBAL encountered')
+        if not len(values):
+            return
+        # Carry the preceding sum into cumsum to preserve sequential input order.
+        self.sequential = float(np.cumsum(np.concatenate(([self.sequential], values)))[-1])
+        self.partials.append(math.fsum(values))
+        # Indicator only: tolerance avoids classifying ordinary binary cent noise.
+        self.subcent += int((np.abs(values * 100 - np.rint(values * 100)) > 0.0001).sum())
+
+    def result(self, dataset, stage, reporting_date):
+        compensated = math.fsum(self.partials)
+        return dict(
+            REPTDATE=str(reporting_date), DATASET=dataset, STAGE=stage,
+            ROWS=self.rows, MISSING_CURBAL=self.missing,
+            SUBCENT_INDICATOR_ROWS=self.subcent,
+            SEQUENTIAL_SUM=format(self.sequential, '.17g'),
+            CHUNK_FSUM=format(compensated, '.17g'),
+            FSUM_MINUS_SEQUENTIAL=format(compensated-self.sequential, '.17g'),
+        )
+
+
+def filtered(frame, dataset):
+    required = {'ENTITY_CD','ACCTNO','CURBAL','BRANCH','OPENIND',
+                'INTPLAN' if dataset == 'FD' else 'PRODUCT'}
+    absent = required - set(frame.columns)
+    if absent:
+        raise ValueError(f'{dataset}: missing columns {sorted(absent)}')
+    pbb = ~frame.ENTITY_CD.fillna('').str.rstrip().isin(['PIBB'])
+    mask = pbb & (frame.BRANCH > 1) & (frame.BRANCH < 271)
+    mask &= ~frame.OPENIND.fillna('').str.rstrip().isin(['B','C','P'])
+    if dataset == 'SAVING':
+        mask &= ~frame.PRODUCT.isin(STFSA)
+    elif dataset == 'CURRENT':
+        mask &= ~frame.PRODUCT.isin(STFCA)
+    else:
+        for low, high in FD_EXCLUSIONS:
+            mask &= ~frame.INTPLAN.between(low, high)
+    return pbb, mask
+
+
+def resolve(path):
+    if path.is_file():
+        return path
+    matches = [p for p in path.parent.iterdir() if p.is_file() and p.name.lower() == path.name.lower()]
+    if len(matches) != 1:
+        raise FileNotFoundError(f'Cannot uniquely resolve {path}')
+    return matches[0]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--run-date', type=date.fromisoformat, default=date.today())
+    parser.add_argument('--report-date', type=date.fromisoformat)
+    parser.add_argument('--deposit-dir', type=Path, default=Path('/sas/deposit/dwh/integration'))
+    parser.add_argument('--output-dir', type=Path, default=Path('/stgsrcsys/host/holding'))
+    parser.add_argument('--encoding', default='latin1')
+    parser.add_argument('--chunk-size', type=int, default=200000)
+    for dataset in ('saving','current','fd'):
+        parser.add_argument('--'+dataset, type=Path)
+    args = parser.parse_args()
+    if args.chunk_size < 1:
+        parser.error('--chunk-size must be positive')
+    reporting_date = args.report_date or args.run_date.replace(day=1)-timedelta(days=1)
+    print(f'REPTDATE: {reporting_date}; input check only; no CIS or report generation', flush=True)
+    rows = []
+    for dataset in ('SAVING','CURRENT','FD'):
+        path = getattr(args,dataset.lower()) or args.deposit_dir/f'INTG_DP_ACCT_{dataset}_D{reporting_date:%d}.sas7bdat'
+        path = resolve(path)
+        before, after = SumCheck(), SumCheck()
+        started = time.monotonic()
+        print(f'Reading {path}', flush=True)
+        reader = pd.read_sas(path, format='sas7bdat', encoding=args.encoding, chunksize=args.chunk_size)
+        try:
+            for i, frame in enumerate(reader, 1):
+                frame.columns = frame.columns.str.upper()
+                pbb, eligible = filtered(frame,dataset)
+                before.add(frame.loc[pbb,'CURBAL'])
+                after.add(frame.loc[eligible,'CURBAL'])
+                if i % 5 == 0:
+                    print(f'  {dataset}: {i} chunks scanned', flush=True)
+        finally:
+            reader.close()
+        rows += [before.result(dataset,'PBB_BEFORE_FILTER',reporting_date),
+                 after.result(dataset,'PBB_AFTER_FILTER_BEFORE_CIS',reporting_date)]
+        print(f'  Finished in {time.monotonic()-started:.1f}s; eligible rows={after.rows:,}', flush=True)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    target = args.output_dir/'CHECK_EIBMDPFF_INPUTS.csv'
+    with target.open('w',newline='',encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle,fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f'Written: {target}')
+    print('Compare counts and sums to SAS at identical pre-CIS stages. Floating-point differences here are indicators, not proof of the final RM0.66 cause.')
+
+
+if __name__ == '__main__':
+    main()
