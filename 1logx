@@ -1,173 +1,238 @@
-"""Converted SAS include: PBMISFMT.
+"""Converted SAS include: PBBDPFMT.
 
-MIS lookup formats used by the converted jobs. Keep this module separate from
-main job scripts so it can be shared by multiple conversions.
+This module holds deposit/current-account product lists and SAS PROC FORMAT
+equivalents as Python lookups. Keep it separate from main jobs.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from math import inf
 from typing import Any
+
+
+ACE = [40, 42, 43, 150, 151, 152, 181]
+FCY = [350, 351, 352, 353, 354, 355, 356, 357, 358, 360, 361, 362]
+CURX = [
+    50, 51, 55, 56, 57, 58, 60, 64, 65, 68, 69, 167, 169, 168,
+    85, 86, 87, 88, 89, 66, 67, 70, 71, 73, 96, 97, 61, 90,
+    91, 92, 93, 94, 95, 100, 101, 102, 106, 108, 109, 110, 111,
+    112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123,
+    124, 125, 133, 134, 135, 137, 138, 170, 150, 151, 152, 153,
+    154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165,
+    166, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 189,
+    190, 191, 192, 193, 194, 195, 196, 197, 198, 81, 82, 83, 84,
+    184, 185, 186, 131, 132, 187, 188, 20, 21, 77, 40, 41, 42,
+    43, 78, 74, 35, 36, 37, 38, 39, 46, 47, 48, 49, 75, 76, 23,
+    24, 25, 45, 26, 27, 13, 14, 15, 16, 17, 18, 19, 3, 4, 5, 6,
+    7, 8, 9, 10, 11, 12, 22, 81,
+]
+
+
+@dataclass(frozen=True)
+class RangeRule:
+    start: float
+    end: float
+    value: Any
 
 
 def lookup(code: int | str, mapping: dict[Any, Any], default: Any = None) -> Any:
     return mapping.get(code, default)
 
 
-STATECD = {
-    1: "W", 2: "W", 3: "W", 4: "M", 5: "A", 6: "P", 7: "J", 8: "C",
-    9: "A", 10: "K", 11: "K", 12: "D", 13: "D", 14: "D", 15: "W",
-    16: "N", 17: "N", 18: "B", 19: "B", 20: "B", 21: "J", 22: "B",
-    23: "A", 24: "N", 25: "B", 26: "W", 27: "P", 28: "J", 29: "W",
-    30: "T", 31: "B", 32: "Q", 33: "S", 34: "R", 35: "B", 36: "B",
-    37: "J", 38: "W", 39: "N", 40: "W", 41: "W", 42: "P", 43: "B",
-    44: "S", 45: "N", 46: "B", 47: "J", 48: "C", 49: "A", 50: "Q",
-    51: "A", 52: "J", 53: "W", 54: "P", 55: "L", 56: "B", 57: "K",
-    58: "Q", 59: "J", 60: "P", 61: "J", 62: "S", 63: "N", 64: "N",
-    65: "N", 66: "W", 67: "A", 68: "P", 69: "B", 70: "K", 71: "C",
-    72: "S", 73: "B", 74: "K", 75: "J", 76: "A", 77: "K", 78: "B",
-    79: "J", 80: "A", 81: "B", 82: "D", 83: "W", 84: "D", 85: "A",
-    86: "K", 87: "J", 88: "K", 89: "J", 90: "Q", 91: "J", 92: "B",
-    93: "J", 94: "W", 95: "A", 96: "B", 97: "W", 98: "J",
-    102: "J", 103: "W", 104: "K", 105: "J", 106: "T", 107: "P",
-    108: "A", 109: "B", 110: "J", 111: "M", 112: "S", 113: "C",
-    114: "P", 115: "S", 116: "C", 117: "D", 118: "B", 119: "A",
-    120: "B", 121: "P", 122: "B", 123: "A", 124: "B", 125: "B",
-    126: "P", 127: "B", 128: "W", 129: "W", 130: "Q", 131: "B",
-    133: "B", 134: "D", 135: "B", 136: "W", 137: "A", 138: "W",
-    139: "C", 140: "S", 141: "W", 142: "S", 143: "S", 144: "J",
-    145: "B", 146: "A", 147: "J", 148: "B", 149: "S", 150: "P",
-    151: "W", 152: "A", 153: "B", 154: "P", 155: "B", 156: "M",
-    157: "B", 158: "A", 159: "P", 160: "M", 161: "S", 162: "B",
-    163: "W", 164: "P", 165: "M", 166: "J", 167: "B", 168: "W",
-    169: "W", 170: "B", 171: "P", 172: "M", 173: "B", 174: "J",
-    175: "Q", 176: "J", 177: "P", 178: "W", 179: "W", 180: "B",
-    183: "Q", 184: "Q", 185: "Q", 186: "Q", 188: "Q", 189: "Q",
-    190: "Q", 191: "Q", 192: "Q", 193: "Q", 194: "Q", 195: "W",
-    196: "W", 197: "W", 198: "W", 199: "B", 201: "B", 202: "B",
-    203: "B", 204: "P", 205: "P", 206: "P", 207: "A", 208: "A",
-    209: "A", 210: "A", 211: "A", 214: "J", 215: "J", 216: "J",
-    217: "J", 220: "C", 221: "B", 222: "J", 224: "J", 225: "B",
-    226: "W", 227: "B", 228: "S", 230: "W", 231: "M", 232: "W",
-    233: "C", 234: "J", 235: "B", 237: "C", 238: "K", 239: "C",
-    240: "B", 241: "B", 242: "J", 243: "A", 244: "A", 245: "A",
-    246: "A", 247: "J", 248: "W", 249: "A", 250: "B", 251: "A",
-    252: "B", 253: "P", 254: "N", 256: "A", 257: "C", 258: "K",
-    259: "Q", 260: "T", 261: "D", 262: "W", 263: "C", 264: "C",
-    265: "P", 266: "P", 267: "W", 268: "B", 269: "W", 270: "B",
-    273: "Q", 274: "Q", 275: "Q", 276: "S", 277: "D", 278: "S",
-    279: "W", 280: "B", 281: "Q", 282: "S", 283: "S", 284: "W",
-    285: "B", 286: "J", 287: "J", 288: "W", 289: "B", 290: "J",
-    291: "B", 292: "W", 293: "B", 294: "B", 295: "B", 296: "W",
-    701: "W", 702: "W", 703: "D", 704: "K", 800: "N", 801: "P",
-    802: "W", 803: "S", 804: "J", 805: "J", 806: "K", 807: "M",
-    808: "P", 809: "A", 811: "W", 812: "W", 813: "Q", 814: "B",
-    815: "B", 816: "B", 817: "P", 818: "W", 819: "C", 820: "B",
-    821: "W", 822: "W", 823: "A", 824: "K", 825: "B", 826: "P",
-    827: "D",
+def lookup_range(value: float, rules: list[RangeRule], default: Any = None) -> Any:
+    for rule in rules:
+        if rule.start <= value <= rule.end:
+            return rule.value
+    return default
+
+
+SADENOM = {
+    204: "I",
+    207: "I",
+    214: "I",
+    215: "I",
+    218: "I",
+    220: "I",
+    221: "I",
+    222: "I",
+    223: "I",
 }
 
 
-def statecd(branch: int) -> str:
-    return lookup(branch, STATECD, "B")
+def sadenom(code: int) -> str:
+    return lookup(code, SADENOM, "D")
 
 
-BRANCHCD = {
-    1: "HEAD OFFICE", 2: "JLN SULTAN SULAIMAN", 3: "JLN RAJA CHULAN",
-    4: "MELAKA", 5: "IPOH MAIN OFFICE", 6: "PENANG", 7: "JOHOR BAHRU",
-    8: "KUANTAN", 9: "JLN YANG KALSOM", 10: "ALOR SETAR", 11: "GURUN",
-    12: "PASIR PUTEH", 13: "KOTA BHARU", 14: "TANAH MERAH", 15: "KEPUNG",
-    16: "NILAI", 17: "TAMPIN", 18: "PJ NEW TOWN", 19: "DAMANSARA UTAMA",
-    20: "TMN CHI LIUNG", 21: "BATU PAHAT", 22: "SEMENYIH", 23: "KAMUNTING",
-    24: "RASAH", 25: "SHAH ALAM", 26: "SERI PETALING", 27: "NIBONG TEBAL",
-    28: "MUAR", 29: "JLN RAJA LAUT", 30: "KUALA TRENGGANU",
-    31: "SEKINCHAN", 32: "WISMA SABERKAS (WSS)", 33: "KOTA KINABALU",
-    34: "KANGAR", 35: "SERI SETIA", 36: "S S 2", 37: "TMN SENTOSA",
-    38: "JLN KELANG LAMA", 39: "KUALA KELAWANG", 40: "JLN SUNGEI BESI",
-    41: "JLN IPOH", 42: "BKT MERTAJAM", 43: "BANTING", 44: "TAWAU",
-    45: "SEREMBAN", 46: "AMPANG", 47: "SEGAMAT", 48: "MENTAKAB",
-    49: "JELAPANG", 50: "MIRI", 51: "SERI MANJUNG", 52: "ULU TIRAM",
-    53: "TMN MALURI", 54: "BDR BAYAN BARU", 55: "LABUAN", 56: "KAJANG",
-    57: "SG PETANI", 58: "SIBU", 59: "PONTIAN KECIL", 60: "BAGAN AJAM",
-    61: "KULAI", 62: "SANDAKAN", 63: "GEMAS", 64: "PORT DICKSON",
-    65: "BAHAU", 66: "BKT DAMANSARA", 67: "CHEMOR", 68: "SIMPANG AMPAT",
-    69: "BATANG KALI", 70: "POKOK SENA", 71: "BRINCHANG", 72: "PAPAR",
-    73: "SG PELEK", 74: "SIK", 75: "CHAAH", 76: "PANTAI REMIS",
-    77: "PULAU LANGKAWI", 78: "SUBANG JAYA", 79: "MASAI", 80: "MENGLEMBU",
-    81: "SG BULOH", 82: "MACHANG", 83: "JLN BUKIT BINTANG", 84: "PASIR MAS",
-    85: "SG SIPUT", 86: "CHANGLUN", 87: "MERSING", 88: "KULIM",
-    89: "TAMPOI", 90: "BINTULU", 91: "KLUANG", 92: "KLANG", 93: "ENDAU",
-    94: "SETAPAK", 95: "TELUK INTAN", 96: "SERI GOMBAK",
-    97: "JLN TUN H S LEE", 98: "TMN CENTURY", 101: "KAMPONG BAHRU",
-    102: "PARIT RAJA", 103: "JINJANG", 104: "KUALA KETIL",
-    105: "KOTA TINGGI", 106: "CHUKAI", 107: "JELUTONG", 108: "BAGAN SERAI",
-    109: "KUALA SELANGOR", 110: "TMN JOHOR JAYA", 111: "AIR KEROH",
-    112: "LIDO", 113: "TEMERLOH", 114: "BANDAR BARU AIR ITAM",
-    115: "KENINGAU", 116: "TRIANG", 117: "KUALA KRAI", 118: "TMN MELAWATI",
-    120: "PANDAN INDAH", 121: "PRAI", 122: "SERI KEMBANGAN",
-    123: "IPOH GARDEN", 124: "SECTION 14", 125: "KELANA JAYA",
-    126: "PULAU TIKUS", 127: "TMN SERI MUDA", 128: "SEGAMBUT",
-    129: "BANGSAR", 130: "PADUNGAN", 131: "TMN MAYANG", 133: "PORT KLANG",
-    134: "RANTAU PANJANG", 135: "BDR SUNWAY", 136: "TMN CHERAS",
-    137: "JLN PASIR PUTEH", 138: "WANGSA MAJU", 139: "JERANTUT",
-    140: "CITY PARADE", 141: "SENTUL", 142: "KOTA BELUD", 143: "LAHAD DATU",
-    144: "KAHANG", 145: "BDR SRI DAMANSARA", 146: "PUSING",
-    147: "PEKAN NENAS", 148: "PJ OLD TOWN", 149: "BEAUFORT",
-    150: "LEBOH MACALLUM", 151: "SELAYANG", 152: "AIR TAWAR", 153: "USJ",
-    154: "BDR SEBERANG JAYA", 155: "TMN TAMING JAYA", 156: "TMN MELAKA RAYA",
-    157: "BDR PUCHONG JAYA", 158: "SIMPANG PULAI", 159: "RELAU",
-    160: "MASJID TANAH", 161: "DONGGONGON", 162: "SEA PARK",
-    163: "JLN KUCHAI LAMA", 164: "KEPALA BATAS", 165: "TENGKERA",
-    166: "PASIR GUDANG", 167: "BKT BERUNTUNG", 168: "KLCITY MAIN",
-    169: "CKT THAMBI DOLLAH", 170: "PANDAN JAYA", 171: "JLN MACALLISTER",
-    172: "TMN MALIM JAYA", 173: "SG CHUA", 174: "BDR BARU PERMAS JAYA",
-    175: "LIMBANG", 176: "TMN PERLING", 177: "JLN RAJA UDA",
-    178: "MEDAN IDAMAN", 179: "OVERSEAS UNION GDN", 180: "KG BARU SUBANG",
-    183: "JLN CENTRAL, SIBU", 184: "JLN PENRISSEN, KUCHING",
-    185: "KUCHING CITY (KCY)", 186: "JLN TUN ZAIDI, KUCHING",
-    188: "PELITA, MIRI", 189: "BATU NIAH", 190: "BINTANGOR", 191: "KAPIT",
-    192: "MARUDI", 193: "MUKAH", 194: "SARIKEI", 195: "BINTANG WALK, KL",
-    196: "JLN HANG LEKIU", 197: "TIONG NAM, KL",
-    198: "TMN DESA,JLN KELANG LAMA", 199: "JLN TAPAH,KLANG",
-    201: "PANDAMARAN, KLANG", 202: "RAWANG", 203: "SG JAROM",
-    204: "BUTTERWORTH", 205: "SG NIBONG", 206: "TAMAN BUKIT MAS",
-    207: "BERCHAM (BCM)", 208: "JLN SULTAN IDRIS SHAH, IPOH",
-    209: "SITIAWAN", 210: "TANJUNG MALIM", 211: "TANJUNG PIANDANG",
-    214: "JLN GEREJA, JOHOR BARU", 215: "JLN KUKUP, PONTIAN KECHIL",
-    216: "SKUDAI", 217: "TMN MUNSHI IBRAHIM, TAMPOI",
-    220: "GENTING HIGHLANDS, PAHANG", 221: "TMN SENTOSA, KLANG",
-    222: "TMN DESA CEMERLANG,JOHOR", 224: "JLN ABDULLAH, MUAR",
-    225: "TMN INDAH, SELANGOR", 226: "JLN PASAR, KUALA LUMPUR",
-    228: "INANAM, KOTA KINABALU", 230: "SALAK SOUTH, KUALA LUMPUR",
-    231: "BATU BERENDAM, MELAKA", 232: "TMN MIDAH, KUALA LUMPUR",
-    233: "BENTONG", 234: "SIMPANG RENGAM", 235: "SABAK BERNAM, SELANGOR",
-    237: "KUALA LIPIS, PAHANG", 238: "JALAN KOTA, KEDAH",
-    239: "KEMAYAN, PAHANG", 240: "KAPAR, SELANGOR",
-    241: "DAMANSARA JAYA, SELANGOR", 242: "TANGKAK JOHOR",
-    243: "KUALA KANGSAR PERAK", 244: "GUNUNG RAPAT IPOH PERAK",
-    245: "BIDOR PERAK", 247: "BUKIT PASIR MUAR JOHOR",
-    248: "JLN TUN SAMBANTHAN KL", 249: "TAIPING PERAK",
-    250: "TAMAN ENG ANN SELANGOR", 251: "KAMPAR PERAK",
-    252: "TAMAN MUDA SELANGOR", 253: "JLN TANJONG TOKONG P.PINANG",
-    254: "KUALA PILAH N. SEMBILAN", 256: "PARIT BUNTAR PERAK",
-    257: "RAUB PAHANG", 258: "JITRA KEDAH", 259: "SRI AMAN SARAWAK",
-    260: "KUALA DUNGUN TERENGGANU", 261: "GUA MUSANG KELANTAN",
-    262: "TAMAN CONNAUGHT CHERAS", 263: "BENTA PAHANG",
-    264: "JALAN BESERAH PAHANG", 265: "JALAN AIR ITAM PENANG",
-    266: "JALAN DATUK KERAMAT PENANG", 267: "TMN TUN DR ISMAIL WILAYAH",
-    268: "BANDAR BUKIT TINGGI", 269: "MONT KIARA",
-    270: "BANDAR PUTERI PUCHONG", 273: "LI HUA SARAWAK",
-    274: "STUTONG SARAWAK", 275: "MEDAN SENTRAL SARAWAK",
-    276: "JALAN APAS SABAH", 277: "WAKAF SIKU KELANTAN",
-    278: "JALAN PANTAI SABAH", 279: "PUTRAJAYA", 280: "KOTA DAMANSARA",
-    281: "PELITA", 282: "PUTATAN", 283: "PRIMA SQUARE",
-    284: "BANDAR SRI PERMAISURI", 285: "BANDAR MAHKOTA CHERAS",
-    286: "BUKIT INDAH BRANCH", 287: "SUTERA UTAMA", 288: "STARPARC POINT",
-    289: "TAMAN EQUINE", 290: "TAMAN DAYA", 291: "BANDAR SUNGAI LONG",
-    292: "BANDAR MENJALARA", 293: "BANDAR SETIA ALAM",
-    294: "KOTA KEMUNING", 295: "BANDAR KINRARA", 296: "BUKIT JALIL",
-    702: "PUTRAJAYA", 703: "ISLAMIC WAKAF SIKU", 704: "ISLAMIC JALAN KOTA",
+SAPROD = {
+    100: "N", 126: "N", 127: "N", 128: "N", 129: "N", 140: "N",
+    141: "N", 142: "N", 200: "42120", 201: "42120", 202: "42120",
+    203: "42120", 204: "42320", 205: "42120", 206: "42120",
+    207: "42120", 208: "42120", 210: "42120", 211: "N",
+    212: "42120", 213: "42120", 214: "42320", 215: "42320",
+    216: "42120", 218: "42120", 220: "42120", 221: "42120",
+    222: "42120", 223: "42120", 227: "42120", 228: "42120",
+    297: "N", 298: "N", 480: "N", 481: "N", 482: "N",
+    483: "N", 484: "N",
 }
 
 
-def branchcd(branch: int) -> str:
-    return lookup(branch, BRANCHCD, "OTHER")
+def saprod(code: int) -> str:
+    return lookup(code, SAPROD, "42120")
+
+
+FDDENOM_RULES = [
+    RangeRule(229, 232, "I"), RangeRule(272, 283, "I"),
+    RangeRule(334, 336, "I"), RangeRule(338, 339, "I"),
+    RangeRule(340, 359, "I"), RangeRule(379, 382, "I"),
+    RangeRule(386, 394, "I"), RangeRule(453, 459, "I"),
+    RangeRule(461, 469, "I"), RangeRule(542, 544, "I"),
+    RangeRule(580, 593, "I"), RangeRule(595, 599, "I"),
+    RangeRule(603, 607, "I"), RangeRule(609, 611, "I"),
+    RangeRule(620, 627, "I"), RangeRule(640, 659, "I"),
+    RangeRule(660, 719, "I"), RangeRule(726, 731, "I"),
+    RangeRule(736, 740, "I"), RangeRule(780, 839, "I"),
+    RangeRule(851, 853, "I"), RangeRule(856, 863, "I"),
+    RangeRule(893, 894, "I"), RangeRule(896, 897, "I"),
+    RangeRule(902, 903, "I"), RangeRule(914, 940, "I"),
+    RangeRule(941, 967, "I"), RangeRule(987, 988, "I"),
+    RangeRule(991, 993, "I"),
+]
+FDDENOM_SINGLE = {
+    422, 424, 426, 428, 475, 481, 487, 489, 491, 493, 495, 497,
+    499, 555, 557, 575, 777,
+}
+
+
+def fddenom(code: int) -> str:
+    if code in FDDENOM_SINGLE:
+        return "I"
+    return lookup_range(code, FDDENOM_RULES, "D")
+
+
+FDPROD: dict[int, str] = {}
+for start, end, value in [
+    (229, 232, "42133"), (233, 271, "42130"), (272, 283, "42133"),
+    (284, 333, "42130"), (334, 339, "42133"), (340, 341, "42132"),
+    (343, 344, "42132"), (346, 347, "42132"), (349, 359, "42132"),
+    (360, 378, "42130"), (379, 382, "42133"), (383, 385, "42130"),
+    (386, 394, "42133"), (395, 420, "42130"), (422, 422, "42133"),
+    (424, 424, "42133"), (426, 426, "42133"), (428, 428, "42133"),
+    (448, 452, "42130"), (453, 459, "42132"), (461, 469, "42132"),
+    (470, 474, "42630"), (476, 480, "42630"), (482, 486, "42630"),
+    (488, 488, "42630"), (490, 490, "42630"), (492, 492, "42630"),
+    (494, 494, "42630"), (496, 496, "42630"), (498, 498, "42630"),
+    (500, 541, "42130"), (542, 544, "42133"), (545, 547, "42130"),
+    (548, 548, "42630"), (550, 550, "42630"), (552, 552, "42630"),
+    (554, 554, "42630"), (556, 556, "42630"), (558, 558, "42630"),
+    (560, 567, "42630"), (569, 569, "42630"), (571, 571, "42630"),
+    (573, 574, "42630"), (576, 576, "42630"), (578, 579, "42630"),
+    (580, 593, "42132"), (595, 596, "42132"), (597, 599, "42133"),
+    (600, 602, "42130"), (603, 607, "42133"), (608, 608, "42130"),
+    (609, 611, "42133"), (612, 619, "42130"), (620, 627, "42133"),
+    (628, 639, "42130"), (640, 659, "42133"), (660, 719, "42132"),
+    (720, 725, "42130"), (726, 731, "42133"), (732, 735, "42130"),
+    (736, 740, "42133"), (741, 750, "42130"), (751, 774, "42630"),
+    (775, 776, "42130"), (777, 777, "42133"), (778, 779, "42130"),
+    (780, 839, "42133"), (850, 850, "42130"), (851, 853, "49999"),
+    (854, 855, "42130"), (856, 863, "42133"), (864, 892, "42130"),
+    (893, 894, "42133"), (895, 895, "42130"), (896, 897, "42133"),
+    (898, 901, "42130"), (902, 903, "42133"), (904, 905, "42130"),
+    (914, 967, "42133"), (968, 986, "42130"), (987, 988, "42133"),
+    (989, 990, "42130"), (991, 993, "42133"), (994, 997, "42130"),
+]:
+    for code in range(start, end + 1):
+        FDPROD[code] = value
+FDPROD.update({
+    342: "49999", 345: "49999", 348: "49999", 421: "42630",
+    423: "42630", 425: "42630", 427: "42630", 429: "42630",
+    430: "42630", 431: "42630", 432: "42630", 433: "42630",
+    434: "42630", 435: "42630", 436: "42630", 437: "42630",
+    438: "42130", 439: "42630", 440: "42630", 441: "42630",
+    442: "42630", 443: "42630", 444: "42630", 445: "42130",
+    446: "42630", 447: "42130", 475: "42133", 481: "42133",
+    487: "42133", 489: "42133", 491: "42133", 493: "42133",
+    495: "42133", 497: "42133", 499: "42133", 551: "42130",
+    553: "42130", 555: "42133", 557: "42133", 568: "42130",
+    570: "42130", 572: "42130", 575: "42133", 577: "42130",
+    594: "42130",
+})
+
+
+def fdprod(code: int) -> str:
+    return lookup(code, FDPROD, "42130")
+
+
+FDPRODD = {
+    300: "42130", 301: "42130", 302: "42132", 303: "42130",
+    311: "42130", 312: "42130", 313: "42133", 314: "42133",
+    315: "42132", 316: "42133", 393: "42133", 394: "42132",
+}
+
+
+def fdprodd(code: int) -> str:
+    return lookup(code, FDPRODD, "42130")
+
+
+FDPRD_RULES = [
+    RangeRule(300, 319, "N"), RangeRule(400, 419, "N"),
+    RangeRule(368, 394, "N"), RangeRule(500, 539, "N"),
+    RangeRule(600, 639, "N"), RangeRule(741, 744, "N"),
+    RangeRule(445, 445, "N"), RangeRule(320, 339, "L"),
+    RangeRule(420, 428, "L"), RangeRule(540, 547, "L"),
+    RangeRule(340, 359, "M"), RangeRule(453, 459, "M"),
+    RangeRule(461, 469, "M"), RangeRule(580, 599, "M"),
+    RangeRule(660, 740, "M"),
+]
+
+
+def fdprd(code: int) -> str:
+    return lookup_range(code, FDPRD_RULES, " ")
+
+
+FDORGMT_RULES = [
+    RangeRule(-inf, 1, "12"), RangeRule(1, 2, "13"),
+    RangeRule(2, 3, "14"), RangeRule(3, 6, "15"),
+    RangeRule(6, 9, "16"), RangeRule(9, 12, "17"),
+    RangeRule(12, 15, "21"), RangeRule(15, 18, "22"),
+    RangeRule(18, 24, "23"), RangeRule(24, 36, "24"),
+    RangeRule(36, 48, "25"), RangeRule(48, 60, "26"),
+    RangeRule(60, inf, "30"),
+]
+
+
+def fdorgmt(months: float) -> str:
+    return lookup_range(months, FDORGMT_RULES)
+
+
+FDRMMT_RULES = [
+    RangeRule(-inf, 0, "51"), RangeRule(0, 1, "52"),
+    RangeRule(1, 2, "53"), RangeRule(2, 3, "54"),
+    RangeRule(3, 6, "55"), RangeRule(6, 9, "56"),
+    RangeRule(9, 12, "57"), RangeRule(12, 24, "61"),
+    RangeRule(24, 36, "62"), RangeRule(36, 48, "63"),
+    RangeRule(48, 60, "64"), RangeRule(60, inf, "70"),
+]
+
+
+def fdrmmt(months: float) -> str:
+    return lookup_range(months, FDRMMT_RULES)
+
+
+RMFDORGMT = {
+    272: "12", 284: "12", 273: "13", 285: "13", 274: "14", 286: "14",
+    275: "15", 276: "15", 277: "15", 287: "15", 288: "15", 289: "15",
+    278: "16", 279: "16", 280: "16", 290: "16", 291: "16", 292: "16",
+    281: "17", 282: "17", 283: "17", 293: "17", 294: "17", 295: "17",
+}
+
+
+def rmfdorgmt(code: int) -> str | None:
+    return RMFDORGMT.get(code)
+
+
+RACE = {"0": "0", "1": "1", "2": "2", "3": "3"}
+
+
+def race(value: str | int) -> str:
+    return lookup(str(value), RACE, "0")
