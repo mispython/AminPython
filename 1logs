@@ -1,14 +1,14 @@
-1                                                          The SAS System                          13:23 Thursday, September 3, 2026
+1                                                          The SAS System                           14:17 Sunday, September 13, 2026
 
 1          ;*';*";*/;quit;run;
 2          OPTIONS PAGENO=MIN;
-3          %LET _CLIENTTASKLABEL='Program';
+3          %LET _CLIENTTASKLABEL='ADHOC_CONV.sas';
 4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
 5          %LET _CLIENTPROJECTPATH='';
 6          %LET _CLIENTPROJECTPATHHOST='';
 7          %LET _CLIENTPROJECTNAME='';
-8          %LET _SASPROGRAMFILE='';
-9          %LET _SASPROGRAMFILEHOST='';
+8          %LET _SASPROGRAMFILE='C:\Users\pas68728\AppData\Local\Temp\scp12556\stgsrcsys\host\holding\ADHOC_CONV.sas';
+9          %LET _SASPROGRAMFILEHOST='ITDNBVPN065';
 10         
 11         ODS _ALL_ CLOSE;
 12         OPTIONS DEV=SVG;
@@ -28,48 +28,47 @@
 26         ;
 NOTE: Writing HTML5(EGHTML) Body file: EGHTML
 27         
-28         
-29         data _null_;
-30                 infile "
-31         cd /sas/python/virt_edw;
-32         source bin/activate;
-33         python /stgsrcsys/host/holding/ROMS_CONVERT.py 164500
-34         " pipe;
-35                 input;
-36                 put _infile_;
-37         run;
+28         data _null_;
+29                 infile "
+30         cd /sas/python/virt_edw;
+31         source bin/activate;
+32         python /stgsrcsys/host/holding/combine2.py
+33         " pipe;
+34                 input;
+35                 put _infile_;
+36         run;
 
-NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/ROMS_CONVERT.py 164500" is:
-      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/ROMS_CONVERT.py 164500"
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/combine2.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/combine2.py"
 
-  File "/stgsrcsys/host/holding/ROMS_CONVERT.py", line 31
-    Return YYMMDD_HHMMSS based on current time
-           ^
-SyntaxError: invalid syntax
-NOTE: 4 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
-      /stgsrcsys/host/holding/ROMS_CONVERT.py 164500".
-      The minimum record length was 12.
-      The maximum record length was 57.
+SyntaxError: Non-UTF-8 code starting with '\x96' in file /stgsrcsys/host/holding/combine2.py on line 243, but no encoding declared; 
+see https://python.org/dev/peps/pep-0263/ for details
+NOTE: 1 record was read from the infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/combine2.py".
+      The minimum record length was 185.
+      The maximum record length was 185.
 NOTE: DATA statement used (Total process time):
-      real time           1.56 seconds
+      real time           1.25 seconds
       cpu time            0.00 seconds
       
 
+37         
 38         
 39         
-40         %LET _CLIENTTASKLABEL=;
-2                                                          The SAS System                          13:23 Thursday, September 3, 2026
+40         
+41         
+42         %LET _CLIENTTASKLABEL=;
+43         %LET _CLIENTPROCESSFLOWNAME=;
+2                                                          The SAS System                           14:17 Sunday, September 13, 2026
 
-41         %LET _CLIENTPROCESSFLOWNAME=;
-42         %LET _CLIENTPROJECTPATH=;
-43         %LET _CLIENTPROJECTPATHHOST=;
-44         %LET _CLIENTPROJECTNAME=;
-45         %LET _SASPROGRAMFILE=;
-46         %LET _SASPROGRAMFILEHOST=;
-47         
-48         ;*';*";*/;quit;run;
-49         ODS _ALL_ CLOSE;
-50         
-51         
-52         QUIT; RUN;
+44         %LET _CLIENTPROJECTPATH=;
+45         %LET _CLIENTPROJECTPATHHOST=;
+46         %LET _CLIENTPROJECTNAME=;
+47         %LET _SASPROGRAMFILE=;
+48         %LET _SASPROGRAMFILEHOST=;
+49         
+50         ;*';*";*/;quit;run;
+51         ODS _ALL_ CLOSE;
+52         
 53         
+54         QUIT; RUN;
+55         
