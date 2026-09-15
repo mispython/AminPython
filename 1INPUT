@@ -1,394 +1,1615 @@
-//EIHDASME JOB MISEIS,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID
+//EIBXCRRA  JOB 224T,'EIBWCCR5',CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//          NOTIFY=&SYSUID,REGION=64M
+//*
+//* MAA3    SMR2006-1271. ABDUL HARIS. X 6783.
 //*
 //DELETE   EXEC PGM=IEFBR14
-//DD1      DD DISP=(MOD,DELETE,DELETE),
-//            SPACE=(TRK,(1,10)),
-//            DSN=SAP.PBB.DPACCEPT.SME.TEXT
-//DD2      DD DISP=(MOD,DELETE,DELETE),
-//            SPACE=(TRK,(100,100)),
-//            DSN=SAP.PBB.DPACCEPT.EQ.TEXT
-//DD3      DD DISP=(MOD,DELETE,DELETE),
-//            SPACE=(TRK,(1,10)),
-//            DSN=SAP.PBB.DPACCEPT.DCI.TEXT
-//DD4      DD DISP=(MOD,DELETE,DELETE),
-//            SPACE=(TRK,(100,100)),
-//            DSN=SAP.PBB.DPACCEPT.MNI.TEXT
+//DD1      DD DSN=SAP.PBB.XCRR.SASDATA,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//DD2      DD DSN=SAP.PBB.XCRR.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
 //*
-//EIHDASME  EXEC SAS609,REGION=8M,WORK='250000,200000'
-//DP        DD DSN=SAP.PBB.MNITB(0),DISP=SHR
-//DCIWH     DD DSN=SAP.PBB.DCIWH,DISP=SHR
-//BNMK      DD DSN=SAP.PBB.KAPITI.SASDATA,DISP=SHR
-//EQWH      DD DSN=SAP.PBB.WEQUT(0),DISP=SHR
-//FORATE    DD DSN=SAP.PBB.FCYCA,DISP=SHR
-//CISEQ     DD DSN=SAP.PBB.CISBEXT.EQ,DISP=SHR
-//CISDP     DD DSN=SAP.PBB.CISBEXT.DP,DISP=SHR
-//CISDP2    DD DSN=SAP.PBB.CRM.CISBEXT,DISP=SHR
-//SMETXT    DD DSN=SAP.PBB.DPACCEPT.SME.TEXT,
-//             DISP=(NEW,CATLG,DELETE),
-//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
-//             SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
-//EQTXT     DD DSN=SAP.PBB.DPACCEPT.EQ.TEXT,
-//             DISP=(NEW,CATLG,DELETE),
-//             DCB=(RECFM=FB,LRECL=500,BLKSIZE=0),
-//             SPACE=(TRK,(100,100)),UNIT=(SYSDA,5)
-//DCITXT    DD DSN=SAP.PBB.DPACCEPT.DCI.TEXT,
-//             DISP=(NEW,CATLG,DELETE),
-//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),
-//             SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)
-//MNITXT    DD DSN=SAP.PBB.DPACCEPT.MNI.TEXT,
-//             DISP=(NEW,CATLG,DELETE),
-//             DCB=(RECFM=FB,LRECL=500,BLKSIZE=0),
-//             SPACE=(TRK,(100,100)),UNIT=(SYSDA,5)
-//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-//SASLIST   DD SYSOUT=X
+//EIBXCRRA EXEC SAS609
+//BNM      DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//LIMIT    DD DSN=SAP.PBB.MNILIMT(0),DISP=SHR
+//SASD     DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//E1271    DD DSN=SAP.PBB.XCRR.SASDATA,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(60,30),RLSE),UNIT=SYSDA
+//CRR      DD DSN=SAP.PBB.XCRR.TEXT,
+//            DISP=(NEW,CATLG,DELETE),
+//            SPACE=(CYL,(50,50),RLSE),UNIT=SYSDA,
+//            DCB=(LRECL=80,RECFM=FB,BLKSIZE=0,BUFNO=30)
+//SASLIST  DD SYSOUT=A
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1950 NONUMBER NODATE NOCENTER MISSING=0;
+*;
+%INC PGM(PBBLNFMT,PBBDPFMT,PBMISFMT);
+*;
+DATA DATES;
+   SET BNM.REPTDATE;
+   SELECT(DAY(REPTDATE));
+   WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+   WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+   WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+     OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+   END;
+   MM = MONTH(REPTDATE);
+   IF WK = '1' THEN DO;
+      MM1 = MM - 1;
+      IF MM1 = 0 THEN MM1 = 12;
+   END;
+   ELSE MM1 = MM;
+   IF WK = '4' THEN MM2 = MM;
+   ELSE DO MM2 = MM - 1 ;
+      IF MM2 = 0 THEN MM2 = 12;
+   END;
+   DAYS = DAY(REPTDATE);
+   MONTHS = MONTH(REPTDATE);
+   YEARS = YEAR(REPTDATE);
+   SDATE = MDY(MONTHS,DAYS,YEARS);
+   CALL SYMPUT('NOWK',PUT(WK,$1.));
+   CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+   CALL SYMPUT('SDATE',PUT(SDATE,Z5.));
+RUN;
+*;
+PROC PRINT DATA=DATES;
+*;
+DATA CA;
+   KEEP USER3 RISKCODE ORGCODE DAYSARR BRANCH ORGTYPE
+        ACCTNO NAME PRODUCT BALANCE FAACRR CRRCODE;
+   SET  DEPOSIT.CURRENT;
+   IF   CURBAL < 0;
+   BALANCE=ABS(CURBAL);
+   DAYSARR=0;
+PROC SORT; BY ACCTNO;
+*;
+DATA LIMIT;
+   KEEP ACCTNO LMTAMT APPRLIMT EXCESSDT;
+   SET  LIMIT.OVERDFT;
+PROC SORT; BY ACCTNO;
+*;
+DATA OD;
+   MERGE CA(IN=A) LIMIT; BY ACCTNO;
+   IF A;
+   IF APPRLIMT > 0 AND LMTAMT > 0 AND USER3 NE '5' AND
+      RISKCODE NOT IN ('1','2','3','4')            AND
+      ORGCODE  NOT IN ('001','1')                  AND
+      PRODUCT  NOT IN (103,104,105,106,107,116,119,120,126,127,
+                       128,129,137,138,140,141,142,144,145,146,
+                       147,148,149,151,154,155,158,164,171,
+                       172,173,177,178,180,181,182,191,192,
+                       193,194,195,549,550);
+   CATG='OD';
+   GRADE=FAACRR;
+   IF  SUBSTR(CRRCODE,1,1) IN ('A','B','C','D','E')
+       THEN GRADE=CRRCODE;
+   GRADEX=SUBSTR(GRADE,1,1);
+*;
+DATA NOTE;
+   KEEP BRANCH BLDATE SCORE1 SCORE2 GRADE GRADEX
+        ACCTNO NOTENO NAME PRODUCT;
+   SET BNM.LNNOTE;
+   IF  NOTENO > 0 AND CORPCODE NE 'C' AND ORGTYPE NE 'E' AND
+       BALANCE > 1.00;
+   BRANCH =PENDBRH;
+   PRODUCT=LOANTYPE;
+   GRADE=SCORE2;
+   IF  SUBSTR(SCORE1,1,1) IN ('A','B','C','D','E')
+       THEN GRADE=SCORE1;
+   GRADEX=SUBSTR(GRADE,1,1);
+*;
+PROC SORT; BY ACCTNO NOTENO;
+*;
+DATA LOAN;
+   KEEP ACCTNO NOTENO APPRLIMT BALANCE RISKRTE;
+   SET SASD.LOAN&REPTMON&NOWK;
+   IF  NOTENO > 0 AND BALANCE > 1.00;
+PROC SORT; BY ACCTNO NOTENO;
+*;
+DATA LOAN1;
+   DROP NAME BRANCH PRODUCT;
+   SET  SASD.LOAN&REPTMON&NOWK;
+   IF   ACCTYPE='OD';
+PROC SORT; BY ACCTNO;
+*;
+DATA ODHL;
+   KEEP ACCTNO NOTENO APPRLIMT BALANCE RISKRTE CATG
+        USER3 RISKCODE ORGCODE DAYSARR GRADE BRANCH
+        GRADEX
+        ACCTNO NAME PRODUCT BALANCE FAACRR CRRCODE;
+  MERGE CA LOAN1(IN=A); BY ACCTNO;
+  IF A;
+  IF RISKRTE  NOT IN (1,2,3,4)   AND
+     ORGCODE  NE 'C'             AND
+     ORGTYPE  NE 'E'             AND
+     PRODUCT  IN (103,116,119,120,137,138,154,155,192,
+                  193,194,195);
+  CATG='OL';
+  GRADE=FAACRR;
+  IF  SUBSTR(CRRCODE,1,1) IN ('A','B','C','D','E')
+      THEN GRADE=CRRCODE;
+  GRADEX=SUBSTR(GRADE,1,1);
+*;
+DATA HL FL;
+   MERGE NOTE(IN=A) LOAN; BY ACCTNO NOTENO;
+   IF A;
+   IF RISKRTE NOT IN (1,2,3,4);
+   DAYSARR=0;
+   IF BLDATE  GT 0     THEN DAYSARR=&SDATE-BLDATE;
+   IF DAYSARR LT 0     THEN DAYSARR=0;
+   IF PRODUCT IN (300,301,302,304,305,309,310,320,325,335,350,
+                  355,356,357,358,359,360,361,500,504,505,506,
+                  509,510,515,520,521,522,526,528,529,
+                  524,525,527,530,531,556,
+                  559,560,564,565,566,567,568,569,570,573)
+   THEN DO;
+      CATG='FL';
+      OUTPUT FL;
+   END;
+   IF PRODUCT IN (110,111,112,113,114,115,116,117,118,118,120,
+                  139,140,141,142,143,225,226,244,245,246,247,
+                  200,201,204,205,209,210,211,212,214,215,
+                  219,220,227,228,230,231,232,233,234,235,236,
+                  237,238,239,240,241,242,243)
+   THEN DO;
+      CATG='HL';
+      OUTPUT HL;
+   END;
+*;
+DATA ACCTS;
+   SET OD FL HL ODHL;
+   ACCT=1;
+   IF  GRADEX NOT IN ('A','B','C','D','E')
+       THEN GRADEX='X';
+   BRCHCD=PUT(BRANCH,BRCHCD.);
+*;
+DATA E1271.ACCTS;
+   SET ACCTS;
+*;
+DATA CRR;
+  ACCT=0; BALANCE=0.00;
+  DO BRANCH=2 TO 268;
+     BRCHCD=PUT(BRANCH,BRCHCD.);
+
+     CATG='OD';
+     GRADEX='A'; OUTPUT;
+     GRADEX='B'; OUTPUT;
+     GRADEX='C'; OUTPUT;
+     GRADEX='D'; OUTPUT;
+     GRADEX='E'; OUTPUT;
+     GRADEX='X'; OUTPUT;
+
+     CATG='HL';
+     GRADEX='A'; OUTPUT;
+     GRADEX='B'; OUTPUT;
+     GRADEX='C'; OUTPUT;
+     GRADEX='D'; OUTPUT;
+     GRADEX='E'; OUTPUT;
+     GRADEX='X'; OUTPUT;
+
+     CATG='FL';
+     GRADEX='A'; OUTPUT;
+     GRADEX='B'; OUTPUT;
+     GRADEX='C'; OUTPUT;
+     GRADEX='D'; OUTPUT;
+     GRADEX='E'; OUTPUT;
+     GRADEX='X'; OUTPUT;
+
+     CATG='OL';
+     GRADEX='A'; OUTPUT;
+     GRADEX='B'; OUTPUT;
+     GRADEX='C'; OUTPUT;
+     GRADEX='D'; OUTPUT;
+     GRADEX='E'; OUTPUT;
+     GRADEX='X'; OUTPUT;
+  END;
+*;
+DATA CRR;
+  SET CRR;
+  IF  BRCHCD EQ '  ' OR ('1'<=BRCHCD<='270') THEN DELETE;
+*;
+PROC SUMMARY DATA=ACCTS NWAY;
+CLASS BRANCH GRADEX CATG; VAR ACCT BALANCE;
+OUTPUT OUT=DRR (DROP=_FREQ_ _TYPE_) SUM=;
+*;
+PROC SORT DATA=CRR; BY BRANCH GRADEX CATG;
+*;
+DATA CRR;
+   MERGE CRR(IN=A) DRR; BY BRANCH GRADEX CATG;
+   IF A;
+   FILE CRR;
+   PUT @001 BRANCH    3.
+       @005 GRADEX   $1.
+       @007 CATG     $2.
+       @010 ACCT      8.
+       @020 BALANCE  12.2;
+
+*;
+
+
+
+
+
+
+
+
+//EIBRCRRA  JOB 224T,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//          NOTIFY=&SYSUID,REGION=32M
+//*
+//* SMR 2006-1271. CONSOLIDATE CRR. FOR HARIS. QUARTERLY.
+//*
+//EIBRCRRA EXEC SAS609
+//DEP      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//CRR      DD DSN=SAP.PBB.XCRR.TEXT,DISP=SHR
+//BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.XCRR.HO.TEXT(+1),
+//         DISP=(NEW,CATLG,DELETE),SPACE=(CYL,(1,1),RLSE),
+//         UNIT=SYSDA,DCB=(LRECL=80,RECFM=FB,BLKSIZE=0)
+//SYSIN    DD *
+
+OPTIONS NOCENTER;
+*;
+%INC PGM(PBBLNFMT,PBBDPFMT,PBMISFMT);
+*;
+DATA DATES;
+   SET DEP.REPTDATE;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+RUN;
+*;
+DATA CRR;
+   INFILE CRR;
+   INPUT @001 BRANCH     3.
+         @005 GRADE     $1.
+         @007 CATG      $2.
+         @012 ACCT       6.
+         @019 BALANCE 13.2
+         ;
+*;
+PROC SUMMARY DATA=CRR;
+CLASS BRANCH CATG GRADE;
+VAR   ACCT BALANCE;
+OUTPUT OUT=CRR (DROP=_FREQ_) SUM=;
+*;
+DATA CRR0;
+  SET CRR;
+  IF  _TYPE_=0;
+  TOTAMT=BALANCE;
+  TOTACT=ACCT;
+  BRX='AA';
+  DROP BALANCE ACCT;
+*;
+DATA CRR1;
+  SET CRR;
+  IF  _TYPE_=1;
+  BRX='AA';
+*;
+PROC SORT DATA=CRR0; BY BRX;
+PROC SORT DATA=CRR1; BY BRX;
+*;
+DATA CRR;
+  DROP _TYPE_ CATG;
+  FORMAT PCAMT PCACT 6.3;
+  MERGE CRR0 CRR1(IN=A); BY BRANCH;
+  IF A;
+  PCAMT=0.000;
+  PCACT=0.000;
+  IF BALANCE > 0 THEN PCAMT=(BALANCE/TOTAMT)*100;
+  IF ACCT > 0    THEN PCACT=(ACCT/TOTACT)*100;
+*;
+PROC SORT; BY BRX GRADE;
+*;
+TITLE1 'PUBLIC BANK BERHAD';
+TITLE2 'ANNUAL LISTING OF TOTAL RETAIL LOANS @' &RDATE;
+TITLE3 'NOTE: X=NOT GRADED ';
+PROC   REPORT DATA=CRR NOWD HEADSKIP HEADLINE SPLIT='*';
+COLUMN BRX GRADE ACCT PCACT BALANCE PCAMT;
+DEFINE BRX      / ORDER NOPRINT;
+DEFINE GRADE    / FORMAT=$8.   'CRR  GRADE';
+DEFINE ACCT     / SUM FORMAT=COMMA10.   'NO OF   ACCOUNTS';
+DEFINE PCACT    / SUM FORMAT=8.3   '  %   ';
+DEFINE BALANCE  / SUM FORMAT=COMMA28.2  'OUTSTANDING   BALANCE';
+DEFINE PCAMT    / SUM FORMAT=8.3   ' %    ';
+BREAK AFTER BRX/;
+COMPUTE AFTER BRX;
+LINE @003 70*'-';
+LINE @003 'TOTAL '
+     @015  ACCT.SUM    COMMA8.
+     @027  PCACT.SUM   COMMA6.3
+     @043  BALANCE.SUM COMMA20.2
+     @067  PCAMT.SUM   COMMA6.3;
+ENDCOMP;
+
+
+
+
+
+
+
+
+
+//EIBRCRRB  JOB 224T,CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//          NOTIFY=&SYSUID,REGION=32M
+//*
+//* SMR 2006-1374. BRANCH CRR. FOR COLD.
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.XCRR.COLD,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//EIBMDPPF EXEC SAS609
+//DEP      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//CRR      DD DSN=SAP.PBB.XCRR.TEXT,DISP=SHR
+//BRHFILE  DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR
+//SASLIST  DD DSN=SAP.PBB.XCRR.COLD,
+//            DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FBA,LRECL=150,BLKSIZE=0),
+//            SPACE=(CYL,(5,2)),UNIT=SYSDA
 //SYSIN     DD *
 
-OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+OPTIONS NOCENTER NODATE NONUMBER;
+*;
+%INC PGM(PBBLNFMT,PBBDPFMT,PBMISFMT);
+*;
+DATA DATES;
+   SET DEP.REPTDATE;
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));
+RUN;
+*;
+DATA CRR;
+   INFILE CRR;
+   INPUT @001 BRANCH     3.
+         @005 GRADE     $1.
+         @007 CATG      $2.
+         @012 ACCT       6.
+         @019 BALANCE 13.2
+         ;
+*;
+PROC SUMMARY DATA=CRR;
+CLASS BRANCH CATG GRADE;
+VAR   ACCT BALANCE;
+OUTPUT OUT=CRR (DROP=_FREQ_) SUM=;
+*;
+DATA CRR5;
+  SET CRR;
+  IF  _TYPE_=5;
+  BRACT=ACCT;
+  BRAMT=BALANCE;
+  DROP ACCT BALANCE;
+*;
+DATA CRR7;
+  SET CRR;
+  IF  _TYPE_=7;
+*;
+PROC SORT DATA=CRR5; BY BRANCH GRADE;
+PROC SORT DATA=CRR7; BY BRANCH GRADE;
+*;
+DATA CRR;
+  DROP BRAMT BRACT BRANCH;
+  FORMAT PCAMT PCACT 6.3;
+  MERGE CRR5 CRR7(IN=A); BY BRANCH GRADE;
+  IF A;
+  PCAMT=0.000;
+  PCACT=0.000;
+  IF BALANCE > 0 THEN PCAMT=(BALANCE/BRAMT)*100;
+  IF ACCT > 0    THEN PCACT=(ACCT/BRACT)*100;
+  BRX=BRANCH;
+*;
+PROC SORT; BY BRX;
+*;
+DATA BRH;
+  INFILE BRHFILE;
+  INPUT @002 BRX       3.
+        @012 BRNAME   $30.;
+PROC SORT; BY BRX;
+*;
+DATA CRR;
+  MERGE CRR(IN=A) BRH; BY BRX;
+  IF A;
+  BRANCH='NO.: '||PUT(BRX,Z3.)||'  '||BRNAME;
+*;
+TITLE1 'REPORT NO: CRR GRADES FOR TOTAL RETAIL LOANS (FL/HL/OD/ODHL)
+                                      REPORT DATE=' "&RDATE";
+TITLE2 'PROGRAM ID : EIBRCRRB  (NOTE: X=NOT GRADED)';
+PROC TABULATE DATA=CRR MISSING NOSEPS; BY BRANCH;
+CLASS GRADE CATG;
+VAR   ACCT PCACT BALANCE PCAMT;
+TABLE GRADE=' ' ALL='TOTAL',(CATG=' ' ALL='TOTAL')*SUM=' '*
+      (ACCT='NO OF ACCTS'*F=COMMA10. PCACT=' % '
+      BALANCE='OUTSTANDING BALANCE'*F=COMMA18.2 PCAMT=' % ')
+    / BOX='CRR GRADE' RTS=15;
+*;
 
-DATA REPTDATE (KEEP=REPTDATE);
-  SET DP.REPTDATE;
-  PREVHALF = INTNX('MONTH',REPTDATE,-6,'E');
-  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
-  CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-  CALL SYMPUT('REPTMMMYY',PUT(REPTDATE,MONYY.));
-  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR2.));
-  CALL SYMPUT('REPTYYMM',PUT(REPTDATE,YYMMN.));
-  CALL SYMPUT('RDATE',PUT(REPTDATE,DATE9.));
-  CALL SYMPUT('TDATE',REPTDATE);
-  FORMAT REPTDATE PREVHALF DATE9.;
+
+
+
+
+
+
+
+
+//EIBRCRRD  JOB 224T,'EIBWCCR5',CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),
+//          NOTIFY=&SYSUID,REGION=64M
+//*
+//* MAA3 SMR2006-1271. WAREHOUSE
+//*
+//EIBRCRRW EXEC SAS609
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//BNM      DD DSN=SAP.PBB.MNITB(0),DISP=SHR
+//E1271    DD DSN=SAP.PBB.XCRR.SASDATA,DISP=SHR
+//CRR      DD DSN=&&TEMP,
+//            DISP=(NEW,DELETE,DELETE),
+//            DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),
+//            SPACE=(CYL,(10,10),RLSE),UNIT=SYSDA
+//SASLIST  DD SYSOUT=A
+//SYSIN    DD *
+
+OPTIONS YEARCUTOFF=1950 NONUMBER NODATE NOCENTER MISSING=0;
+
+%INC PGM(PBBDPFMT,PBMISFMT);
+
+DATA DATES;
+   SET BNM.REPTDATE;
+   YEARS = YEAR(REPTDATE);
+   CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+RUN;
+*;
+DATA OD HL FL OL;
+   SET E1271.ACCTS;
+   IF GRADEX IN ('D','E','X');
+   IF GRADEX='X' THEN GRADEX=' ';
+   IF CATG='OD'  THEN OUTPUT OD;
+   IF CATG='FL'  THEN OUTPUT FL;
+   IF CATG='HL'  THEN OUTPUT HL;
+   IF CATG='OL'  THEN OUTPUT OL;
+*;
+DATA OL;
+   KEEP BRANCH BRCHCD ACCTNO NAME APPRLIMT CURBAL GRADEX
+        CRRCODE FAACRR PRODUCT EXCESSD;
+   SET OL;
+   CURBAL=(-1)*BALANCE;
+   FORMAT EXCESSD MMDDYY8.;
+   IF EXCESSDT=0 THEN EXCESSDT=.;
+   IF EXCESSDT > 0 THEN DO;
+      EXCESSD=INPUT(SUBSTR(PUT(EXCESSDT,Z11.),1,8),MMDDYY8.);
+   END;
+*;
+PROC SORT DATA=OL OUT=CRR.CROL&RYEAR; BY BRANCH ACCTNO;
+*;
+DATA OD;
+   SET OD;
+   CURBAL=(-1)*BALANCE;
+   FORMAT EXCESSD MMDDYY8.;
+   IF EXCESSDT=0 THEN EXCESSDT=.;
+   IF EXCESSDT > 0 THEN DO;
+      EXCESSD=INPUT(SUBSTR(PUT(EXCESSDT,Z11.),1,8),MMDDYY8.);
+   END;
+   KEEP BRANCH BRCHCD ACCTNO NAME APPRLIMT CURBAL GRADEX
+        CRRCODE FAACRR PRODUCT EXCESSD;
+*;
+PROC SORT DATA=OD OUT=CRR.CROD&RYEAR; BY BRANCH ACCTNO;
+*;
+DATA FL;
+   SET FL;
+   KEEP BRANCH BRCHCD ACCTNO NOTENO NAME APPRLIMT GRADEX
+        BALANCE SCORE2 SCORE1 PRODUCT DAYSARR;
+PROC SORT DATA=FL OUT=CRR.CRFL&RYEAR; BY BRANCH ACCTNO;
+*;
+DATA HL;
+   SET HL;
+   KEEP BRANCH BRCHCD ACCTNO NOTENO NAME APPRLIMT GRADEX
+        BALANCE SCORE2 SCORE1 PRODUCT DAYSARR;
+PROC SORT DATA=HL OUT=CRR.CRHL&RYEAR; BY BRANCH ACCTNO;
+*;
+FILENAME TRANFILE 'SAP.PBB.XCRR.CRFTP' DISP=OLD;
+PROC CPORT LIBRARY=CRR FILE=TRANFILE;
 RUN;
 
-%INC PGM(PBBDPFMT);
 
+
+
+
+//EIBMSCRR JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
+//          USER=OPCC                                                   00020006
+//PRINT1   OUTPUT CLASS=K,                                              00090006
+//         NAME='ATTN: EN MOHD BADRAN SAADULLAH',                       00100006
+//         ROOM='13TH FLOOR',                                           00110006
+//         BUILDING='MENARA PBB',                                       00120006
+//         DEPT='CARD PRODUCT & DEVELOPMENT',                           00130006
+//         ADDRESS=('BUSINESS DEVELOPMENT','MENARA PUBLIC BANK',        00140006
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),                    00150006
+//         DEST=LOCAL                                                   00160006
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.SRS.REGN.STAFF.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//EIBMSCRR EXEC SAS609                                                  00170006
+//MNITB     DD DSN=SAP.PBB.MNITB(0),DISP=SHR                            00180006
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR                             00190006
+//BRHF      DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR                    00210000
+//SCRD      DD DSN=SAP.PBB.SRS.SASDATA,DISP=SHR                         00220006
+//SASLIST   DD DSN=SAP.PBB.SRS.REGN.STAFF.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(10,1),RLSE),
+//             UNIT=(SYSDA,5),
+//             DCB=(LRECL=133,RECFM=FBA,BLKSIZE=0,BUFNO=10)
+//SYSIN     DD *
+                                                                        00240006
+OPTION NOCENTER NODATE NONUMBER;                                        00250007
+TITLE;                                                                  00260007
+                                                                        00280006
+%LET SW1=('KLC','PJA','TMI','BSR','CTD','JRC','JSB','KJG','PIH',        00360006
+          'APG','JPR','JSK','SKN','TCS','SCA','SMY','TCT','TIH',        00360006
+          'TMD','TTJ','TMA','GHS');                                     00360006
+*;                                                                      00360006
+%LET SW2=('JRL','JSS','KPG','STP','BDA','JHL','JIH','JJG','SGK',        00360006
+          'SLY','TNM','SGB','BWK','HSL','JBB','STL','JTS','MIN',        00360006
+          'TMW','WMU','KBR');                                           00360006
+*;                                                                      00360006
+%LET SW3=('BPJ','DUA','SS2','JKL','PJN','SBH','SPG','SSA','TDA',        00360006
+          'BSD','KJA','OUG','PJO','S14','DJA','JKA','SEA','TDI',        00360006
+          'TMG','SSH','BBG');                                           00360006
+*;                                                                      00360006
+%LET SW4=('SJA','TCL','BTG','JTH','KLG','PDA','PKG','RWG','SAM',        00360006
+          'TSM','USJ','BSY','SJM','BKI','SKC','SPK','KBG','SBM',        00360006
+          'KSR','TEA','TSK','KAP');                                     00360006
+*;                                                                      00360006
 PROC FORMAT;
-  VALUE $CUSTGROUP
-  '41','42','43','66',
-  '44','46','47','67',
-  '48','49','51','68',
-  '52','53','54','69'  = 'SMALL MEDIUM ENTERPRISE (SMES)'
-  '4','04','5','05','6','06','30',
-  '31','32','33','34',
-  '35','36','37','38',
-  '39','40','45'       = 'DOMESTIC (DNBFI)'
-  '87','88','89'       = 'NON-RESIDENT/FOREIGN ENTITIES'
-  ;
+   VALUE LNPOGRP
+     3,20,40,43,46,53,73,83,92,120,29,241,
+     133,136,168,169,170,195,199,201,203,
+     221,226,232            ='SELANGOR/WILAYAH I  '
+     15,22,26,2,38,41,56,69,94,97,101,
+     103,118,122,128,132,138,141,155,
+     163,173,178,179,196,197,198,200,
+     220,225,230            ='SELANGOR/WILAYAH II '
+     18,19,25,35,36,66,78,81,96,109,124,
+     125,127,129,131,135,145,148,151,153,
+     157,162,167,180,202,227,229,235,250,
+     248,252,262,267,31     ='SELANGOR/WILAYAH III'
+     7,21,28,37,47,52,59,61,75,79,87,89,91,
+     93,102,105,110,144,147,174,176,215,216,
+     242,247,217,222,224,234='JOHOR REGION        '
+     4,16,17,24,39,45,63,64,65,111,156,160,
+     165,172,212,223,231,254
+                            ='MELAKA/NEG.SEMBILAN '
+     6,10,11,27,34,42,54,57,60,68,70,74,77,86,
+     88,104,107,114,121,126,150,154,159,164,171,
+     177,204,205,206,213,253,255,265,266,258
+                            ='PENANG/KEDAH/PERLIS '
+     257,260,261,263,264,239,219,
+     8,13,14,30,48,106,113,116,117,139,233
+                            ='KEL/TERENG/PAHANG   '
+     5,9,23,49,51,67,71,76,80,85,95,108,119,
+     243,244,249,251,256,246,245,
+     123,137,146,152,158,207,208,209,210,211
+                           ='PERAK REGION        '
+     33,44,55,62,72,112,115,140,142,143,149,
+     161,228               ='SABAH/FT LABUAN     '
+     32,50,58,90,130,175,182,183,184,187,188,
+     189,190,191,192,193,194,259,185,186
+                           ='SARAWAK REGION      '
+     OTHER                 ='UNDERFINED REGION   ';
+*;                                                                      00360006
+DATA _NULL_;                                                            00290006
+   SET MNITB.REPTDATE;                                                  00300006
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));                        00310006
+   CALL SYMPUT('RMM',PUT(REPTDATE,MONTH2.));                            00320006
+   CALL SYMPUT('RMON',PUT(REPTDATE,MONYY7.));                           00330006
+   CALL SYMPUT('RYY',PUT(REPTDATE,YEAR2.));                             00340006
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));                           00350006
+*;                                                                      00360006
+DATA BRH;                                                               00410006
+   INFILE BRHF;                                                         00410006
+   INPUT @002 BRANCH  3.                                                00410006
+         @006 BRCHCD $3.;                                               00410006
+*;                                                                      00360006
+PROC SORT; BY BRCHCD;                                                   00360006
+PROC SORT DATA=SCRD.SRSBR OUT=SRSBR; BY BRCHCD;                         00360006
+*;                                                                      00360006
+DATA SRS;                                                               00380006
+   FORMAT REGION $30. REGNID $34.;                                      00390006
+   MERGE  BRH SRSBR(IN=A); BY BRCHCD;                                   00390006
+   IF A;                                                                00390006
+   IF C1CNT=.     THEN C1CNT=0;                                         00540006
+   IF C1BAL=.     THEN C1BAL=0;                                         00550006
+   IF C2CNT=.     THEN C2CNT=0;                                         00560006
+   IF C2BAL=.     THEN C2BAL=0;                                         00570006
+   IF C3CNT=.     THEN C3CNT=0;                                         00580006
+   IF C3BAL=.     THEN C3BAL=0;                                         00590006
+                                                                        00620006
+   IF BRCHCD IN &SW1 THEN REGION='SELANGOR/WILAYAH I  '; ELSE           00620006
+   IF BRCHCD IN &SW2 THEN REGION='SELANGOR/WILAYAH II '; ELSE           00620006
+   IF BRCHCD IN &SW3 THEN REGION='SELANGOR/WILAYAH III'; ELSE           00620006
+   IF BRCHCD IN &SW4 THEN REGION='SELANGOR/WILAYAH IV '; ELSE           00620006
+   REGION=PUT(BRANCH,LNPOGRP.);                                         00620006
+   REGNID=REGION;                                                       00620006
+*;                                                                      00620006
+PROC SUMMARY DATA=SRS NWAY;                                             00620006
+CLASS REGNID BRCHCD STAFF PRODUCT;                                      00620006
+VAR   C1CNT C1BAL C2CNT C2BAL C3CNT C3BAL;                              00620006
+OUTPUT OUT=SRSP SUM=;                                                   00620006
+*;                                                                      00620006
+DATA SRS;                                                               00700006
+  SET SRSP END=LAST; BY REGNID BRCHCD;                                  00710006
+  FILE PRINT HEADER=NEWPAGE;                                            00720006
+                                                                        00730006
+  IF  FIRST.REGNID THEN DO;                                             00730006
+*     PUT _PAGE_;
+      TC1CNT=0; TC2CNT=0; TC3CNT=0;                                     00730006
+      TC1BAL=0.00; TC2BAL=0.00; TC3BAL=0.00;                            00730006
+  END;                                                                  00730006
+                                                                        00730006
+  IF  FIRST.BRCHCD THEN DO;                                             00730006
+      PUT _PAGE_;
+      BC1CNT=0;    BC2CNT=0;    BC3CNT=0;                               00730006
+      BC1BAL=0.00; BC2BAL=0.00; BC3BAL=0.00;                            00730006
+  END;                                                                  00730006
+                                                                        00730006
+  BC1CNT+C1CNT; BC1BAL+C1BAL;                                           00730006
+  BC2CNT+C2CNT; BC2BAL+C2BAL;                                           00730006
+  BC3CNT+C3CNT; BC3BAL+C3BAL;                                           00730006
+                                                                        00730006
+  TC1CNT+C1CNT; TC1BAL+C1BAL;                                           00730006
+  TC2CNT+C2CNT; TC2BAL+C2BAL;                                           00730006
+  TC3CNT+C3CNT; TC3BAL+C3BAL;                                           00730006
+                                                                        00730006
+  GC1CNT+C1CNT; GC1BAL+C1BAL;                                           00730006
+  GC2CNT+C2CNT; GC2BAL+C2BAL;                                           00730006
+  GC3CNT+C3CNT; GC3BAL+C3BAL;                                           00730006
+                                                                        00740006
+  PUT @002  STAFF 5. @010 PRODUCT  $20.                                 00750006
+            @032 C1CNT    5.  @040 C1BAL COMMA16.2                      00760006
+            @068 C2CNT    5.  @076 C2BAL COMMA16.2                      00760006
+            @104 C3CNT    5.  @112 C3BAL COMMA16.2;                     00760006
+                                                                        00770006
+  IF  LAST.BRCHCD THEN DO;                                              00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002  'BRANCH TOTAL='                                             00750006
+      @031 BC1CNT   6.  @040 BC1BAL COMMA16.2                           00760006
+      @067 BC2CNT   6.  @076 BC2BAL COMMA16.2                           00760006
+      @103 BC3CNT   6.  @112 BC3BAL COMMA16.2;                          00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+                                                                        00770006
+  IF  LAST.REGNID THEN DO;                                              00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002  'REGION TOTAL='                                             00750006
+      @031 TC1CNT   6.  @040 TC1BAL COMMA16.2                           00760006
+      @067 TC2CNT   6.  @076 TC2BAL COMMA16.2                           00760006
+      @103 TC3CNT   6.  @112 TC3BAL COMMA16.2;                          00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+                                                                        00770006
+  IF  LAST        THEN DO;                                              00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002 'GRAND  TOTAL='                                              00750006
+                       @031 GC1CNT   6.  @040 GC1BAL COMMA16.2          00760006
+                       @067 GC2CNT   6.  @076 GC2BAL COMMA16.2          00760006
+                       @103 GC3CNT   6.  @112 GC3BAL COMMA16.2;         00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+  RETURN;                                                               00840006
+                                                                        00850006
+NEWPAGE:                                                                00860006
+PUT @01 'SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR SCHEME'
+    @56 'BY REGION BY BRANCH BY STAFF     RUNDATE=' "&RDATE";           00880006
+PUT @01 'REGION=' REGNID $38.;                                          00900006
+PUT @01 'BRANCH=' BRCHCD $3.;                                           00900006
+PUT @01 'NOTE:- FOR CARD, CATEGORY-1=CREDIT CATEGORY-2=DEDIT';          00900006
+    PUT @024 '--------- CATEGORY 1 -----------'                         00930006
+        @060 '------ CATEGORY 2 CORE ---------'                         00930006
+        @096 '----- CATEGORY 2 NON-CORE ------';                        00930006
+                                                                        00920006
+    PUT @024 '        NO.OF                   '                         00930006
+        @060 '        NO.OF                   '                         00930006
+        @096 '        NO.OF';                                           00930006
+    PUT @002 'STAFF  PRODUCT'                                           00920006
+        @024 '        ACCTS        YTD BALANCE'                         00930006
+        @060 '        ACCTS        YTD BALANCE'                         00930006
+        @096 '        ACCTS        YTD BALANCE';                        00930006
+    PUT @002 126*'-';                                                   00950006
+  RETURN;                                                               00960006
+RUN;                                                                    00970006
 
-  VALUE $CUSTTYPE
-   '41','42','43','66'  = 'BUMIPUTRA CONTROLLED SME'
-   '44','46','47','67'  = 'NON-BUMIPUTRA CONTROLLED SME'
-   '48','49','51','68'  = 'NON-RESIDENT CONTROLLED SME'
-   '52','53','54','69'  = 'GOVERNMENT CONTROLLED SME'
-   '04'                 = 'SUBSIDIARY STOCKBROKING COS.'
-   '05'                 = 'ASSOCIATE STOCKBROKING COS.'
-   '06'                 = 'OTHER STOCKBROKING COS.'
-   '30'                 = 'DOMESTIC OTHER NBFI'
-   '31'                 = 'SAVING INSTITUTIONS'
-   '32'                 = 'CREDIT CARD COMPANIES'
-   '33'                 = 'DEVELOPMENT FINANCE INSTITUTION'
-   '34'                 = 'BUILDING SOCIETIES'
-   '35'                 = 'CO-OPERATIVE SOCIESTIES'
-   '36'                 = 'STOCKBROKING COMPANIES'
-   '37'                 = 'COMMODITY BROKERS'
-   '38'                 = 'CREDIT AND LEASING COMPANIES'
-   '39'                 = 'UNIT TRUST COMPANIES'
-   '40'                 = 'INSURANCE COS AND INSURANCE RELATED ENT.'
-   '45'                 = 'REHABILITATION INSTITUTIONS'
-   '87','88','89'       = 'FOREIGN BUSINESS ENTERPRISES'
-   ;
-RUN;
 
-DATA CA;
-  SET DP.CURRENT;
-  WHERE OPENIND NOT IN ('B','C','P') AND
-        (PRODUCT IN &CURX OR 400<=PRODUCT<=444) AND CURBAL > 0;
-  IF PRODUCT NOT IN (63,163,413);
 
-  SELECT(PRODUCT);
-     WHEN(104) CUSTFISS='02';
-     WHEN(105) CUSTFISS='81';
-     OTHERWISE CUSTFISS=PUT(CUSTCODE, DDCUSTCD.);
-  END;
-  IF CUSTFISS IN ('41','42','43','44','46','47','48','49',
-                  '51','52','53','54','66','67','68','69',
-                  '87','88','89') OR
-     DNBFISME IN ('1','2','3');
 
-  PRODCD = PUT(PRODUCT,CAPROD.);
-  IF PRODCD IN ('42110','42610');
-  KEEP ACCTNO PRODCD CUSTFISS DNBFISME CURBAL;
-RUN;
 
-DATA SA;
-  SET DP.SAVING;
-  WHERE OPENIND NOT IN ('B','C','P') AND CURBAL > 0;
-  PRODCD=PUT(PRODUCT,SAPROD.);
-  CUSTFISS = PUT(CUSTCODE,SACUSTCD.);
-  IF CUSTFISS IN ('41','42','43','44','46','47','48','49',
-                  '51','52','53','54','66','67','68','69',
-                  '87','88','89') OR
-     DNBFISME IN ('1','2','3');
-  KEEP ACCTNO PRODCD CUSTFISS DNBFISME CURBAL;
-RUN;
 
-DATA UMA;
-  SET DP.UMA;
-  WHERE OPENIND IN ('D','O') AND CURBAL > 0;
-  IF PRODUCT = 297 THEN CUSTFISS = PUT(CUSTCODE, FDCUSTCD.);
-  ELSE                  CUSTFISS = PUT(CUSTCODE, IFDCUSCD.);
-  CUSTFISS = PUT(CUSTCODE,SACUSTCD.);
-  IF CUSTFISS IN ('41','42','43','44','46','47','48','49',
-                  '51','52','53','54','66','67','68','69',
-                  '87','88','89') OR
-     DNBFISME IN ('1','2','3');
-  KEEP ACCTNO CUSTFISS DNBFISME CURBAL;
-RUN;
 
-DATA FD;
-  SET DP.FD;
-  WHERE OPENIND IN ('D','O');
-  CUSTFISS = PUT(CUSTCODE, FDCUSTCD.);
-  IF CUSTFISS IN ('41','42','43','44','46','47','48','49',
-                  '51','52','53','54','66','67','68','69',
-                  '87','88','89') OR
-     DNBFISME IN ('1','2','3');
-  KEEP ACCTNO CUSTFISS DNBFISME CURBAL;
-RUN;
 
-DATA EQ42150;
-  SET EQWH.UTMS&REPTMON.4&REPTYEAR(DROP=CUSTNAME);
-  IF SECTYPE IN ('IFD','ILD','ISD','IZD','IDC','IDP','IZP') AND
-     PORTREF IN ('PFD','PLD','PSD','PZD','PDC');
-  IF CUSTFISS IN ('04','05','06','41','42','43','44','46',
-                  '47','48','49','51','52','53','54','66',
-                  '67','68','69','87','88','89') OR
-     30 <= INPUT(CUSTFISS,8.) <=45;
-  AMOUNT = AMTOWNED;
-  ACCTNO = CUSTEQNO;
-RUN;
+//EIBMSCRP JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
+//          USER=OPCC                                                   00020006
+//PRINT1   OUTPUT CLASS=K,                                              00090006
+//         NAME='ATTN: EN MOHD BADRAN SAADULLAH',                       00100006
+//         ROOM='13TH FLOOR',                                           00110006
+//         BUILDING='MENARA PBB',                                       00120006
+//         DEPT='CARD PRODUCT & DEVELOPMENT',                           00130006
+//         ADDRESS=('BUSINESS DEVELOPMENT','MENARA PUBLIC BANK',        00140006
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),                    00150006
+//         DEST=LOCAL                                                   00160006
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.SRS.REGN.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//EIBMSCRP EXEC SAS609                                                  00170006
+//MNITB     DD DSN=SAP.PBB.MNITB(0),DISP=SHR                            00180006
+//BRHF      DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR                    00210000
+//SCRD      DD DSN=SAP.PBB.SRS.SASDATA,DISP=SHR                         00220006
+//SASLIST   DD DSN=SAP.PBB.SRS.REGN.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(10,1),RLSE),
+//             UNIT=(SYSDA,5),
+//             DCB=(LRECL=133,RECFM=FBA,BLKSIZE=0,BUFNO=10)
+//SYSIN     DD *
+                                                                        00240006
+OPTION NOCENTER NODATE NONUMBER;                                        00250007
+TITLE;                                                                  00260007
+*;                                                                      00360006
+%LET SW1=('KLC','PJA','TMI','BSR','CTD','JRC','JSB','KJG','PIH',        00360006
+          'APG','JPR','JSK','SKN','TCS','SCA','SMY','TCT','TIH',        00360006
+          'TMD','TTJ','TMA','GHS');                                     00360006
+*;                                                                      00360006
+%LET SW2=('JRL','JSS','KPG','STP','BDA','JHL','JIH','JJG','SGK',        00360006
+          'SLY','TNM','SGB','BWK','HSL','JBB','STL','JTS','MIN',        00360006
+          'TMW','WMU','KBR');                                           00360006
+*;                                                                      00360006
+%LET SW3=('BPJ','DUA','SS2','JKL','PJN','SBH','SPG','SSA','TDA',        00360006
+          'BSD','KJA','OUG','PJO','S14','DJA','JKA','SEA','TDI',        00360006
+          'TMG','SSH','BBG');                                           00360006
+*;                                                                      00360006
+%LET SW4=('SJA','TCL','BTG','JTH','KLG','PDA','PKG','RWG','SAM',        00360006
+          'TSM','USJ','BSY','SJM','BKI','SKC','SPK','KBG','SBM',        00360006
+          'KSR','TEA','TSK','KAP');                                     00360006
+*;                                                                      00360006
+PROC FORMAT;
+   VALUE LNPOGRP
+     3,20,40,43,46,53,73,83,92,120,29,241,
+     133,136,168,169,170,195,199,201,203,
+     221,226,232            ='SELANGOR/WILAYAH I  '
+     15,22,26,2,38,41,56,69,94,97,101,
+     103,118,122,128,132,138,141,155,
+     163,173,178,179,196,197,198,200,
+     220,225,230            ='SELANGOR/WILAYAH II '
+     18,19,25,35,36,66,78,81,96,109,124,
+     125,127,129,131,135,145,148,151,153,
+     157,162,167,180,202,227,229,235,250,
+     248,252,262,267,31     ='SELANGOR/WILAYAH III'
+     7,21,28,37,47,52,59,61,75,79,87,89,91,
+     93,102,105,110,144,147,174,176,215,216,
+     242,247,217,222,224,234='JOHOR REGION        '
+     4,16,17,24,39,45,63,64,65,111,156,160,
+     165,172,212,223,231,254
+                            ='MELAKA/NEG.SEMBILAN '
+     6,10,11,27,34,42,54,57,60,68,70,74,77,86,
+     88,104,107,114,121,126,150,154,159,164,171,
+     177,204,205,206,213,253,255,265,266,258
+                            ='PENANG/KEDAH/PERLIS '
+     257,260,261,263,264,239,219,
+     8,13,14,30,48,106,113,116,117,139,233
+                            ='KEL/TERENG/PAHANG   '
+     5,9,23,49,51,67,71,76,80,85,95,108,119,
+     243,244,249,251,256,246,245,
+     123,137,146,152,158,207,208,209,210,211
+                           ='PERAK REGION        '
+     33,44,55,62,72,112,115,140,142,143,149,
+     161,228               ='SABAH/FT LABUAN     '
+     32,50,58,90,130,175,182,183,184,187,188,
+     189,190,191,192,193,194,259,185,186
+                           ='SARAWAK REGION      '
+     OTHER                 ='UNDERFINED REGION   ';
+                                                                        00280006
+DATA _NULL_;                                                            00290006
+   SET MNITB.REPTDATE;                                                  00300006
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));                        00310006
+   CALL SYMPUT('RMM',PUT(REPTDATE,MONTH2.));                            00320006
+   CALL SYMPUT('RMON',PUT(REPTDATE,MONYY7.));                           00330006
+   CALL SYMPUT('RYY',PUT(REPTDATE,YEAR2.));                             00340006
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));                           00350006
+*;                                                                      00360006
+DATA BRH;                                                               00410006
+   INFILE BRHF;                                                         00410006
+   INPUT @002 BRANCH  3.                                                00410006
+         @006 BRCHCD $3.;                                               00410006
+*;                                                                      00360006
+PROC SORT; BY BRCHCD;                                                   00360006
+PROC SORT DATA=SCRD.SRSBR OUT=SRSBR; BY BRCHCD;                         00360006
+*;                                                                      00360006
+DATA SRS;                                                               00380006
+   FORMAT REGION $30. REGNID $34.;                                      00390006
+   MERGE  BRH SRSBR(IN=A); BY BRCHCD;                                   00390006
+   IF A;                                                                00390006
+   IF C1CNT=.     THEN C1CNT=0;                                         00540006
+   IF C1BAL=.     THEN C1BAL=0;                                         00550006
+   IF C2CNT=.     THEN C2CNT=0;                                         00560006
+   IF C2BAL=.     THEN C2BAL=0;                                         00570006
+   IF C3CNT=.     THEN C3CNT=0;                                         00580006
+   IF C3BAL=.     THEN C3BAL=0;                                         00590006
+*;                                                                      00620006
+   IF BRCHCD IN &SW1 THEN REGION='SELANGOR/WILAYAH I  '; ELSE           00620006
+   IF BRCHCD IN &SW2 THEN REGION='SELANGOR/WILAYAH II '; ELSE           00620006
+   IF BRCHCD IN &SW3 THEN REGION='SELANGOR/WILAYAH III'; ELSE           00620006
+   IF BRCHCD IN &SW4 THEN REGION='SELANGOR/WILAYAH IV '; ELSE           00620006
+   REGION=PUT(BRANCH,LNPOGRP.);                                         00620006
+   REGNID=REGION;                                                       00620006
+   S1CNT=0; S2CNT=0; S3CNT=0;                                           00620006
+   IF NCORE='X' THEN S1CNT=1; ELSE                                      00620006
+   IF NCORE='C' THEN S2CNT=1; ELSE                                      00620006
+   IF NCORE='N' THEN S3CNT=1;                                           00620006
+*;                                                                      00620006
+PROC SUMMARY DATA=SRS NWAY;                                             00620006
+CLASS REGNID BRCHCD PRODUCT;                                            00620006
+VAR   S1CNT C1CNT C1BAL S2CNT C2CNT C2BAL S3CNT C3CNT C3BAL;            00620006
+OUTPUT OUT=SRSP SUM=;                                                   00620006
+*;                                                                      00620006
+DATA SRS;                                                               00700006
+  SET SRSP END=LAST; BY REGNID BRCHCD;                                  00710006
+  FILE PRINT HEADER=NEWPAGE;                                            00720006
+                                                                        00730006
+  IF  FIRST.REGNID THEN DO;                                             00730006
+*     PUT _PAGE_;
+      TS1CNT=0; TS2CNT=0; TS3CNT=0;                                     00730006
+      TC1CNT=0; TC2CNT=0; TC3CNT=0;                                     00730006
+      TC1BAL=0.00; TC2BAL=0.00; TC3BAL=0.00;                            00730006
+  END;                                                                  00730006
+                                                                        00730006
+  IF  FIRST.BRCHCD THEN DO;                                             00730006
+      PUT _PAGE_;
+      BS1CNT=0;    BS2CNT=0;    BS3CNT=0;                               00730006
+      BC1CNT=0;    BC2CNT=0;    BC3CNT=0;                               00730006
+      BC1BAL=0.00; BC2BAL=0.00; BC3BAL=0.00;                            00730006
+  END;                                                                  00730006
+                                                                        00730006
+  BS1CNT+S1CNT;                                                         00730006
+  BS2CNT+S2CNT;                                                         00730006
+  BS3CNT+S3CNT;                                                         00730006
+  BC1CNT+C1CNT; BC1BAL+C1BAL;                                           00730006
+  BC2CNT+C2CNT; BC2BAL+C2BAL;                                           00730006
+  BC3CNT+C3CNT; BC3BAL+C3BAL;                                           00730006
+                                                                        00730006
+  TS1CNT+S1CNT;                                                         00730006
+  TS2CNT+S2CNT;                                                         00730006
+  TS3CNT+S3CNT;                                                         00730006
+  TC1CNT+C1CNT; TC1BAL+C1BAL;                                           00730006
+  TC2CNT+C2CNT; TC2BAL+C2BAL;                                           00730006
+  TC3CNT+C3CNT; TC3BAL+C3BAL;                                           00730006
+                                                                        00730006
+  GS1CNT+S1CNT;                                                         00730006
+  GS2CNT+S2CNT;                                                         00730006
+  GS3CNT+S2CNT;                                                         00730006
+  GC1CNT+C1CNT; GC1BAL+C1BAL;                                           00730006
+  GC2CNT+C2CNT; GC2BAL+C2BAL;                                           00730006
+  GC3CNT+C3CNT; GC3BAL+C3BAL;                                           00730006
+                                                                        00740006
+  PUT @002  PRODUCT  $20.                                               00750006
+      @024  S1CNT 5.   @032 C1CNT    5.  @040 C1BAL COMMA16.2           00760006
+      @060  S2CNT 5.   @068 C2CNT    5.  @076 C2BAL COMMA16.2           00760006
+      @096  S3CNT 5.   @104 C3CNT    5.  @112 C3BAL COMMA16.2;          00760006
+                                                                        00770006
+  IF  LAST.BRCHCD THEN DO;                                              00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002  'BRANCH TOTAL='                                             00750006
+      @023  BS1CNT 6.  @031 BC1CNT   6.  @040 BC1BAL COMMA16.2          00760006
+      @059  BS2CNT 6.  @067 BC2CNT   6.  @076 BC2BAL COMMA16.2          00760006
+      @095  BS3CNT 6.  @103 BC3CNT   6.  @112 BC3BAL COMMA16.2;         00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+                                                                        00770006
+  IF  LAST.REGNID THEN DO;                                              00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002  'REGION TOTAL='                                             00750006
+      @023  TS1CNT 6.  @031 TC1CNT   6.  @040 TC1BAL COMMA16.2          00760006
+      @059  TS2CNT 6.  @067 TC2CNT   6.  @076 TC2BAL COMMA16.2          00760006
+      @095  TS3CNT 6.  @103 TC3CNT   6.  @112 TC3BAL COMMA16.2;         00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+                                                                        00770006
+  IF  LAST        THEN DO;                                              00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002 'GRAND  TOTAL='                                              00750006
+      @023  GS1CNT 6.  @031 GC1CNT   6.  @040 GC1BAL COMMA16.2          00760006
+      @059  GS2CNT 6.  @067 GC2CNT   6.  @076 GC2BAL COMMA16.2          00760006
+      @095  GS3CNT 6.  @103 GC3CNT   6.  @112 GC3BAL COMMA16.2;         00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+  RETURN;                                                               00840006
+                                                                        00850006
+NEWPAGE:                                                                00860006
+PUT @01 'SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR SCHEME'
+    @56 'BY REGION (BRANCH)     RUNDATE=    ' "&RDATE";                 00880006
+PUT @01 'REGION=' REGNID $38.;                                          00900006
+PUT @01 'BRANCH=' BRCHCD $3.;                                           00900006
+    PUT @024 '--------- CATEGORY 1 -----------'                         00930006
+        @060 '------ CATEGORY 2 CORE ---------'                         00930006
+        @096 '----- CATEGORY 2 NON-CORE ------';                        00930006
+                                                                        00920006
+    PUT @024 'NO.OF   NO.OF                   '                         00930006
+        @060 'NO.OF   NO.OF                   '                         00930006
+        @096 'NO.OF   NO.OF';                                           00930006
+    PUT @002 'PRODUCT'                                                  00920006
+        @024 'STAFF   ACCTS        YTD BALANCE'                         00930006
+        @060 'STAFF   ACCTS        YTD BALANCE'                         00930006
+        @096 'STAFF   ACCTS        YTD BALANCE';                        00930006
+    PUT @002 126*'-';                                                   00950006
+  RETURN;                                                               00960006
+RUN;                                                                    00970006
 
-DATA K1TBL(DROP=GWAN);
-  SET BNMK.K1TBL&REPTMON.4(RENAME=(GWBALC=AMOUNT));
-  IF (GWCCY='MYR' AND GWMVT='P' AND GWMVTS='M' AND
-     GWDLP IN ('BCQ','BCD')) OR
-     (SUBSTR(GWDLP,2,2) IN ('MI','MT') AND GWCCY='MYR' AND
-      GWMVT='P' AND GWMVTS='M');
-  CUSTFISS = GWC2R;
-  IF CUSTFISS IN ('04','05','06','41','42','43','44','46',
-                  '47','48','49','51','52','53','54','66',
-                  '67','68','69','87','88','89') OR
-     30 <= INPUT(CUSTFISS,8.) <=45;
-     ACCTNO = INPUT(GWAN,8.);
-RUN;
 
-PROC SORT DATA=CISEQ.DEPOSIT OUT=CISEQ(KEEP=ACCTNO CUSTNAME);
-   BY ACCTNO;
-RUN;
 
-PROC SORT DATA=CISDP.DEPOSIT OUT=CISDP(KEEP=ACCTNO CUSTNAME);
-   BY ACCTNO;
-RUN;
 
-PROC SORT DATA=CISDP2.DEPOSIT OUT=CISDP2(KEEP=ACCTNO CUSTNAME);
-   BY ACCTNO;
-RUN;
+//EIBMSCRA JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
+//          USER=OPCC                                                   00020016
+//*                                                                     00070000
+//EIBMSCRA EXEC SAS609                                                  00170014
+//MNITB     DD DSN=SAP.PBB.MNITB(0),DISP=SHR                            00180000
+//BRHFI     DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR                    00210000
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR                             00210000
+//ELDS      DD DSN=SAP.PBB.ELDS.SRR.TEXT(0),DISP=SHR                    00220000
+//DEP       DD DSN=RBP2.B033.DP.SRR.DATA,DISP=SHR                       00220000
+//          DD DSN=RBP2.B033.DP.SCRFD.DATA,DISP=SHR                     00220000
+//CARDFILE  DD DSN=SAP.PBCS.ACCT33(0),DISP=SHR                          00230000
+//          DD DSN=SAP.PBCS.ACCT55(0),DISP=SHR                          00230000
+//HRBR      DD DSN=HRP2.FLAT.STAFF.INCTIVE.BR,DISP=SHR                  00230000
+//HRHO      DD DSN=HRP2.FLAT.STAFF.INCTIVE.HO,DISP=SHR                  00240000
+//HRRG      DD DSN=HRP2.FLAT.STAFF.INCTIVE.REGOFF,DISP=SHR              00260000
+//SCRD      DD DSN=SAP.PBB.SRS.SASDATA,DISP=OLD                         00260000
+//SASLIST   DD SYSOUT=X                                                 00270000
+                                                                        00280000
+OPTION NOCENTER NODATE NONUMBER;                                        00290000
+                                                                        00300000
+%INC PGM(PBMISFMT,PBBDPFMT);                                            00310000
+                                                                        00320000
+DATA _NULL_;                                                            00330000
+   SET MNITB.REPTDATE;                                                  00340000
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));                        00350000
+   CALL SYMPUT('RMM',PUT(REPTDATE,MONTH2.));                            00360000
+   CALL SYMPUT('RMON',PUT(REPTDATE,MONYY7.));                           00370000
+   CALL SYMPUT('RYY',PUT(REPTDATE,YEAR2.));                             00380000
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));                           00390000
+*;                                                                      00410006
+   /*                                                                   00410006
+DATA HRRG;                                                              00420006
+   INFILE HRRG;                                                         00430006
+   INPUT @005 STAFF    5.                                               00440006
+         @072 REGN   $15.;                                              00450006
+   BRANCH=000;                                                          00470006
+   BRCHCD='   ';                                                        00470006
+   LOCT='RG';                                                           00470006
+DATA LOCAT;                                                             00470006
+   SET HRBR HRHO HRRG;                                                  00470006
+  */                                                                    00470006
+*;                                                                      00410006
+DATA BRH;                                                               00410006
+   INFILE BRHFI;                                                        00410006
+   INPUT @002 BRANCH  3.                                                00410006
+         @006 BRCHCD $3.;                                               00410006
+*;                                                                      00410006
+DATA HRBR;                                                              00420006
+   INFILE HRBR;                                                         00430006
+   INPUT @005 STAFF   5.                                                00440006
+         @069 BRANCH  3.                                                00450006
+         @072 BRCHCD  $3.;                                              00450006
+   IF (002<=BRANCH<=267);                                               00460006
+*;                                                                      00710008
+DATA HRHO;                                                              00420006
+   INFILE HRHO;                                                         00430006
+   INPUT @005 STAFF    5.                                               00440006
+         @072 HOE    $15.;                                              00450006
+*;                                                                      00710008
+DATA UCARD;                                                             00711008
+   FORMAT TYPEC 4.;                                                     00712008
+   LENGTH STAFF 5. STAFF8 8.;                                           00713008
+   INFILE CARDFILE;                                                     00714008
+   INPUT  @001 ACCTNO   11.                                             00715008
+          @014 OPNMM     2.                                             00716008
+          @016 OPNYR     2.                                             00716008
+          @557 BRANC     4.                                             00717008
+          @561 SECO    $12.;                                            00718008
+                                                                        00719008
+   TYPEC=SUBSTR(ACCTNO,1,5);                                            00719108
+   IF TYPEC IN (3301,3302,3305,3306,3308,3309,5503,5504);               00719208
+   C1BAL=0.00; C2BAL=0.00; C3BAL=0.00;                                  00719314
+   C3CNT=0; C1CNT=0; C2CNT=0;                                           00719409
+   IF TYPEC=3309 THEN DO;                                               00719509
+      C1CNT=1; NCORE='X';  /* DEBIT   */                                00719509
+   END;                                                                 00719509
+   ELSE DO;                                                             00719509
+      C2CNT=1; NCORE='C';  /* CREDIT  */                                00719609
+   END;                                                                 00719509
+   IF (OPNYR=06 AND OPNMM>08) OR                                        00719709
+       OPNYR GE 07;                                                     00719709
+   IF (1<LENGTH(SECO)<6);                                               00719809
+   STAFF8=SECO;                                                         00719909
+   IF (1<STAFF8<99999);                                                 00720009
+   PRODUCT='CARD           ';                                           00720112
+   STAFF=STAFF8;                                                        00720209
+*;                                                                      00770009
+PROC SORT; BY STAFF;                                                    00770009
+PROC SORT DATA=HRBR; BY STAFF;                                          00770009
+PROC SORT DATA=HRHO; BY STAFF;                                          00770009
+*;                                                                      00770009
+DATA UCBR UCEXC;                                                        00770009
+   MERGE HRBR(IN=A)  UCARD(IN=B); BY STAFF;                             00770009
+   IF A AND B     THEN OUTPUT UCBR;                                     00770009
+   IF B AND NOT A THEN OUTPUT UCEXC;                                    00770009
+*;                                                                      00770009
+DATA UCHO UCEXC1;                                                       00770009
+   MERGE HRHO(IN=A) UCEXC(IN=B); BY STAFF;                              00770009
+   IF A AND B     THEN OUTPUT UCHO;                                     00770009
+   IF B AND NOT A THEN OUTPUT UCEXC1;                                   00770009
+*;                                                                      00770009
+DATA DEP;                                                               00771009
+   FORMAT YTDBAL 14.2;                                                  00780013
+   INFILE DEP;                                                          00781013
+   INPUT @002 ACCTNO    10.                                             00790000
+         @050 PRIMOFF    5.                                             00800000
+         @056 SECNOFF    5.                                             00810000
+         @061 XCORE     $1.                                             00820007
+         @062 AVGBAL   14.2                                             00830000
+         @076 YTDBALS  14.2                                             00840013
+         @090 NUMMTH     2.                                             00841013
+         @097 BRANCH     3.;                                            00841013
+                                                                        00860000
+   IF (1000000000<=ACCTNO<=1999999999) THEN                             00880000
+   PRODUCT='FIXED DEPOSITS    ';                                        00890009
+   IF (7000000000<=ACCTNO<=7999999999) THEN                             00891014
+   PRODUCT='FIXED DEPOSITS    ';                                        00892009
+   IF (3000000000<=ACCTNO<=3999999999) THEN                             00900014
+   PRODUCT='CURRENT ACCOUNT   ';                                        00910005
+   IF (4000000000<=ACCTNO<=4999999999) THEN                             00920000
+   PRODUCT='SAVING ACCOUNT    ';                                        00930009
+   IF (6000000000<=ACCTNO<=6999999999) THEN                             00931009
+   PRODUCT='SAVING ACCOUNT    ';                                        00932009
+   YTDBAL =ROUND(YTDBALS/NUMMTH);                                       00950013
+   TAG='DEPO';                                                          01520409
+*;                                                                      00960000
+PROC SORT; BY BRANCH;                                                   00960000
+PROC SORT DATA=BRH; BY BRANCH;                                          01562314
+*;                                                                      00960000
+DATA DEP;                                                               00960000
+   MERGE BRH DEP(IN=A); BY BRANCH;                                      00960000
+   IF A;                                                                00960000
+*;                                                                      00960000
+DATA DPC1;                                                              00970009
+   SET DEP;                                                             00980000
+   STAFF=PRIMOFF;                                                       00990000
+   IF  STAFF IN (0,.) THEN DELETE;                                      01000000
+   IF  XCORE=' ';                                                       01010007
+   NCORE='X';                                                           01020007
+   CATG='CAT.1         ';                                               01020007
+   C1CNT=1;                                                             01021009
+   C1BAL=YTDBAL;                                                        01022009
+*;                                                                      01035009
+DATA DPC2;                                                              01040009
+   SET DEP;                                                             01050000
+   STAFF=SECNOFF;                                                       01060000
+   IF  STAFF IN (0,.) THEN STAFF=PRIMOFF;                               01070000
+   IF  STAFF IN (0,.) THEN DELETE;                                      01080000
+   IF  XCORE IN ('C','N');                                              01090007
+   IF  XCORE='C' THEN DO;                                               01100009
+       CATG='CAT.2 CORE    ';                                           01020007
+       NCORE='C';                                                       01100109
+       C2CNT=1;                                                         01100209
+       C2YBAL=YTDBAL;                                                   01100309
+   END;                                                                 01100409
+   IF  XCORE='N' THEN DO;                                               01110009
+       CATG='CAT.2 NON-CORE';                                           01020007
+       NCORE='N';                                                       01111009
+       C3CNT=1;                                                         01112009
+       C3BAL=YTDBAL;                                                    01113009
+   END;                                                                 01120009
+*;                                                                      01313709
+DATA ELDS;                                                              01320000
+   FORMAT BRCHCD $3.;                                                   01350000
+   INFILE ELDS;                                                         01350000
+   INPUT  @001 AANUM   $13.                                             01360000
+          @017 STAFX1  $5.  /* CATEGORY 1 - ATTENDED BY */              01370000
+          @026 STAFX2  $5.  /* CATEGORY 2 - CORE        */              01380000
+          @035 STAFX3  $5.  /* CATEGORY 3 - NON-CORE    */              01390000
+          @051 PRODUCT $18.                                             01400000
+          @069 YTDBAL  12.;                                             01420015
+                                                                        01420015
+   IF  STAFX1='*****' THEN DELETE;                                      01430007
+   IF  ('00001'<=STAFX1<='99999') THEN NCORE='X';                       01430007
+   IF  ('00001'<=STAFX2<='99999') THEN NCORE='C';                       01440007
+   IF  ('00001'<=STAFX3<='99999') THEN NCORE='N';                       01450007
+   TAG='ELDS';                                                          01520409
+   BRCHCD=SUBSTR(AANUM,1,3);                                            01520409
+*;                                                                      01562314
+PROC SORT; BY BRCHCD;                                                   01562314
+PROC SORT DATA=BRH; BY BRCHCD;                                          01562314
+*;                                                                      01562314
+DATA ELDS;                                                              01461005
+   MERGE BRH ELDS(IN=A); BY BRCHCD;                                     01340000
+   IF A;                                                                01340000
+   LENGTH STAFF 5.;                                                     01340000
+   SET ELDS;                                                            01461005
+   IF NCORE='X'  THEN DO;                                               01472009
+      CATG='CAT.1         ';
+      STAFF=STAFX1*1.;                                                  01472109
+      C1CNT=1;   C1BAL=YTDBAL;                                          01472209
+   END;                                                                 01472409
+   IF NCORE='C'  THEN DO;                                               01472509
+      CATG='CAT.2 CORE    ';
+      STAFF=STAFX2*1.;                                                  01472609
+      C2CNT=1;   C2BAL=YTDBAL;                                          01472709
+   END;                                                                 01472909
+   IF NCORE='N'  THEN DO;                                               01473009
+      CATG='CAT.2 NON-CORE';
+      STAFF=STAFX3*1.;                                                  01473109
+      C3CNT=1;                                                          01473209
+      C3BAL=YTDBAL;                                                     01473309
+   END;                                                                 01474009
+*;                                                                      01520209
+DATA SRS;                                                               01520309
+   SET ELDS DPC1 DPC2;                                                  01520409
+*;                                                                      01520209
+PROC SORT; BY STAFF;                                                    01520209
+PROC SORT DATA=HRHO; BY STAFF;                                          01520209
+*;                                                                      00490006
+DATA SRSBR SRSHO SRSEXC;                                                00490006
+   MERGE HRHO(IN=A) SRS(IN=B); BY STAFF;                                00490006
+   IF A AND B     THEN OUTPUT SRSHO;                                    00490006
+   IF B AND NOT A THEN DO;                                              00490006
+      IF BRANCH > 0  THEN OUTPUT SRSBR;                                 00490006
+                     ELSE OUTPUT SRSEXC;                                00490006
+   END;                                                                 00490006
+*;                                                                      00620006
+                                                                        00620006
+TITLE 'EXCEPTION REPORT : UMMATCHED STAFF ID AGAINST HR FILE';          01520209
+  /*                                                                    01520209
+PROC  PRINT DATA=UCEXC1;                                                01520209
+VAR   ACCTNO STAFF TAG;                                                 01520209
+  */                                                                    01520209
+PROC  PRINT DATA=SRSEXC;                                                01520209
+WHERE TAG='ELDS';                                                       01520209
+VAR   AANUM STAFF PRODUCT YTDBAL;                                       01520209
+PROC  PRINT DATA=SRSEXC;                                                01520209
+WHERE TAG='DEPO';                                                       01520209
+VAR   ACCTNO STAFF PRODUCT YTDBAL;                                      01520209
+*;                                                                      01520209
+DATA SRSBR;                                                             01520209
+   SET SRSBR UCBR;                                                      01520209
+*;                                                                      01520209
+DATA SRSHO;                                                             01520209
+   SET SRSHO UCHO;                                                      01520209
+*;                                                                      01520209
+PROC SUMMARY DATA=SRSBR NWAY;                                           01521109
+CLASS BRCHCD STAFF PRODUCT NCORE;                                       01521209
+VAR   C1CNT C2CNT C3CNT C1BAL C2BAL C3BAL;                              01521314
+OUTPUT OUT=SCRD.SRSBR (DROP=_TYPE_ _FREQ_) SUM=;                        01521409
+*;                                                                      01520209
+PROC SUMMARY DATA=SRSHO NWAY;                                           01521109
+CLASS HOE STAFF PRODUCT NCORE;                                          01521209
+VAR   C1CNT C2CNT C3CNT C1BAL C2BAL C3BAL;                              01521314
+OUTPUT OUT=SCRD.SRSHO (DROP=_TYPE_ _FREQ_) SUM=;                        01521409
+*;                                                                      01520209
+DATA SRSS;                                                              01520209
+   SET SRSHO SRSBR;                                                     01520209
+*;                                                                      01520209
+PROC SUMMARY DATA=SRSS NWAY;                                            01521109
+CLASS STAFF PRODUCT NCORE;                                              01521209
+VAR   C1CNT C2CNT C3CNT C1BAL C2BAL C3BAL;                              01521314
+OUTPUT OUT=SRSS (DROP=_TYPE_ _FREQ_) SUM=;                              01521409
+*;                                                                      01520209
+DATA SRSS;                                                              01520209
+   SET SRSS;                                                            01520209
+   S1CNT=0; S2CNT=0; S3CNT=0;                                           00620006
+   IF  NCORE='X' THEN S1CNT=1; ELSE                                     00620006
+   IF  NCORE='C' THEN S2CNT=1; ELSE                                     00620006
+   IF  NCORE='N' THEN S3CNT=1;                                          00620006
+   IF  C1BAL=.   THEN C1BAL=0.00;
+   IF  C2BAL=.   THEN C2BAL=0.00;
+   IF  C3BAL=.   THEN C3BAL=0.00;
+   IF  C1CNT=.   THEN C1CNT=0;
+   IF  C2CNT=.   THEN C2CNT=0;
+   IF  C3CNT=.   THEN C3CNT=0;
+   IF  S1CNT=.   THEN S1CNT=0;
+   IF  S2CNT=.   THEN S2CNT=0;
+   IF  S3CNT=.   THEN S3CNT=0;
+*;                                                                      00620006
+PROC SUMMARY DATA=SRSS NWAY;                                            00620006
+CLASS PRODUCT;                                                          00620006
+VAR   S1CNT C1CNT C1BAL S2CNT C2CNT C2BAL S3CNT C3CNT C3BAL;            00620006
+OUTPUT OUT=SRSP SUM=;                                                   00620006
+*;
+TITLE1 'SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR BY PRODUCT';
+TITLE2 'REPORT DATE: ' "&RDATE";
+PROC PRINT DATA=SRSP LABEL;
+VAR   PRODUCT
+      S1CNT C1CNT C1BAL S2CNT C2CNT C2BAL
+      S3CNT C3CNT C3BAL;
+SUM   S1CNT C1CNT C1BAL S2CNT C2CNT C2BAL
+      S3CNT C3CNT C3BAL;
+FORMAT C1BAL C2BAL C3BAL COMMA18.2;
+LABEL PRODUCT='PRODUCT'
+      S1CNT  ='CAT.1 #STAFF'
+      C1CNT  ='CAT.1 #ACCTS'
+      C1BAL  ='CAT.1 YTD BALANCE'
+      S2CNT  ='CAT.2 #STAFF CORE'
+      C2CNT  ='CAT.2 #ACCTS CORE'
+      C2BAL  ='CAT.2 YTDBAL CORE'
+      S3CNT  ='CAT.2 #STAFF NON-CORE'
+      C3CNT  ='CAT.2 #ACCTS NON-CORE'
+      C3BAL  ='CAT.2 YTDBAL NON-CORE';
 
-DATA CISDP;
-   SET CISDP CISDP2;
-RUN;
 
-PROC SORT DATA=CISDP; BY ACCTNO; RUN;
 
-PROC SORT DATA=FORATE.FORATEBKP OUT=FORATE;
-   BY CURCODE DESCENDING REPTDATE;
-   WHERE REPTDATE<= &TDATE;
-RUN;
-PROC SORT DATA=FORATE NODUPKEY; BY CURCODE; RUN;
 
-DATA FOFMT;
-  LENGTH START $3. LABEL $13.7 FMTNAME $6. TYPE $1.;
-  SET FORATE;
-  START = CURCODE;
-  LABEL = SPOTRATE;
-  FMTNAME = 'FORATE';
-  TYPE = 'C';
-RUN;
-PROC FORMAT CNTLIN=FOFMT;RUN;
+//EIBMSCR1 JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,          00000100
+//          USER=OPCC                                                   00000200
+//*                                                                     00000300
+//* TO RUN AFTER EIBMSCRA & EIBRCRRB                                    00000400
+//*                                                                     00000500
+//PRINT1   OUTPUT CLASS=K,                                              00000600
+//         NAME='ATTN: EN MOHD BADRAN SAADULLAH',                       00000700
+//         ROOM='13TH FLOOR',                                           00000800
+//         BUILDING='MENARA PBB',                                       00000900
+//         DEPT='CARD PRODUCT & DEVELOPMENT',                           00001000
+//         ADDRESS=('BUSINESS DEVELOPMENT','MENARA PUBLIC BANK',        00001100
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),                    00001200
+//         DEST=LOCAL                                                   00001300
+//EIBMSCR1 EXEC SAS609                                                  00001400
+//MNITB     DD DSN=SAP.PBB.MNITB(0),DISP=SHR                            00001500
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR                             00001600
+//BRHFI     DD DSN=SAP.RBP2.B033.PBB.BRANCH,DISP=SHR                    00001700
+//SCRD      DD DSN=SAP.PBB.SRS.SASDATA,DISP=SHR                         00001800
+//SASLIST   DD DSN=SAP.PBB.XCRR.COLD,DISP=MOD                           00001900
+//*            DISP=(NEW,CATLG,DELETE),                                 00002000
+//*            SPACE=(CYL,(10,1),RLSE),                                 00002100
+//*            UNIT=(SYSDA,5),                                          00002200
+//*            DCB=(LRECL=133,RECFM=FBA,BLKSIZE=0,BUFNO=10)             00002300
+//SYSIN     DD *                                                        00002400
+                                                                        00002500
+OPTION NOCENTER NODATE NONUMBER;                                        00002600
+TITLE;                                                                  00002700
+*;                                                                      00002800
+DATA _NULL_;                                                            00002900
+   SET MNITB.REPTDATE;                                                  00003000
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));                        00003100
+   CALL SYMPUT('RMM',PUT(REPTDATE,MONTH2.));                            00003200
+   CALL SYMPUT('RMON',PUT(REPTDATE,MONYY7.));                           00003300
+   CALL SYMPUT('RYY',PUT(REPTDATE,YEAR2.));                             00003400
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));                           00003500
+*;                                                                      00003600
+DATA BRH;                                                               00003700
+   INFILE BRHFI;                                                        00003800
+   INPUT @002 BRANCH  3.                                                00003900
+         @006 BRCHCD $3.;                                               00004000
+*;                                                                      00004100
+PROC SORT; BY BRCHCD;                                                   00004200
+PROC SORT  DATA=SCRD.SRSBR OUT=SRSBR; BY BRCHCD;                        00004300
+*;                                                                      00004400
+DATA SRS;                                                               00004500
+   MERGE  BRH SRSBR(IN=A); BY BRCHCD;                                   00004600
+   IF A;                                                                00004700
+   IF C1CNT=.     THEN C1CNT=0;                                         00004800
+   IF C1BAL=.     THEN C1BAL=0;                                         00004900
+   IF C2CNT=.     THEN C2CNT=0;                                         00005000
+   IF C2BAL=.     THEN C2BAL=0;                                         00005100
+   IF C3CNT=.     THEN C3CNT=0;                                         00005200
+   IF C3BAL=.     THEN C3BAL=0;                                         00005300
+   IF C4CNT=.     THEN C4CNT=0;                                         00005400
+   IF C5CNT=.     THEN C5CNT=0;                                         00005500
+*;                                                                      00005600
+PROC SORT; BY BRANCH STAFF PRODUCT;                                     00005700
+*;                                                                      00005800
+DATA SRS;                                                               00005900
+  SET SRS END=LAST; BY BRANCH;                                          00006000
+  FILE PRINT HEADER=NEWPAGE;                                            00006100
+                                                                        00006200
+  IF  FIRST.BRANCH THEN DO;                                             00006300
+      PUT _PAGE_;                                                       00006400
+      TC1CNT=0; TC2CNT=0; TC3CNT=0; TC4CNT=0;TC5CNT=0;                  00006500
+      TC1BAL=0.00; TC2BAL=0.00; TC3BAL=0.00;                            00006600
+  END;                                                                  00006700
+                                                                        00006800
+  TC1CNT+C1CNT; TC1BAL+C1BAL;                                           00006900
+  TC2CNT+C2CNT; TC2BAL+C2BAL;                                           00007000
+  TC3CNT+C3CNT; TC3BAL+C3BAL;                                           00007100
+  TC4CNT+C4CNT; TC5CNT+C5CNT;                                           00007200
+                                                                        00007300
+  PUT @002  STAFF 6.   @010 PRODUCT  $20.                               00007400
+      @031  C1CNT 6.   @039 C1BAL    COMMA16.2                          00007500
+      @058  C2CNT 6.   @066 C2BAL    COMMA16.2                          00007600
+      @085  C3CNT 6.   @093 C3BAL    COMMA16.2                          00007700
+      @114  C4CNT 6.   @123 C5CNT    6.;                                00007800
+                                                                        00007900
+  IF  LAST.BRANCH THEN DO;                                              00008000
+  PUT @003 127*'-';                                                     00008100
+  PUT @003  'BRANCH TOTAL='                                             00008200
+      @031  TC1CNT 6.  @039 TC1BAL    COMMA16.2                         00008300
+      @058  TC2CNT 6.  @066 TC2BAL    COMMA16.2                         00008400
+      @085  TC3CNT 6.  @093 TC3BAL    COMMA16.2                         00008500
+      @114  TC4CNT 6.  @123 TC5CNT    6.;                               00008600
+  PUT @003 127*'-';                                                     00008700
+  END;                                                                  00008800
+  RETURN;                                                               00008900
+                                                                        00009000
+NEWPAGE:                                                                00009100
+PUT @01 'REPORT NO: STAFF PARTICIPATION UNDER SCR SCHEME BY BRANCH'     00009200
+    @111 'REPORT DATE=' "&RDATE";                                       00009300
+PUT @01 'PROGRAM ID : EIBMSCR1';                                        00009400
+PUT @01 'BRANCH=NO.: ' BRANCH Z3.  '   ' BRCHCD $3.;                    00009500
+PUT @032 '---- CATEGORY 1 -------    -- CATEGORY 2 - CORE --'           00009600
+    @086 '- CATEGORY 2 NON-CORE -    DB CARD  CR CARD';                 00009700
+PUT @003 'STAFF  PRODUCT'                                               00009800
+    @032 'COUNT       YTD BALANCE    COUNT       YTD BALANCE'           00009900
+    @086 'COUNT       YTD BALANCE    COUNT    COUNT';                   00010000
+PUT @002 '  ';                                                          00010100
+PUT @002 127*'-';                                                       00010200
+RETURN;                                                                 00010300
+RUN;                                                                    00010400
 
-DATA DCI;
-  SET DCIWH.DCI&REPTMON.4;
-  REPTDATE = &TDATE;
-  IF MATDT > REPTDATE AND STARTDT <= REPTDATE;
-  CUSTCD = PUT(CUSTCODE,Z2.);
-  IF CUSTCD IN (04,05,06,41,42,43,44,46,47,48,49,51,52,53,54,
-                66,67,68,69,87,88,89) OR
-     30 <= CUSTCD <= 45;
 
-  CUSTFISS=PUT(CUSTCD,2.);
-  AMOUNT = INVAMT;
-RUN;
 
-DATA CONSO_MNI;
-  SET CA SA FD UMA;
-  CUSTGROUP = PUT(CUSTFISS,$CUSTGROUP.);
-  CUSTTYPE = PUT(CUSTFISS,$CUSTTYPE.);
-  RENAME CURBAL = AMOUNT;
-RUN;
+//EIBMSCHP JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
+//          USER=OPCC                                                   00020006
+//*                                                                     00070006
+//PRINT1   OUTPUT CLASS=K,                                              00090006
+//         NAME='ATTN: EN MOHD BADRAN SAADULLAH',                       00100006
+//         ROOM='13TH FLOOR',                                           00110006
+//         BUILDING='MENARA PBB',                                       00120006
+//         DEPT='CARD PRODUCT & DEVELOPMENT',                           00130006
+//         ADDRESS=('BUSINESS DEVELOPMENT','MENARA PUBLIC BANK',        00140006
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),                    00150006
+//         DEST=LOCAL                                                   00160006
+//*
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.SRS.HOE.PROD.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//EIBMSCHP EXEC SAS609                                                  00170006
+//MNITB     DD DSN=SAP.PBB.MNITB(0),DISP=SHR                            00180006
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR                             00190006
+//SCRD      DD DSN=SAP.PBB.SRS.SASDATA,DISP=SHR                         00220006
+//SASLIST   DD DSN=SAP.PBB.SRS.HOE.PROD.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(10,1),RLSE),
+//             UNIT=(SYSDA,5),
+//             DCB=(LRECL=133,RECFM=FBA,BLKSIZE=0,BUFNO=10)
+//SYSIN     DD *
+                                                                        00240006
+OPTION NOCENTER NODATE NONUMBER;                                        00250007
+TITLE;                                                                  00260007
+                                                                        00280006
+DATA _NULL_;                                                            00290006
+   SET MNITB.REPTDATE;                                                  00300006
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));                        00310006
+   CALL SYMPUT('RMM',PUT(REPTDATE,MONTH2.));                            00320006
+   CALL SYMPUT('RMON',PUT(REPTDATE,MONYY7.));                           00330006
+   CALL SYMPUT('RYY',PUT(REPTDATE,YEAR2.));                             00340006
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));                           00350006
+*;                                                                      00360006
+DATA SRS;                                                               00380006
+   SET SCRD.SRSHO;                                                      00390006
+   IF C1CNT=.     THEN C1CNT=0;                                         00540006
+   IF C1BAL=.     THEN C1BAL=0;                                         00550006
+   IF C2CNT=.     THEN C2CNT=0;                                         00560006
+   IF C2BAL=.     THEN C2BAL=0;                                         00570006
+   IF C3CNT=.     THEN C3CNT=0;                                         00580006
+   IF C3BAL=.     THEN C3BAL=0;                                         00590006
+*;                                                                      00620006
+   S1CNT=0; S2CNT=0; S3CNT=0;                                           00620006
+   IF NCORE='X' THEN S1CNT=1; ELSE                                      00620006
+   IF NCORE='C' THEN S2CNT=1; ELSE                                      00620006
+   IF NCORE='N' THEN S3CNT=1;                                           00620006
+*;                                                                      00620006
+PROC SUMMARY DATA=SRS NWAY;                                             00620006
+CLASS HOE PRODUCT;                                                      00620006
+VAR   S1CNT C1CNT C1BAL S2CNT C2CNT C2BAL S3CNT C3CNT C3BAL;            00620006
+OUTPUT OUT=SRSP SUM=;                                                   00620006
+*;                                                                      00620006
+DATA SRS;                                                               00700006
+  SET SRSP END=LAST; BY HOE;                                            00710006
+  FILE PRINT HEADER=NEWPAGE;                                            00720006
+                                                                        00730006
+  IF  FIRST.HOE THEN DO;                                                00730006
+      PUT _PAGE_;
+      TS1CNT=0; TS2CNT=0; TS3CNT=0;                                     00730006
+      TC1CNT=0; TC2CNT=0; TC3CNT=0;                                     00730006
+      TC1BAL=0.00; TC2BAL=0.00; TC3BAL=0.00;                            00730006
+  END;                                                                  00730006
+                                                                        00730006
+  TS1CNT+S1CNT;                                                         00730006
+  TS2CNT+S2CNT;                                                         00730006
+  TS3CNT+S3CNT;                                                         00730006
+  TC1CNT+C1CNT; TC1BAL+C1BAL;                                           00730006
+  TC2CNT+C2CNT; TC2BAL+C2BAL;                                           00730006
+  TC3CNT+C3CNT; TC3BAL+C3BAL;                                           00730006
+                                                                        00730006
+  GS1CNT+S1CNT;                                                         00730006
+  GS2CNT+S2CNT;                                                         00730006
+  GS3CNT+S2CNT;                                                         00730006
+  GC1CNT+C1CNT; GC1BAL+C1BAL;                                           00730006
+  GC2CNT+C2CNT; GC2BAL+C2BAL;                                           00730006
+  GC3CNT+C3CNT; GC3BAL+C3BAL;                                           00730006
+                                                                        00740006
+  PUT @002  PRODUCT  $20.                                               00750006
+      @024  S1CNT 5.   @032 C1CNT    5.  @040 C1BAL COMMA16.2           00760006
+      @060  S2CNT 5.   @068 C2CNT    5.  @076 C2BAL COMMA16.2           00760006
+      @096  S3CNT 5.   @104 C3CNT    5.  @112 C3BAL COMMA16.2;          00760006
+                                                                        00770006
+  IF  LAST.HOE THEN DO;                                                 00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002  'DEPT/DIV TOTAL='                                           00750006
+      @023  TS1CNT 6.  @031 TC1CNT   6.  @040 TC1BAL COMMA16.2          00760006
+      @059  TS2CNT 6.  @067 TC2CNT   6.  @076 TC2BAL COMMA16.2          00760006
+      @095  TS3CNT 6.  @103 TC3CNT   6.  @112 TC3BAL COMMA16.2;         00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+                                                                        00770006
+  IF  LAST        THEN DO;                                              00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002 'GRAND  TOTAL='                                              00750006
+      @023  GS1CNT 6.  @031 GC1CNT   6.  @040 GC1BAL COMMA16.2          00760006
+      @059  GS2CNT 6.  @067 GC2CNT   6.  @076 GC2BAL COMMA16.2          00760006
+      @095  GS3CNT 6.  @103 GC3CNT   6.  @112 GC3BAL COMMA16.2;         00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+  RETURN;                                                               00840006
+                                                                        00850006
+NEWPAGE:                                                                00860006
+PUT @01 'SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR SCHEME'
+    @56 'FOR HEAD OFFICE BY PRODUCT       RUNDATE=' "&RDATE";           00880006
+PUT @01 'DEPT/DIV=' HOE $34.;                                           00900006
+PUT @01 'NOTE:- FOR CARD, CATEGORY-1=CREDIT  CATEGORY-2=DEBIT ';        00900006
+    PUT @024 '--------- CATEGORY 1 -----------'                         00930006
+        @060 '------ CATEGORY 2 CORE ---------'                         00930006
+        @096 '----- CATEGORY 2 NON-CORE ------';                        00930006
+                                                                        00920006
+    PUT @024 'NO.OF   NO.OF                   '                         00930006
+        @060 'NO.OF   NO.OF                   '                         00930006
+        @096 'NO.OF   NO.OF';                                           00930006
+    PUT @002 'PRODUCT'                                                  00920006
+        @024 'STAFF   ACCTS        YTD BALANCE'                         00930006
+        @060 'STAFF   ACCTS        YTD BALANCE'                         00930006
+        @096 'STAFF   ACCTS        YTD BALANCE';                        00930006
+    PUT @002 126*'-';                                                   00950006
+  RETURN;                                                               00960006
+RUN;                                                                    00970006
 
-PROC SORT DATA=CONSO_MNI; BY ACCTNO;
-RUN;
 
-DATA CONSO_MNI;
-  MERGE CONSO_MNI(IN=A) CISDP;
-  BY ACCTNO;
-  IF A THEN OUTPUT;
-RUN;
 
-DATA CONSO_EQ;
-  SET EQ42150 K1TBL;
-  CUSTGROUP = PUT(CUSTFISS,$CUSTGROUP.);
-  CUSTTYPE = PUT(CUSTFISS,$CUSTTYPE.);
-RUN;
-PROC SORT DATA=CONSO_EQ; BY ACCTNO; RUN;
 
-DATA CONSO_EQ;
-  MERGE CONSO_EQ(IN=A) CISEQ;
-  BY ACCTNO;
-  IF A THEN OUTPUT;
-RUN;
 
-DATA CONSO_DCI;
-  SET DCI;
-  CUSTGROUP = PUT(CUSTFISS,$CUSTGROUP.);
-  CUSTTYPE = PUT(CUSTFISS,$CUSTTYPE.);
-RUN;
+//EIBMSCHS JOB MIS,EIBMSISD,CLASS=A,NOTIFY=&SYSUID,MSGCLASS=X,
+//          USER=OPCC                                                   00020006
+//*                                                                     00070006
+//PRINT1   OUTPUT CLASS=K,                                              00090006
+//         NAME='ATTN: EN MOHD BADRAN SAADULLAH',                       00100006
+//         ROOM='13TH FLOOR',                                           00110006
+//         BUILDING='MENARA PBB',                                       00120006
+//         DEPT='CARD PRODUCT & DEVELOPMENT',                           00130006
+//         ADDRESS=('BUSINESS DEVELOPMENT','MENARA PUBLIC BANK',        00140006
+//         '146 JALAN AMPANG','50450 KUALA LUMPUR'),                    00150006
+//         DEST=LOCAL                                                   00160006
+//*                                                                     00070006
+//DELETE   EXEC PGM=IEFBR14
+//DD1      DD DSN=SAP.PBB.SRS.HOE.STAFF.TEXT,
+//            DISP=(MOD,DELETE,DELETE),UNIT=SYSDA,
+//            SPACE=(CYL,1,RLSE)
+//*
+//EIBMSCHS EXEC SAS609                                                  00170006
+//MNITB     DD DSN=SAP.PBB.MNITB(0),DISP=SHR                            00180006
+//SCRD      DD DSN=SAP.PBB.SRS.SASDATA,DISP=SHR                         00220006
+//SASLIST   DD DSN=SAP.PBB.SRS.HOE.STAFF.TEXT,
+//             DISP=(NEW,CATLG,DELETE),
+//             SPACE=(CYL,(10,1),RLSE),
+//             UNIT=(SYSDA,5),
+//             DCB=(LRECL=133,RECFM=FBA,BLKSIZE=0,BUFNO=10)
+//SYSIN     DD *
+                                                                        00240006
+OPTION NOCENTER NODATE NONUMBER;                                        00250007
+TITLE;                                                                  00260007
+                                                                        00280006
+DATA _NULL_;                                                            00290006
+   SET MNITB.REPTDATE;                                                  00300006
+   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));                        00310006
+   CALL SYMPUT('RMM',PUT(REPTDATE,MONTH2.));                            00320006
+   CALL SYMPUT('RMON',PUT(REPTDATE,MONYY7.));                           00330006
+   CALL SYMPUT('RYY',PUT(REPTDATE,YEAR2.));                             00340006
+   CALL SYMPUT('RYEAR',PUT(REPTDATE,YEAR4.));                           00350006
+*;                                                                      00360006
+DATA SRS;                                                               00380006
+   SET SCRD.SRSHO;                                                      00390006
+   IF C1CNT=.     THEN C1CNT=0;                                         00540006
+   IF C1BAL=.     THEN C1BAL=0;                                         00550006
+   IF C2CNT=.     THEN C2CNT=0;                                         00560006
+   IF C2BAL=.     THEN C2BAL=0;                                         00570006
+   IF C3CNT=.     THEN C3CNT=0;                                         00580006
+   IF C3BAL=.     THEN C3BAL=0;                                         00590006
+*;                                                                      00620006
+PROC SUMMARY DATA=SRS NWAY;                                             00620006
+CLASS HOE STAFF PRODUCT;                                                00620006
+VAR   C1CNT C1BAL C2CNT C2BAL C3CNT C3BAL;                              00620006
+OUTPUT OUT=SRSP SUM=;                                                   00620006
+*;                                                                      00620006
+DATA SRS;                                                               00700006
+  SET SRSP END=LAST; BY HOE;                                            00710006
+  FILE PRINT HEADER=NEWPAGE;                                            00720006
+                                                                        00730006
+  IF  FIRST.HOE  THEN DO;                                               00730006
+      PUT _PAGE_;
+      TC1CNT=0; TC2CNT=0; TC3CNT=0;                                     00730006
+      TC1BAL=0.00; TC2BAL=0.00; TC3BAL=0.00;                            00730006
+  END;                                                                  00730006
+                                                                        00730006
+  TC1CNT+C1CNT; TC1BAL+C1BAL;                                           00730006
+  TC2CNT+C2CNT; TC2BAL+C2BAL;                                           00730006
+  TC3CNT+C3CNT; TC3BAL+C3BAL;                                           00730006
+                                                                        00730006
+  GC1CNT+C1CNT; GC1BAL+C1BAL;                                           00730006
+  GC2CNT+C2CNT; GC2BAL+C2BAL;                                           00730006
+  GC3CNT+C3CNT; GC3BAL+C3BAL;                                           00730006
+                                                                        00740006
+  PUT @002  STAFF 5. @010 PRODUCT  $20.                                 00750006
+            @032 C1CNT    5.  @040 C1BAL COMMA16.2                      00760006
+            @068 C2CNT    5.  @076 C2BAL COMMA16.2                      00760006
+            @104 C3CNT    5.  @112 C3BAL COMMA16.2;                     00760006
+                                                                        00770006
+  IF  LAST.HOE   THEN DO;                                               00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002  'DEPT/DIV TOTAL='                                           00750006
+      @031 TC1CNT   6.  @040 TC1BAL COMMA16.2                           00760006
+      @067 TC2CNT   6.  @076 TC2BAL COMMA16.2                           00760006
+      @103 TC3CNT   6.  @112 TC3BAL COMMA16.2;                          00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+                                                                        00770006
+  IF  LAST        THEN DO;                                              00730006
+  PUT @002 126*'-';                                                     00950006
+  PUT @002 'GRAND  TOTAL='                                              00750006
+                       @031 GC1CNT   6.  @040 GC1BAL COMMA16.2          00760006
+                       @067 GC2CNT   6.  @076 GC2BAL COMMA16.2          00760006
+                       @103 GC3CNT   6.  @112 GC3BAL COMMA16.2;         00760006
+  PUT @002 126*'-';                                                     00950006
+  END;                                                                  00730006
+  RETURN;                                                               00840006
+                                                                        00850006
+NEWPAGE:                                                                00860006
+PUT @01 'SUMMARY REPORT ON STAFF PARTICIPATION UNDER SCR SCHEME'        00871007
+    @56 'FOR HEAD OFFICE DEPARTMENT BY STAFF  RUNDATE=' "&RDATE";       00871007
+PUT @01 'REPORT FROM 1 SEPT 2006 - 31 DEC 2006';                        00871007
+PUT @01 'DEPT/DIV=' HOE $38.;                                           00900006
+PUT @01 'NOTE:- FOR CARD, CATEGORY-1=CREDIT  CATEGORY-2=DEBIT';         00900006
+    PUT @024 '--------- CATEGORY 1 -----------'                         00930006
+        @060 '------ CATEGORY 2 CORE ---------'                         00930006
+        @096 '----- CATEGORY 2 NON-CORE ------';                        00930006
+                                                                        00920006
+    PUT @024 '        NO.OF                   '                         00930006
+        @060 '        NO.OF                   '                         00930006
+        @096 '        NO.OF';                                           00930006
+    PUT @002 'STAFF  PRODUCT'                                           00920006
+        @024 '        ACCTS        YTD BALANCE'                         00930006
+        @060 '        ACCTS        YTD BALANCE'                         00930006
+        @096 '        ACCTS        YTD BALANCE';                        00930006
+    PUT @002 126*'-';                                                   00950006
+  RETURN;                                                               00960006
+RUN;                                                                    00970006
 
-DATA CONSO_ALL;
-  SET CONSO_MNI CONSO_EQ CONSO_DCI;
-  KEEP CUSTGROUP CUSTTYPE AMOUNT;
-RUN;
 
-PROC SUMMARY DATA=CONSO_ALL NWAY;
-  CLASS CUSTGROUP CUSTTYPE;
-  VAR AMOUNT;
-  OUTPUT OUT=CONSO_SUM SUM=;
-RUN;
 
-PROC SUMMARY DATA=CONSO_ALL NWAY;
-  VAR AMOUNT;
-  OUTPUT OUT=GRANDTOT SUM=;
-RUN;
 
-DATA GRANDTOT;
-  SET GRANDTOT;
-  CUSTTYPE = 'GRAND TOTAL';
-RUN;
 
-DATA SME_TOTAL DNBFI_TOTAL FX_TOTAL;
-  SET CONSO_SUM;
-  IF CUSTGROUP = 'SMALL MEDIUM ENTERPRISE (SMES)' THEN
-     OUTPUT SME_TOTAL;
-  ELSE IF CUSTGROUP = 'DOMESTIC (DNBFI)' THEN
-     OUTPUT DNBFI_TOTAL;
-  ELSE OUTPUT FX_TOTAL;
-RUN;
-
-%MACRO GRANDTOTAL(DS);
-DATA &DS;
-  SET &DS END=EOF;
-  IF _N_ = 1 THEN SUMTOTAL = 0;
-  SUMTOTAL + AMOUNT;
-  OUTPUT;
-  IF EOF THEN DO;
-     CUSTTYPE = 'TOTAL';
-     AMOUNT = SUMTOTAL;
-     OUTPUT;
-  END;
-RUN;
-%MEND;
-%GRANDTOTAL(SME_TOTAL);
-%GRANDTOTAL(DNBFI_TOTAL);
-%GRANDTOTAL(FX_TOTAL);
-
-PROC PRINTTO FILE=SMETXT;
-PROC REPORT DATA=SME_TOTAL;
-  TITLE1 'PUBLIC BANK BERHAD';
-  TITLE2 "DEPOSITS ACCEPTED FROM SMALL MEDIUM ENTERPRISES (SME)"
-         " @ &REPTMMMYY";
-  TITLE3 ' ';
-  TITLE4 'SMALL MEDIUM ENTERPRISE (SMES)';
-  COLUMN CUSTTYPE AMOUNT;
-  DEFINE CUSTTYPE / 'CUSTOMER' FORMAT=$40.;
-  DEFINE AMOUNT   / 'TOTAL OS MYR' FORMAT=COMMA18.2;
-RUN;
-
-PROC REPORT DATA=DNBFI_TOTAL;
-  TITLE1 '------------------------------------------------------'
-         '----------';
-  TITLE2 'DOMESTIC (DNBFI)';
-  COLUMN CUSTTYPE AMOUNT;
-  DEFINE CUSTTYPE / 'CUSTOMER' FORMAT=$40.;
-  DEFINE AMOUNT   / 'TOTAL OS MYR' FORMAT=COMMA18.2;
-RUN;
-
-PROC REPORT DATA=FX_TOTAL;
-  TITLE1 '------------------------------------------------------'
-         '----------';
-  TITLE2 'NON-RESIDENT/FOREIGN ENTITIES';
-  COLUMN CUSTTYPE AMOUNT;
-  DEFINE CUSTTYPE / 'CUSTOMER' FORMAT=$40.;
-  DEFINE AMOUNT   / 'TOTAL OS MYR' FORMAT=COMMA18.2;
-RUN;
-
-PROC REPORT DATA=GRANDTOT;
-  TITLE;
-  COLUMN CUSTTYPE AMOUNT;
-  DEFINE CUSTTYPE / ' ' FORMAT=$40.;
-  DEFINE AMOUNT   / ' ' FORMAT=COMMA18.2;
-RUN;
-
-PROC PRINTTO FILE=EQTXT;
-PROC REPORT DATA=CONSO_EQ NOWD HEADSKIP HEADLINE SPLIT='*';
-  TITLE1 'PUBLIC BANK BERHAD';
-  TITLE2 "EQ CUSTOMER LIST"
-         " @ &REPTMMMYY";
-  TITLE3 ' ';
-  COLUMN GWDLP GWDLR AMOUNT GWC2R CUSTTYPE CUSTNAME;
-  DEFINE CUSTNAME / 'CUST NAME' FORMAT=$40.;
-RUN;
-
-PROC PRINTTO FILE=DCITXT;
-PROC REPORT DATA=CONSO_DCI NOWD HEADSKIP HEADLINE SPLIT='*';
-  TITLE1 'PUBLIC BANK BERHAD';
-  TITLE2 "DCI CUSTOMER LIST"
-         " @ &REPTMMMYY";
-  TITLE3 ' ';
-  COLUMN TICKETNO CUSTNAME AMOUNT CUSTTYPE;
-RUN;
-
-PROC PRINTTO FILE=MNITXT;
-PROC REPORT DATA=CONSO_MNI NOWD HEADSKIP HEADLINE SPLIT='*';
-  TITLE1 'PUBLIC BANK BERHAD';
-  TITLE2 "MNI CUSTOMER LIST"
-         " @ &REPTMMMYY";
-  TITLE3 ' ';
-  COLUMN ACCTNO AMOUNT DNBFISME CUSTFISS PRODCD CUSTTYPE CUSTNAME;
-  DEFINE  ACCTNO / 'ACCTNO' FORMAT=10.;
-  DEFINE CUSTNAME / 'CUST NAME' FORMAT=$40.;
-RUN;
-
-//*----------------------------------------------------------------
-//* FTP TO SAS DATAWAREHOUSE
-//*----------------------------------------------------------------
-//*%OPC SCAN
-//RUNSFTP  EXEC COZBATCH
-//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
-//           DD *
-lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-lzopts linerule=$lr
-cd "FD-GFTA\DSIB TA3"
-PUT //SAP.PBB.DPACCEPT.SME.TEXT SME@%ODD.%OMM.%OYY..TXT
-PUT //SAP.PBB.DPACCEPT.EQ.TEXT  EQ@%ODD.%OMM.%OYY..TXT
-PUT //SAP.PBB.DPACCEPT.DCI.TEXT DCI@%ODD.%OMM.%OYY..TXT
-PUT //SAP.PBB.DPACCEPT.MNI.TEXT MNI@%ODD.%OMM.%OYY..TXT
-EOB
-/*
