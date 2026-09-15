@@ -1,4 +1,4 @@
-"""EIBMSCR1: individual job; all input paths must be .sas7bdat.
+"""EIBMSCHP: individual job; all input paths must be .sas7bdat.
 Requires pandas. Inputs are read-only, using original SAS column names.
 No fixed-position text parsing or CSV input is used.
 Outputs: CSV + native SAS7BDAT through SASPy, plus text (and ZIP for EIBRCRRD).
@@ -272,37 +272,19 @@ def category_report(df,job,dt,group_keys,product_counts=False,source_grand_bug=F
 def transform(srs, branches=None):
     require(srs, ['PRODUCT','STAFF'])
     srs=zero_metrics(srs)
-    require(srs,['BRCHCD'])
-    srs=merge_by(branches,srs,['BRCHCD']).loc[lambda x:x._RIGHT].drop(columns=['_LEFT','_RIGHT'])
-    return zero_metrics(srs,METRICS+['C4CNT','C5CNT']).sort_values(['BRANCH','STAFF','PRODUCT'],kind='stable',na_position='first')
-
-def render(result,dt):
-    lines=[]
-    def line(row,total=False):
-        fields=[(3,'BRANCH TOTAL=')] if total else [(2,fmt(row.get('STAFF'),6)),(10,str(row['PRODUCT'])[:20])]
-        for i,pos in enumerate([31,58,85],1):
-            fields += [(pos,fmt(row[f'C{i}CNT'],6)),(pos+8,fmt(row[f'C{i}BAL'],16,2,True))]
-        fields += [(114,fmt(row['C4CNT'],6)),(123,fmt(row['C5CNT'],6))]
-        return put_line(fields)
-    for branch,part in result.groupby('BRANCH',dropna=False,sort=True):
-        lines += [put_line([(1,'REPORT NO: STAFF PARTICIPATION UNDER SCR SCHEME BY BRANCH'),(111,f'REPORT DATE={dt:%d/%m/%Y}')]),
-                  put_line([(1,'PROGRAM ID : EIBMSCR1')]),
-                  put_line([(1,f'BRANCH=NO.: {branch:03.0f}   {part.BRCHCD.iloc[0]}')]),
-                  put_line([(3,'STAFF  PRODUCT'),(32,'CATEGORY 1'),(60,'CATEGORY 2 CORE'),(86,'CATEGORY 2 NON-CORE'),(114,'DB CARD'),(123,'CR CARD')])]
-        lines += [line(row) for row in part.to_dict('records')]
-        lines.append(line(part[METRICS+['C4CNT','C5CNT']].sum().to_dict(),True))
-    return lines
+    srs=staff_counts(srs)
+    return nway(srs,['HOE', 'PRODUCT'],PRODUCT_METRICS)
 
 def main():
     p=base_parser(__doc__)
-    p.add_argument('--srs',required=True,type=Path,help='SRSBR' if True else 'SRSHO')
-    p.add_argument('--branch-file',required=True,type=Path)
+    p.add_argument('--srs',required=True,type=Path,help='SRSBR' if False else 'SRSHO')
     args=p.parse_args(); output_session(); dt=reporting_date(args.reptdate)
-    result=transform(read_table(args.srs),branch_file(args.branch_file))
-    lines=render(result,dt)
+    result=transform(read_table(args.srs),None)
+    lines=category_report(result,'EIBMSCHP',dt,['HOE'],product_counts=True,source_grand_bug=True)
+    print('Source parity: GRAND TOTAL S3CNT uses S2CNT, as written in SAS.')
     args.output_dir.mkdir(parents=True,exist_ok=True)
-    dump(result,args.output_dir/'EIBMSCR1.csv')
-    save_report(lines,args.output_dir/'EIBMSCR1_report.txt')
+    dump(result,args.output_dir/'EIBMSCHP.csv')
+    save_report(lines,args.output_dir/'EIBMSCHP_report.txt')
 
 
 if __name__=='__main__':

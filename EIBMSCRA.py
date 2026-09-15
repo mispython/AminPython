@@ -1,4 +1,4 @@
-"""EIBMSCR1: individual job; all input paths must be .sas7bdat.
+"""EIBMSCRA: individual job; all input paths must be .sas7bdat.
 Requires pandas. Inputs are read-only, using original SAS column names.
 No fixed-position text parsing or CSV input is used.
 Outputs: CSV + native SAS7BDAT through SASPy, plus text (and ZIP for EIBRCRRD).
@@ -268,41 +268,110 @@ def category_report(df,job,dt,group_keys,product_counts=False,source_grand_bug=F
         if source_grand_bug: grand['S3CNT']=grand['S2CNT']
         lines.append(category_line(grand,product_counts,'GRAND TOTAL='))
     return lines
+def round_sas(value):
+    if pd.isna(value): return float('nan')
+    return float(Decimal(str(value)).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
 
-def transform(srs, branches=None):
-    require(srs, ['PRODUCT','STAFF'])
-    srs=zero_metrics(srs)
-    require(srs,['BRCHCD'])
-    srs=merge_by(branches,srs,['BRCHCD']).loc[lambda x:x._RIGHT].drop(columns=['_LEFT','_RIGHT'])
-    return zero_metrics(srs,METRICS+['C4CNT','C5CNT']).sort_values(['BRANCH','STAFF','PRODUCT'],kind='stable',na_position='first')
 
-def render(result,dt):
-    lines=[]
-    def line(row,total=False):
-        fields=[(3,'BRANCH TOTAL=')] if total else [(2,fmt(row.get('STAFF'),6)),(10,str(row['PRODUCT'])[:20])]
-        for i,pos in enumerate([31,58,85],1):
-            fields += [(pos,fmt(row[f'C{i}CNT'],6)),(pos+8,fmt(row[f'C{i}BAL'],16,2,True))]
-        fields += [(114,fmt(row['C4CNT'],6)),(123,fmt(row['C5CNT'],6))]
-        return put_line(fields)
-    for branch,part in result.groupby('BRANCH',dropna=False,sort=True):
-        lines += [put_line([(1,'REPORT NO: STAFF PARTICIPATION UNDER SCR SCHEME BY BRANCH'),(111,f'REPORT DATE={dt:%d/%m/%Y}')]),
-                  put_line([(1,'PROGRAM ID : EIBMSCR1')]),
-                  put_line([(1,f'BRANCH=NO.: {branch:03.0f}   {part.BRCHCD.iloc[0]}')]),
-                  put_line([(3,'STAFF  PRODUCT'),(32,'CATEGORY 1'),(60,'CATEGORY 2 CORE'),(86,'CATEGORY 2 NON-CORE'),(114,'DB CARD'),(123,'CR CARD')])]
-        lines += [line(row) for row in part.to_dict('records')]
-        lines.append(line(part[METRICS+['C4CNT','C5CNT']].sum().to_dict(),True))
-    return lines
+def build_cards(cards):
+    cards=cards.copy()
+    cards['TYPEC']=cards.ACCTNO.map(lambda x:numeric(f'{x:12.0f}'[:5]) if pd.notna(x) else float('nan'))
+    cards['STAFF']=pd.to_numeric(cards.SECO,errors='coerce')
+    mask=cards.TYPEC.isin([3301,3302,3305,3306,3308,3309,5503,5504])
+    mask &= ((cards.OPNYR==6)&(cards.OPNMM>8)) | (cards.OPNYR>=7)
+    mask &= cards.SECO.str.len().between(2,5)&(cards.STAFF>1)&(cards.STAFF<99999)
+    cards=zero_metrics(cards.loc[mask])
+    cards['C1CNT']=(cards.TYPEC==3309).astype(int)
+    cards['C2CNT']=(cards.TYPEC!=3309).astype(int)
+    cards['NCORE']=cards.TYPEC.map(lambda x:'X' if x==3309 else 'C')
+    cards['PRODUCT']='CARD'
+    return cards
+
+
+def match_staff(hr,activity):
+    joined=merge_by(hr,activity,['STAFF'])
+    matched=joined.loc[joined._LEFT & joined._RIGHT].drop(columns=['_LEFT','_RIGHT'])
+    unmatched=joined.loc[~joined._LEFT & joined._RIGHT].drop(columns=['_LEFT','_RIGHT'])
+    return matched,unmatched
+
+
+def transform(branches,hrbr,hrho,cards,deposits,elds):
+    hrbr=hrbr.loc[hrbr.BRANCH.between(2,267)].copy()
+    ucbr,ucexc=match_staff(hrbr,build_cards(cards))
+    ucho,ucexc1=match_staff(hrho,ucexc)
+    dep=deposits.copy()
+    dep['PRODUCT']=''
+    for low,high,label in [(1000000000,1999999999,'FIXED DEPOSITS'),(7000000000,7999999999,'FIXED DEPOSITS'),(3000000000,3999999999,'CURRENT ACCOUNT'),(4000000000,4999999999,'SAVING ACCOUNT'),(6000000000,6999999999,'SAVING ACCOUNT')]:
+        dep.loc[dep.ACCTNO.between(low,high),'PRODUCT']=label
+    dep['YTDBAL']=(dep.YTDBALS/dep.NUMMTH.replace(0,float('nan'))).map(round_sas)
+    dep['TAG']='DEPO'
+    dep=merge_by(branches,dep,['BRANCH']).loc[lambda x:x._RIGHT].drop(columns=['_LEFT','_RIGHT'])
+    dpc1=dep.loc[(dep.PRIMOFF.notna())&(dep.PRIMOFF!=0)&(dep.XCORE=='')].copy()
+    dpc1['STAFF']=dpc1.PRIMOFF; dpc1['NCORE']='X'; dpc1['C1CNT']=1; dpc1['C1BAL']=dpc1.YTDBAL
+    dpc2=dep.copy()
+    dpc2['STAFF']=dpc2.SECNOFF.where(dpc2.SECNOFF.notna()&(dpc2.SECNOFF!=0),dpc2.PRIMOFF)
+    dpc2=dpc2.loc[dpc2.STAFF.notna()&(dpc2.STAFF!=0)&dpc2.XCORE.isin(['C','N'])].copy()
+    dpc2['NCORE']=dpc2.XCORE
+    dpc2['C2CNT']=(dpc2.XCORE=='C').astype(int)
+    dpc2['C3CNT']=(dpc2.XCORE=='N').astype(int)
+    # Source explicitly assigns C2YBAL; do not silently change this to C2BAL.
+    dpc2['C2YBAL']=dpc2.YTDBAL.where(dpc2.XCORE=='C')
+    dpc2['C3BAL']=dpc2.YTDBAL.where(dpc2.XCORE=='N')
+    elds=elds.loc[elds.STAFX1!='*****'].copy()
+    elds['NCORE']=''
+    for field,code in [('STAFX1','X'),('STAFX2','C'),('STAFX3','N')]:
+        elds.loc[(elds[field]>='00001')&(elds[field]<='99999'),'NCORE']=code
+    elds['TAG']='ELDS'; elds['BRCHCD']=elds.AANUM.str[:3]
+    elds=elds.sort_values('BRCHCD',kind='stable').reset_index(drop=True)
+    merged=merge_by(branches,elds,['BRCHCD']).loc[lambda x:x._RIGHT].drop(columns=['_LEFT','_RIGHT']).reset_index(drop=True)
+    # The source has both MERGE BRH ELDS and SET ELDS in the same DATA step.
+    # The latter re-reads the sorted ELDS snapshot, overwriting its fields.
+    merged=merged.iloc[:len(elds)].copy()
+    for col in elds: merged[col]=elds[col].iloc[:len(merged)].to_numpy()
+    merged['STAFF']=float('nan')
+    for i,(field,code) in enumerate([('STAFX1','X'),('STAFX2','C'),('STAFX3','N')],1):
+        mask=merged.NCORE==code
+        merged.loc[mask,'STAFF']=pd.to_numeric(merged.loc[mask,field],errors='coerce')
+        merged.loc[mask,f'C{i}CNT']=1
+        merged.loc[mask,f'C{i}BAL']=merged.loc[mask,'YTDBAL']
+    activity=pd.concat([merged,dpc1,dpc2],ignore_index=True)
+    srsho,other=match_staff(hrho,activity)
+    srsbr=other.loc[pd.to_numeric(other.BRANCH,errors='coerce')>0].copy()
+    exceptions=other.loc[~(pd.to_numeric(other.BRANCH,errors='coerce')>0)].copy()
+    srsbr=pd.concat([srsbr,ucbr],ignore_index=True)
+    srsho=pd.concat([srsho,ucho],ignore_index=True)
+    branch_summary=nway(srsbr,['BRCHCD','STAFF','PRODUCT','NCORE'])
+    ho_summary=nway(srsho,['HOE','STAFF','PRODUCT','NCORE'])
+    staff=nway(pd.concat([srsho,srsbr],ignore_index=True),['STAFF','PRODUCT','NCORE'])
+    product_summary=nway(staff_counts(staff),['PRODUCT'],PRODUCT_METRICS)
+    return {'SRSBR':branch_summary,'SRSHO':ho_summary,'SRSP':product_summary,'SRSEXC':exceptions,'UCEXC1':ucexc1}
+
 
 def main():
     p=base_parser(__doc__)
-    p.add_argument('--srs',required=True,type=Path,help='SRSBR' if True else 'SRSHO')
-    p.add_argument('--branch-file',required=True,type=Path)
+    for name in ['branch-file','hrbr','hrho','elds']:
+        p.add_argument('--'+name,required=True,type=Path)
+    p.add_argument('--cards',required=True,nargs='+',type=Path,help='ACCT33 and ACCT55 SAS7BDAT datasets')
+    p.add_argument('--deposits',required=True,nargs='+',type=Path,help='DP.SRR and DP.SCRFD SAS7BDAT datasets')
     args=p.parse_args(); output_session(); dt=reporting_date(args.reptdate)
-    result=transform(read_table(args.srs),branch_file(args.branch_file))
-    lines=render(result,dt)
+    branches=branch_file(args.branch_file)
+    hrbr=read_columns(args.hrbr,[('STAFF',5,5,0),('BRANCH',69,3,0),('BRCHCD',72,3,'char')])
+    hrho=read_columns(args.hrho,[('STAFF',5,5,0),('HOE',72,15,'char')])
+    cards=pd.concat([read_columns(path,[('ACCTNO',1,11,0),('OPNMM',14,2,0),('OPNYR',16,2,0),('BRANC',557,4,0),('SECO',561,12,'char')]) for path in args.cards],ignore_index=True)
+    deposits=pd.concat([read_columns(path,[('ACCTNO',2,10,0),('PRIMOFF',50,5,0),('SECNOFF',56,5,0),('XCORE',61,1,'char'),('AVGBAL',62,14,2),('YTDBALS',76,14,2),('NUMMTH',90,2,0),('BRANCH',97,3,0)]) for path in args.deposits],ignore_index=True)
+    elds=read_columns(args.elds,[('AANUM',1,13,'char'),('STAFX1',17,5,'char'),('STAFX2',26,5,'char'),('STAFX3',35,5,'char'),('PRODUCT',51,18,'char'),('YTDBAL',69,12,0)])
+    outputs=transform(branches,hrbr,hrho,cards,deposits,elds)
     args.output_dir.mkdir(parents=True,exist_ok=True)
-    dump(result,args.output_dir/'EIBMSCR1.csv')
-    save_report(lines,args.output_dir/'EIBMSCR1_report.txt')
+    for member,frame in outputs.items(): dump(frame,args.output_dir/f'EIBMSCRA_{member}.csv')
+    summary=outputs['SRSP'].assign(HOE='ALL PRODUCTS')
+    lines=category_report(summary,'EIBMSCRA',dt,['HOE'],product_counts=True)
+    lines += ['EXCEPTION REPORT: UNMATCHED STAFF ID AGAINST HR FILE']
+    for tag,cols in [('ELDS',['AANUM','STAFF','PRODUCT','YTDBAL']),('DEPO',['ACCTNO','STAFF','PRODUCT','YTDBAL'])]:
+        exceptions=outputs['SRSEXC']
+        if 'TAG' in exceptions:
+            lines += [tag,exceptions.loc[exceptions.TAG==tag].reindex(columns=cols).to_string(index=False)]
+    save_report(lines,args.output_dir/'EIBMSCRA_report.txt')
+    print('Source parity retained: C2YBAL deposit assignment, card category rules, and ELDS MERGE followed by SET.')
 
 
 if __name__=='__main__':

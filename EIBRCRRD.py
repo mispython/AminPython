@@ -1,4 +1,4 @@
-"""EIBMSCR1: individual job; all input paths must be .sas7bdat.
+"""EIBRCRRD: individual job; all input paths must be .sas7bdat.
 Requires pandas. Inputs are read-only, using original SAS column names.
 No fixed-position text parsing or CSV input is used.
 Outputs: CSV + native SAS7BDAT through SASPy, plus text (and ZIP for EIBRCRRD).
@@ -269,41 +269,42 @@ def category_report(df,job,dt,group_keys,product_counts=False,source_grand_bug=F
         lines.append(category_line(grand,product_counts,'GRAND TOTAL='))
     return lines
 
-def transform(srs, branches=None):
-    require(srs, ['PRODUCT','STAFF'])
-    srs=zero_metrics(srs)
-    require(srs,['BRCHCD'])
-    srs=merge_by(branches,srs,['BRCHCD']).loc[lambda x:x._RIGHT].drop(columns=['_LEFT','_RIGHT'])
-    return zero_metrics(srs,METRICS+['C4CNT','C5CNT']).sort_values(['BRANCH','STAFF','PRODUCT'],kind='stable',na_position='first')
+def excess_date(value):
+    if pd.isna(value) or float(value)<=0: return ''
+    token=f'{int(value):011d}'[:8]
+    # MMDDYY8. means MMDDYYYY when the source digits have no delimiters.
+    try: return date(int(token[4:8]),int(token[:2]),int(token[2:4])).isoformat()
+    except ValueError: return ''
 
-def render(result,dt):
-    lines=[]
-    def line(row,total=False):
-        fields=[(3,'BRANCH TOTAL=')] if total else [(2,fmt(row.get('STAFF'),6)),(10,str(row['PRODUCT'])[:20])]
-        for i,pos in enumerate([31,58,85],1):
-            fields += [(pos,fmt(row[f'C{i}CNT'],6)),(pos+8,fmt(row[f'C{i}BAL'],16,2,True))]
-        fields += [(114,fmt(row['C4CNT'],6)),(123,fmt(row['C5CNT'],6))]
-        return put_line(fields)
-    for branch,part in result.groupby('BRANCH',dropna=False,sort=True):
-        lines += [put_line([(1,'REPORT NO: STAFF PARTICIPATION UNDER SCR SCHEME BY BRANCH'),(111,f'REPORT DATE={dt:%d/%m/%Y}')]),
-                  put_line([(1,'PROGRAM ID : EIBMSCR1')]),
-                  put_line([(1,f'BRANCH=NO.: {branch:03.0f}   {part.BRCHCD.iloc[0]}')]),
-                  put_line([(3,'STAFF  PRODUCT'),(32,'CATEGORY 1'),(60,'CATEGORY 2 CORE'),(86,'CATEGORY 2 NON-CORE'),(114,'DB CARD'),(123,'CR CARD')])]
-        lines += [line(row) for row in part.to_dict('records')]
-        lines.append(line(part[METRICS+['C4CNT','C5CNT']].sum().to_dict(),True))
-    return lines
+
+def transform(accounts,year):
+    require(accounts,['GRADEX','CATG','BALANCE','BRANCH','ACCTNO'])
+    rows=accounts.loc[accounts.GRADEX.isin(['D','E','X'])].copy()
+    rows.loc[rows.GRADEX=='X','GRADEX']=''
+    output={}
+    for category in ['OD','OL','FL','HL']:
+        part=rows.loc[rows.CATG==category].copy()
+        if category in ['OD','OL']:
+            part['CURBAL']=-part.BALANCE
+            if 'EXCESSDT' not in part: part['EXCESSDT']=float('nan')
+            part['EXCESSD']=part.EXCESSDT.map(excess_date)
+            columns='BRANCH BRCHCD ACCTNO NAME APPRLIMT CURBAL GRADEX CRRCODE FAACRR PRODUCT EXCESSD'.split()
+        else:
+            columns='BRANCH BRCHCD ACCTNO NOTENO NAME APPRLIMT GRADEX BALANCE SCORE2 SCORE1 PRODUCT DAYSARR'.split()
+        output[f'CR{category}{year}']=part.reindex(columns=columns).sort_values(['BRANCH','ACCTNO'],kind='stable',na_position='first')
+    return output
+
 
 def main():
-    p=base_parser(__doc__)
-    p.add_argument('--srs',required=True,type=Path,help='SRSBR' if True else 'SRSHO')
-    p.add_argument('--branch-file',required=True,type=Path)
-    args=p.parse_args(); output_session(); dt=reporting_date(args.reptdate)
-    result=transform(read_table(args.srs),branch_file(args.branch_file))
-    lines=render(result,dt)
+    import zipfile
+    p=base_parser(__doc__); p.add_argument('--accts',required=True,type=Path); args=p.parse_args(); output_session()
+    dt=reporting_date(args.reptdate); outputs=transform(read_table(args.accts),dt.year)
     args.output_dir.mkdir(parents=True,exist_ok=True)
-    dump(result,args.output_dir/'EIBMSCR1.csv')
-    save_report(lines,args.output_dir/'EIBMSCR1_report.txt')
+    for member,df in outputs.items(): dump(df,args.output_dir/f'{member}.csv')
+    # CSV ZIP is deliberately NOT labelled a SAS CPORT file.
+    with zipfile.ZipFile(args.output_dir/'EIBRCRRD_CRFTP.zip','w',zipfile.ZIP_DEFLATED) as archive:
+        for member in outputs: archive.write(args.output_dir/f'{member}.csv',f'{member}.csv')
 
 
-if __name__=='__main__':
+if __name__ == "__main__":
     main()

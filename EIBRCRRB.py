@@ -1,4 +1,4 @@
-"""EIBMSCR1: individual job; all input paths must be .sas7bdat.
+"""EIBRCRRB: individual job; all input paths must be .sas7bdat.
 Requires pandas. Inputs are read-only, using original SAS column names.
 No fixed-position text parsing or CSV input is used.
 Outputs: CSV + native SAS7BDAT through SASPy, plus text (and ZIP for EIBRCRRD).
@@ -269,41 +269,45 @@ def category_report(df,job,dt,group_keys,product_counts=False,source_grand_bug=F
         lines.append(category_line(grand,product_counts,'GRAND TOTAL='))
     return lines
 
-def transform(srs, branches=None):
-    require(srs, ['PRODUCT','STAFF'])
-    srs=zero_metrics(srs)
-    require(srs,['BRCHCD'])
-    srs=merge_by(branches,srs,['BRCHCD']).loc[lambda x:x._RIGHT].drop(columns=['_LEFT','_RIGHT'])
-    return zero_metrics(srs,METRICS+['C4CNT','C5CNT']).sort_values(['BRANCH','STAFF','PRODUCT'],kind='stable',na_position='first')
+def read_crr(path):
+    df = read_table(path)
+    if 'GRADE' not in df and 'GRADEX' in df:
+        df = df.rename(columns={'GRADEX':'GRADE'})
+    require(df,['BRANCH','GRADE','CATG','ACCT','BALANCE'])
+    return df[['BRANCH','GRADE','CATG','ACCT','BALANCE']].copy()
 
-def render(result,dt):
-    lines=[]
-    def line(row,total=False):
-        fields=[(3,'BRANCH TOTAL=')] if total else [(2,fmt(row.get('STAFF'),6)),(10,str(row['PRODUCT'])[:20])]
-        for i,pos in enumerate([31,58,85],1):
-            fields += [(pos,fmt(row[f'C{i}CNT'],6)),(pos+8,fmt(row[f'C{i}BAL'],16,2,True))]
-        fields += [(114,fmt(row['C4CNT'],6)),(123,fmt(row['C5CNT'],6))]
-        return put_line(fields)
-    for branch,part in result.groupby('BRANCH',dropna=False,sort=True):
-        lines += [put_line([(1,'REPORT NO: STAFF PARTICIPATION UNDER SCR SCHEME BY BRANCH'),(111,f'REPORT DATE={dt:%d/%m/%Y}')]),
-                  put_line([(1,'PROGRAM ID : EIBMSCR1')]),
-                  put_line([(1,f'BRANCH=NO.: {branch:03.0f}   {part.BRCHCD.iloc[0]}')]),
-                  put_line([(3,'STAFF  PRODUCT'),(32,'CATEGORY 1'),(60,'CATEGORY 2 CORE'),(86,'CATEGORY 2 NON-CORE'),(114,'DB CARD'),(123,'CR CARD')])]
-        lines += [line(row) for row in part.to_dict('records')]
-        lines.append(line(part[METRICS+['C4CNT','C5CNT']].sum().to_dict(),True))
-    return lines
+
+def transform(crr):
+    cells=nway(crr,['BRANCH','CATG','GRADE'],['ACCT','BALANCE'])
+    totals=nway(crr,['BRANCH','GRADE'],['ACCT','BALANCE']).rename(columns={'ACCT':'BRACT','BALANCE':'BRAMT'})
+    cells=cells.merge(totals,on=['BRANCH','GRADE'],validate='many_to_one')
+    cells['PCACT']=cells.apply(lambda x:x.ACCT/x.BRACT*100 if x.ACCT>0 and x.BRACT else 0,axis=1)
+    cells['PCAMT']=cells.apply(lambda x:x.BALANCE/x.BRAMT*100 if x.BALANCE>0 and x.BRAMT else 0,axis=1)
+    return cells.drop(columns=['BRACT','BRAMT'])
+
 
 def main():
-    p=base_parser(__doc__)
-    p.add_argument('--srs',required=True,type=Path,help='SRSBR' if True else 'SRSHO')
-    p.add_argument('--branch-file',required=True,type=Path)
-    args=p.parse_args(); output_session(); dt=reporting_date(args.reptdate)
-    result=transform(read_table(args.srs),branch_file(args.branch_file))
-    lines=render(result,dt)
+    p=base_parser(__doc__); p.add_argument('--crr',required=True,type=Path); p.add_argument('--branch-file',required=True,type=Path); args=p.parse_args(); output_session()
+    dt=reporting_date(args.reptdate); result=transform(read_crr(args.crr))
+    branches=branch_file(args.branch_file,True)
+    result=merge_by(result,branches,['BRANCH']).loc[lambda x:x._LEFT].drop(columns=['_LEFT','_RIGHT'])
+    lines=[]; expanded=[]
+    for branch,group in result.groupby('BRANCH',sort=True):
+        lines += [f'REPORT NO: CRR GRADES FOR TOTAL RETAIL LOANS (FL/HL/OD/ODHL) REPORT DATE={dt:%d/%m/%Y}', 'PROGRAM ID : EIBRCRRB (NOTE: X=NOT GRADED)',f'BRANCH NO.: {branch:03.0f} {group.BRNAME.iloc[0]}']
+        # Add TABULATE ALL cells by summing the source percentages, not recomputing.
+        cells=group[['GRADE','CATG','ACCT','PCACT','BALANCE','PCAMT']].copy()
+        by_grade=cells.groupby('GRADE')[['ACCT','PCACT','BALANCE','PCAMT']].sum().reset_index().assign(CATG='TOTAL')
+        by_cat=cells.groupby('CATG')[['ACCT','PCACT','BALANCE','PCAMT']].sum().reset_index().assign(GRADE='TOTAL')
+        grand=pd.DataFrame([dict(cells[['ACCT','PCACT','BALANCE','PCAMT']].sum(),GRADE='TOTAL',CATG='TOTAL')])
+        table=pd.concat([cells,by_grade,by_cat,grand],ignore_index=True)
+        expanded.append(table.assign(BRANCH=branch))
+        lines.append('GRADE    CATEGORY       ACCOUNTS       %                BALANCE       %')
+        for row in table.to_dict('records'):
+            lines.append(put_line([(1,str(row['GRADE'])),(10,str(row['CATG'])),(20,fmt(row['ACCT'],10,commas=True)),(32,fmt(row['PCACT'],8,3)),(42,fmt(row['BALANCE'],18,2,True)),(62,fmt(row['PCAMT'],8,3))],150))
     args.output_dir.mkdir(parents=True,exist_ok=True)
-    dump(result,args.output_dir/'EIBMSCR1.csv')
-    save_report(lines,args.output_dir/'EIBMSCR1_report.txt')
+    dump(pd.concat(expanded,ignore_index=True) if expanded else result,args.output_dir/'EIBRCRRB.csv')
+    save_report([line.ljust(150) for line in lines],args.output_dir/'EIBRCRRB_report.txt')
 
 
-if __name__=='__main__':
+if __name__ == "__main__":
     main()
