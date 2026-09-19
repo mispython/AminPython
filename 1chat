@@ -27,6 +27,6 @@ RUN;
 
 //DEPOSIT  DD DSN=SAP.PBB.MNITB(0),DISP=SHR
 
-CURRENT	/sas/deposit/dwh/integration	"INTG_DP_ACCT_CURRENT
+CURRENT	/sas/deposit/dwh/integration
 INTG_DP_ACCT_CURRENT_Ddd
 
