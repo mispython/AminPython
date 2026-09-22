@@ -75,11 +75,14 @@ SAP.PBB.CCRIS2.PROVISIO	EIBMRM4X	PROV
 
 
 
+/dwh/ln_ln/ln08426.sas7bdat
+/dwh/ln_ln/uloan08426.sas7bdat
+/dwh/ln_ln/pend08426.sas7bdat
 
 
-
-
-
+/dwh/dp_sa/sa08426.sas7bdat
+/dwh/dp_ca/ca08426.sas7bdat
+/dwh/dp_fd/fd08426.sas7bdat
 
 
 
