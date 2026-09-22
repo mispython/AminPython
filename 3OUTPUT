@@ -1,44 +1,196 @@
-original
+FTPWILNS
+EIIWOF01
 
 
-INTFBNMF0        2026061520260615093002                                                                                                                                                                                                                                                                                             
-INTFBNMF1PNEF    PBBH0005                                             MYR   20260615-0000000000286515BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0029                                             MYR   20260615-0000000002491062BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0038                                             MYR   20260615-0000000000802214BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0062                                             MYR   20260615-0000000000431256BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0072                                             MYR   20260615-0000000000377127BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0078                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0079                                             MYR   20260615-0000000000298006BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0087                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0090                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0122                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0125                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0128                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0133                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0162                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0170                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0283                                             MYR   20260615-0000000000877216BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF9        2026061520260615093002+0000000000000000-0000000005563396+0000000000000000-0000000000000000000000016                                                                                                                                                                                                                
+EIIWOF02
+
+//WOFF     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+
+EIIWOF03
+
+//*LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//LOAN     DD DSN=SAP.PBB.MNILN.DAILY(0),DISP=SHR
+//*%OPC END ACTION=INCLUDE
+//*
+//NPL6     DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP02),DISP=SHR
+
+EIIWOF04
+
+
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP03),DISP=SHR
+
+
+EIIWOF05
+
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP06),DISP=SHR
+
+EIIWOF06
+
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP07),DISP=SHR
+
+EIIWOF07
+
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=SHR
+//SASLN    DD DSN=SAP.PBB.SASDATA,DISP=SHR
 
 
 
-ours
+FTPIWOFF
 
-INTFBNMF0        2026061520260710120603                                                                                                                                                                                                                                                                                             
-INTFBNMF1PNEF    PBBH0005                                             MYR   20260615-0000000000286515BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0029                                             MYR   20260615-0000000002491062BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0038                                             MYR   20260615-0000000000802214BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0062                                             MYR   20260615-0000000000431256BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0072                                             MYR   20260615-0000000000377127BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0078                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0079                                             MYR   20260615-0000000000298006BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0087                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0090                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0122                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0125                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0128                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0133                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0162                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0170                                             MYR   20260615-0000000000000000BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF1PNEF    PBBH0283                                             MYR   20260615-0000000000877216BG REPAYMENT OF NEF                                         PNEF      BNMF                                                                            +0000000000000000    +000000000000000                  +0000000000000000 
-INTFBNMF9        2026061520260710120603+0000000000000000-0000000005563396+0000000000000000-0000000000000000000000016                                                                                                                                                                                                                
+PUT //SAP.PIBB.WOFF.HPTXT1  IWOFFHP1.TXT
+PUT //SAP.PIBB.WOFF.HPTXT2  IWOFFHP2.TXT
+EOB
+
+//WOFFACCT DD DSN=SAP.PBB.WOFF.HPTXT1,DISP=(NEW,CATLG,DELETE),
+//         UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//         DCB=(RECFM=FB,LRECL=350,BLKSIZE=0)
+//WOFFACC2 DD DSN=SAP.PBB.WOFF.HPTXT2,DISP=(NEW,CATLG,DELETE),
+//         UNIT=SYSDA,SPACE=(CYL,(3,2)),
+//         DCB=(RECFM=VB,LRECL=350,BLKSIZE=0)
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+
+EIIWOF08
+
+//WOFFC    DD DSN=OPER.RESTORE.PBB.NPL.HP.WOFF02.TXT,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+
+EIIWOF09
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPLA     DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR
+
+
+EIIWOF10
+
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPLA     DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR
+
+EIIWOF11
+
+//WOFF     DD DSN=OPER.RESTORE.PBB.NPL.HP.WOFF03.TXT,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+
+EIIWOF12
+
+
+//LOAN     DD DSN=SAP.PBB.MNILN.DAILY(0),DISP=SHR
+//NPL6     DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP02),DISP=SHR
+//*
+
+
+EIIWOF13
+
+//**********************************************************************
+//EIFMNP03 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP03),DISP=SHR
+//**********************************************************************
+//EIFMNP06 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP06),DISP=SHR
+//**********************************************************************
+//EIFMNP07 EXEC SAS609,REGION=6M,WORK='120000,8000'
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.LABEL)
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP07),DISP=SHR
+//**********************************************************************
+//*
+//
+
+
+EIIWOF14
+
+//WOFF     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.WOFF,DISP=OLD
+
+
+
+
+EIIWOFHD
+
+//WOFF     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.WOFF,DISP=OLD
+
+
+
+
+
+
+
+
+
+EIIWOF02
+
+//WOFF     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+
+EIIWOF03
+
+//*LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
+//LOAN     DD DSN=SAP.PBB.MNILN.DAILY(0),DISP=SHR
+//*%OPC END ACTION=INCLUDE
+//*
+//NPL6     DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP02),DISP=SHR
+
+
+//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP06),DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//SYSIN    DD DSN=SAP.BNM.PROGRAM(EIFMNP07),DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=SHR
+//SASLN    DD DSN=SAP.PBB.SASDATA,DISP=SHR
+PUT //SAP.PIBB.WOFF.HPTXT1  IWOFFHP1.TXT
+PUT //SAP.PIBB.WOFF.HPTXT2  IWOFFHP2.TXT
+//WOFFACCT DD DSN=SAP.PBB.WOFF.HPTXT1,DISP=(NEW,CATLG,DELETE),
+//WOFFACC2 DD DSN=SAP.PBB.WOFF.HPTXT2,DISP=(NEW,CATLG,DELETE),
+//WOFFC    DD DSN=OPER.RESTORE.PBB.NPL.HP.WOFF02.TXT,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPLA     DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPLA     DD DSN=SAP.PBB.NPL.HP.SASDATA,DISP=SHR
+//WOFF     DD DSN=OPER.RESTORE.PBB.NPL.HP.WOFF03.TXT,DISP=SHR
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//LOAN     DD DSN=SAP.PBB.MNILN.DAILY(0),DISP=SHR
+//NPL6     DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//NPL      DD DSN=SAP.PBB.NPL.HP.SASDATA.WOFF,DISP=OLD
+//WOFF     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.WOFF,DISP=OLD
+//WOFF     DD DSN=RBP2.B033.LN.WRI2.OFF.MIS,DISP=SHR
+//NPL      DD DSN=SAP.PIBB.NPL.WOFF,DISP=OLD
+
+
+
+
+
+
+
+
+Untuk keseluruhan rangkaian EIIWOF01–EIIWOF14, raw physical inputs unik yang kelihatan ialah:
+RBP2.B033.LN.WRI2.OFF.MIS
+SAP.PBB.MNILN.DAILY(0)
+OPER.RESTORE.PBB.NPL.HP.WOFF02.TXT
+OPER.RESTORE.PBB.NPL.HP.WOFF03.TXT
+SAP.PBB.NPL.HP.SASDATA
+SAP.PIBB.NPL.WOFF
+SAP.PBB.SASDATA
+FTP files IWOFFHP1.TXT dan IWOFFHP2.TXT
