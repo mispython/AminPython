@@ -1,3 +1,9 @@
+   - Brief Description	Enhancement in program (ie: new field created)
+   - Detailed Description	Enhance D_PRODUCT_TYPE & D_RECON_PRODUCT_TYPE for existing DM_REPO only
+• Segregate RM/FX REPURCHASE AGREEMENT based on CURRENCY
+Requires Technical Documentation?	No
+
+
 LIBNAME  DM_TD_DP '/dwh/dm_td_dp';
 LIBNAME  DM_TD_PL '/dwh/dm_td_pl';
 LIBNAME  MNL      '/dwh/dwh_m/tempsource/mis';
