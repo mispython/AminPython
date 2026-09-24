@@ -1,280 +1,198 @@
-LIBNAME DM_TD_DP '/dwh/dm_td_dp';
-LIBNAME DM_TD_PL '/dwh/dm_td_pl';
-LIBNAME MNL      '/dwh/dwh_m/tempsource/mis';
-LIBNAME EQ       ('/dwh/eq_d' '/dwh/ieq_d');
+LIBNAME  DM_TD_DP '/dwh/dm_td_dp';
+LIBNAME  DM_TD_PL '/dwh/dm_td_pl';
+LIBNAME  MNL      '/dwh/dwh_m/tempsource/mis';
+LIBNAME  EQ       ('/dwh/eq_d' '/dwh/ieq_d'); 
 
 OPTIONS YEARCUTOFF=1960 NOCENTER COMPRESS=Y;
 
-/*
-    Desc      : MIS Data Mart: Create Repurchase Agreement (REPO)
-                related data marts, balance base and interest expense
-                in SAS Data Warehouse
-    eSMR      : 2024-3419 (AAB)
-    Frequency : Daily
-    Requester : Woon Tyen Likh, Finance Division - MIS
+/*  
+	Desc		: MIS Data Mart: Create Repurchase Agreement (REPO) related data marts, balance base and interest expense in SAS Data Warehouse           
+	eSMR 		: 2024-3419 (AAB) 
+	Frequency	: Daily
+	Requester 	: Woon Tyen Likh, Finance Division - MIS
 */
 
 DATA REPTDATE;
-    REPTDATE = &SAS_DT_SAS;
-    CALL SYMPUT('REPTDT',PUT(REPTDATE,YYMMDDN6.));
-    CALL SYMPUT('PREVDT',PUT(REPTDATE-1,YYMMDDN6.));
-    CALL SYMPUT('RDATE',REPTDATE);
-    CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
-    CALL SYMPUT('REPTMD',SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4));
-RUN;
+   	REPTDATE = &SAS_DT_SAS;
+   	CALL SYMPUT('REPTDT',PUT(REPTDATE, YYMMDDN6.));	
+   	CALL SYMPUT('PREVDT',PUT(REPTDATE-1, YYMMDDN6.));	
+	CALL SYMPUT('RDATE',REPTDATE); 
+	CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.)); 
+	CALL SYMPUT('REPTMD',SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4));
+RUN; 
 
-PROC FORMAT LIBRARY=MNL CNTLOUT=ALLFMTS;
-RUN;
-
-PROC FORMAT CNTLIN=ALLFMTS;
-RUN;
+PROC FORMAT LIBRARY=MNL CNTLOUT=ALLFMTS; RUN;
+PROC FORMAT CNTLIN=ALLFMTS; RUN;
 
 /* REPO MART */
 
 DATA BASE_REPO;
-    LENGTH D_PROD_GROUP $ 20
-           D_IDENTIFIER D_PORTFOLIO $ 30
-           D_PRODUCT_TYPE $ 50
-           D_RECON_PROD_TYPE $ 200;
+	LENGTH D_PROD_GROUP $ 20 D_IDENTIFIER D_PORTFOLIO $ 30 D_PRODUCT_TYPE $ 50 D_RECON_PROD_TYPE $ 200 ;
 
-    SET EQ.UTRP&REPTDT(IN=A) EQ.IUTRP&REPTDT;
+	SET EQ.UTRP&REPTDT(IN=A) EQ.IUTRP&REPTDT; 
+	IF A THEN D_BANK_ENTITY = 'PBBH';
+	ELSE      D_BANK_ENTITY = 'PIBB'; 
 
-    IF A THEN D_BANK_ENTITY = 'PBBH';
-    ELSE      D_BANK_ENTITY = 'PIBB';
+	F_M12_REPORT_FLAG   = 1;
+	F_RECON_REPORT_FLAG = 1;
 
-    F_M12_REPORT_FLAG   = 1;
-    F_RECON_REPORT_FLAG = 1;
+	ACCTNO_REF        = input(substr(CUSTACC,4,10),10.);
+	DEALTYPE_ENTITY   = compress(DEALTYPE||D_BANK_ENTITY);
+	D_IDENTIFIER      = put(DEALTYPE_ENTITY,$D_TD_IDENTIFIER.);
+	D_PROD_GROUP      = put(D_IDENTIFIER,$D_TD_PROD_GROUP.);
+	D_PRODUCT_TYPE    = put(D_IDENTIFIER,$D_TD_PRODUCT_TYPE.);
+	D_RECON_PROD_TYPE = put(D_IDENTIFIER,$D_TD_PRODUCT_TYPE.);
 
-    ACCTNO_REF        = INPUT(SUBSTR(CUSTACC,4,10),10.);
-    DEALTYPE_ENTITY   = COMPRESS(DEALTYPE||D_BANK_ENTITY);
-    D_IDENTIFIER      = PUT(DEALTYPE_ENTITY,$D_TD_IDENTIFIER.);
-    D_PROD_GROUP      = PUT(D_IDENTIFIER,$D_TD_PROD_GROUP.);
-    D_PRODUCT_TYPE    = PUT(D_IDENTIFIER,$D_TD_PRODUCT_TYPE.);
-    D_RECON_PROD_TYPE = PUT(D_IDENTIFIER,$D_TD_PRODUCT_TYPE.);
+	/* enhance here */
+	IF D_IDENTIFIER = 'REPO' AND CURRENCY NE 'MYR' THEN DO;
+		D_PRODUCT_TYPE    = TRANWRD(D_PRODUCT_TYPE,'RM','FX');
+		D_RECON_PROD_TYPE = TRANWRD(D_RECON_PROD_TYPE,'RM','FX');
+	END;
+	/* end enhancement */
 
-    /* enhance here */
-    /* Change RM to FX for non-MYR REPO records.
-       CURRENCY is renamed to D_CURRENCY_CD at output. */
-    IF D_IDENTIFIER = 'REPO' AND CURRENCY NE 'MYR' THEN DO;
-        D_PRODUCT_TYPE    = TRANWRD(D_PRODUCT_TYPE,'RM','FX');
-        D_RECON_PROD_TYPE = TRANWRD(D_RECON_PROD_TYPE,'RM','FX');
-    END;
-    /* end enhancement */
+	D_SEC_MATURE_YR   = YEAR(MATDATE);
+	D_SEC_MATURE_MTH  = MONTH(MATDATE);
+	D_SEC_MATURE_DAY  = DAY(MATDATE);
+	D_MATURE_YR       = YEAR(REPOMATD);
+	D_MATURE_MTH      = MONTH(REPOMATD);
+	D_MATURE_DAY      = DAY(REPOMATD);
+	D_PLACEMENT_YR    = YEAR(REPOSRTD);
+	D_PLACEMENT_MTH   = MONTH(REPOSRTD);
+	D_PLACEMENT_DAY   = DAY(REPOSRTD);
+	
+	D_CUST_TYPE       = put(CUSTFISS, $D_Cust_Type.);
+	D_RESIDENT        = put(CUSTFISS, $D_Resident.);
+	D_SME             = put(CUSTFISS, $D_Sme.);
+	D_SME_CATEGORY    = put(CUSTFISS, $D_SME_CATEGORY.);	
+	D_CUST_BUMI       = put(CUSTFISS, $D_CUST_BUMI.);	
+	D_INDV_ORG        = put(CUSTFISS, $D_Indv_Org.);
+	D_FINANCIAL_INSTITUTION = PUT(CUSTFISS, $D_Financial_Institution.);
+	D_CUST_GROUP      = put(CUSTFISS, $D_CUST_GROUP.);
+	D_SUB_CUST_GROUP  = put(CUSTFISS, $D_SUB_CUST_GROUP.);
+	D_PORTFOLIO       = put(D_IDENTIFIER,$D_TD_PORTFOLIO.);
+	D_PCC             = put(DEALTYPE_ENTITY,$D_PCC_MM.);
+	D_GL_NA_PROD      = put(DEALTYPE_ENTITY,$D_GL_NA_PROD_MM.);
+	D_SUB_PROD_GROUP  = PUT(DEALTYPE_ENTITY, $D_SUB_PROD_GROUP_MM.);
 
-    D_SEC_MATURE_YR   = YEAR(MATDATE);
-    D_SEC_MATURE_MTH  = MONTH(MATDATE);
-    D_SEC_MATURE_DAY  = DAY(MATDATE);
-    D_MATURE_YR       = YEAR(REPOMATD);
-    D_MATURE_MTH      = MONTH(REPOMATD);
-    D_MATURE_DAY      = DAY(REPOMATD);
-    D_PLACEMENT_YR    = YEAR(REPOSRTD);
-    D_PLACEMENT_MTH   = MONTH(REPOSRTD);
-    D_PLACEMENT_DAY   = DAY(REPOSRTD);
+	M_BAL         = ifn(D_IDENTIFIER='REPO',TSALPROC,TPCHPROC);
+	M_DAILY_INT   = round( (TSALPROC*RPINTRAT*((REPOMATD-REPOSRTD)/36500)) / (REPOMATD - REPOSRTD),0.01);
+	M_CNT         = 1;
+	SAS_DATE      = &RDATE;
+	REPORT_DATE   = PUT(&RDATE,YYMMDDN8.)*1; 
+	
+   	IF REPOSRTD > SAS_DATE THEN DO;
+		F_M12_REPORT_FLAG   = 0;
+		F_RECON_REPORT_FLAG = 0;
+   	END;
 
-    D_CUST_TYPE       = PUT(CUSTFISS,$D_Cust_Type.);
-    D_RESIDENT        = PUT(CUSTFISS,$D_Resident.);
-    D_SME             = PUT(CUSTFISS,$D_Sme.);
-    D_SME_CATEGORY    = PUT(CUSTFISS,$D_SME_CATEGORY.);
-    D_CUST_BUMI       = PUT(CUSTFISS,$D_CUST_BUMI.);
-    D_INDV_ORG        = PUT(CUSTFISS,$D_Indv_Org.);
-    D_FINANCIAL_INSTITUTION = PUT(CUSTFISS,$D_Financial_Institution.);
-    D_CUST_GROUP      = PUT(CUSTFISS,$D_CUST_GROUP.);
-    D_SUB_CUST_GROUP  = PUT(CUSTFISS,$D_SUB_CUST_GROUP.);
-    D_PORTFOLIO       = PUT(D_IDENTIFIER,$D_TD_PORTFOLIO.);
-    D_PCC             = PUT(DEALTYPE_ENTITY,$D_PCC_MM.);
-    D_GL_NA_PROD      = PUT(DEALTYPE_ENTITY,$D_GL_NA_PROD_MM.);
-    D_SUB_PROD_GROUP  = PUT(DEALTYPE_ENTITY,$D_SUB_PROD_GROUP_MM.);
-
-    M_BAL = IFN(D_IDENTIFIER='REPO',TSALPROC,TPCHPROC);
-    M_DAILY_INT = ROUND(
-        (TSALPROC*RPINTRAT*((REPOMATD-REPOSRTD)/36500))
-        / (REPOMATD-REPOSRTD),
-        0.01
-    );
-    M_CNT       = 1;
-    SAS_DATE    = &RDATE;
-    REPORT_DATE = PUT(&RDATE,YYMMDDN8.)*1;
-
-    IF REPOSRTD > SAS_DATE THEN DO;
-        F_M12_REPORT_FLAG   = 0;
-        F_RECON_REPORT_FLAG = 0;
-    END;
-
-    RENAME ORIGPORT = PORTFOLIO_REF
-           MATDATE  = SEC_MATURITY_DT
-           CUSTEQNO = ACCTNO
-           REPOMATD = MATURITY_DT
-           REPOSRTD = PLACEMENT_DT
-           CURRENCY = D_CURRENCY_CD
-           TPCHPROC = TOTAL_PURCH_PROC
-           TSALPROC = TOTAL_SALE_PROC
-           RPINTRAT = RATE;
+	RENAME ORIGPORT=PORTFOLIO_REF MATDATE=SEC_MATURITY_DT CUSTEQNO=ACCTNO REPOMATD=MATURITY_DT REPOSRTD=PLACEMENT_DT CURRENCY=D_CURRENCY_CD TPCHPROC=TOTAL_PURCH_PROC TSALPROC=TOTAL_SALE_PROC
+               RPINTRAT=RATE;
 RUN;
-
-PROC SORT DATA=BASE_REPO;
-    BY DEALREF;
-RUN;
+PROC SORT DATA=BASE_REPO; BY DEALREF; RUN;
 
 PROC SQL;
-    CREATE TABLE DM_TD_DP.DM_REPO&REPTDT AS
-    SELECT t1.D_BANK_ENTITY,
-           t1.BRANCH,
-           t1.DEALTYPE,
-           t1.DEALREF,
-           t1.SECTYPE,
-           t1.PORTFOLIO_REF,
-           t1.CUSTNO,
-           t1.CUSTLOC,
-           t1.CUSTNAME,
-           t1.CUSTEQTP,
-           t1.CUSTFISS,
-           t1.SEC_MATURITY_DT,
-           t1.ACCTNO,
-           t1.ACCTNO_REF,
-           t1.MATURITY_DT,
-           t1.PLACEMENT_DT,
-           t1.TOTAL_PURCH_PROC,
-           t1.TOTAL_SALE_PROC,
-           t1.RATE,
-           t1.F_M12_REPORT_FLAG,
-           t1.F_RECON_REPORT_FLAG,
-           t1.D_CURRENCY_CD,
-           t1.D_IDENTIFIER,
-           t1.D_PROD_GROUP,
-           t1.D_PRODUCT_TYPE,
-           t1.D_RECON_PROD_TYPE,
-           t1.D_SEC_MATURE_YR,
-           t1.D_SEC_MATURE_MTH,
-           t1.D_SEC_MATURE_DAY,
-           t1.D_MATURE_YR,
-           t1.D_MATURE_MTH,
-           t1.D_MATURE_DAY,
-           t1.D_PLACEMENT_YR,
-           t1.D_PLACEMENT_MTH,
-           t1.D_PLACEMENT_DAY,
-           t1.D_CUST_TYPE,
-           t1.D_RESIDENT,
-           t1.D_SME,
-           t1.D_SME_CATEGORY,
-           t1.D_CUST_BUMI,
-           t1.D_INDV_ORG,
-           t1.D_FINANCIAL_INSTITUTION,
-           t1.D_CUST_GROUP,
-           t1.D_SUB_CUST_GROUP,
-           t1.D_PORTFOLIO,
-           t1.D_PCC,
-           t1.D_GL_NA_PROD,
-           t1.D_SUB_PROD_GROUP,
-           t1.M_BAL,
-           t1.M_CNT,
-           t1.M_DAILY_INT,
-           t1.SAS_DATE,
-           t1.REPORT_DATE
-    FROM BASE_REPO t1
-    ORDER BY t1.D_BANK_ENTITY, t1.DEALREF;
+   CREATE TABLE DM_TD_DP.DM_REPO&REPTDT AS 
+   SELECT t1.D_BANK_ENTITY,
+          t1.BRANCH,
+          t1.DEALTYPE,
+          t1.DEALREF,
+          t1.SECTYPE,
+          t1.PORTFOLIO_REF,
+          t1.CUSTNO,
+          t1.CUSTLOC,
+          t1.CUSTNAME,
+          t1.CUSTEQTP,
+          t1.CUSTFISS,
+          t1.SEC_MATURITY_DT,
+          t1.ACCTNO,
+          t1.ACCTNO_REF,
+          t1.MATURITY_DT,
+          t1.PLACEMENT_DT,
+          t1.TOTAL_PURCH_PROC,
+          t1.TOTAL_SALE_PROC,
+          t1.RATE,
+          t1.F_M12_REPORT_FLAG,
+          t1.F_RECON_REPORT_FLAG,
+          t1.D_CURRENCY_CD,
+          t1.D_IDENTIFIER,
+          t1.D_PROD_GROUP,
+          t1.D_PRODUCT_TYPE,
+          t1.D_RECON_PROD_TYPE,
+          t1.D_SEC_MATURE_YR,
+          t1.D_SEC_MATURE_MTH,
+          t1.D_SEC_MATURE_DAY,
+          t1.D_MATURE_YR,
+          t1.D_MATURE_MTH,
+          t1.D_MATURE_DAY,
+          t1.D_PLACEMENT_YR,
+          t1.D_PLACEMENT_MTH,
+          t1.D_PLACEMENT_DAY,
+          t1.D_CUST_TYPE,
+          t1.D_RESIDENT,
+          t1.D_SME,
+          t1.D_SME_CATEGORY,
+          t1.D_CUST_BUMI,
+          t1.D_INDV_ORG,
+          t1.D_FINANCIAL_INSTITUTION,
+          t1.D_CUST_GROUP,
+          t1.D_SUB_CUST_GROUP,
+          t1.D_PORTFOLIO,
+          t1.D_PCC,
+          t1.D_GL_NA_PROD,
+		  t1.D_SUB_PROD_GROUP,
+          t1.M_BAL,
+          t1.M_CNT,
+          t1.M_DAILY_INT,
+          t1.SAS_DATE,
+          t1.REPORT_DATE
+      FROM BASE_REPO t1
+	  ORDER BY t1.D_BANK_ENTITY, t1.DEALREF;
 QUIT;
 
 %MACRO EXEC;
+%IF "&REPTMD" = "0101" %THEN %DO;
+	DATA CRDLY(KEEP=COLS);
+		LENGTH COLS $ 20;
+		DO REPTDATE=MDY(1,1,&REPTYEAR) TO MDY(12,31,&REPTYEAR);
+			COLS = 'DLY_BAL_'||SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4); OUTPUT;
+			COLS = 'DLY_INTEXP_'||SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4); OUTPUT; 
+		END;
+		IF MOD(&REPTYEAR,4) NE 0 THEN DO;
+			COLS = 'DLY_BAL_0229'; OUTPUT;
+			COLS = 'DLY_INTEXP_0229'; OUTPUT;
+		END;
+	RUN;
+	PROC SORT; BY COLS; RUN;
+	PROC TRANSPOSE DATA=CRDLY OUT=TRNDLY(DROP=_NAME_ DLY_INTEXP_:); ID COLS; RUN;
 
-    %IF "&REPTMD" = "0101" %THEN %DO;
+	PROC SORT DATA=DM_TD_DP.DM_REPO&PREVDT OUT=FULLBASE_REPO(KEEP=DEALREF M_BAL); BY DEALREF; RUN;
+	DATA FULLBASE_REPO;
+		SET FULLBASE_REPO TRNDLY;
+	RUN;
+	DATA DM_TD_DP.BALBASE_REPO&REPTYEAR;
+		MERGE FULLBASE_REPO(RENAME=(M_BAL=PREV_YEAR_END_BAL)) BASE_REPO(KEEP=DEALREF M_BAL RENAME=(M_BAL=DLY_BAL_&REPTMD));
+		BY DEALREF;
+	RUN;
 
-        DATA CRDLY(KEEP=COLS);
-            LENGTH COLS $ 20;
+	PROC TRANSPOSE DATA=CRDLY OUT=INTDLY(DROP=_NAME_ DLY_BAL_:); ID COLS; RUN;
+	DATA DM_TD_PL.DAILY_REPO_INTEXP_&REPTYEAR;
+		SET BASE_REPO(KEEP=DEALREF OBS=0) INTDLY BASE_REPO(KEEP=DEALREF M_DAILY_INT RENAME=(M_DAILY_INT=DLY_INTEXP_&REPTMD));
+	RUN;
+%END;
+%ELSE %DO;
+	DATA DM_TD_DP.BALBASE_REPO&REPTYEAR;
+		MERGE DM_TD_DP.BALBASE_REPO&REPTYEAR BASE_REPO(KEEP=DEALREF M_BAL RENAME=(M_BAL=DLY_BAL_&REPTMD));
+		BY DEALREF;
+	RUN;
 
-            DO REPTDATE=MDY(1,1,&REPTYEAR)
-                        TO MDY(12,31,&REPTYEAR);
-                COLS = 'DLY_BAL_' ||
-                       SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4);
-                OUTPUT;
-
-                COLS = 'DLY_INTEXP_' ||
-                       SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4);
-                OUTPUT;
-            END;
-
-            IF MOD(&REPTYEAR,4) NE 0 THEN DO;
-                COLS = 'DLY_BAL_0229';
-                OUTPUT;
-
-                COLS = 'DLY_INTEXP_0229';
-                OUTPUT;
-            END;
-        RUN;
-
-        PROC SORT DATA=CRDLY;
-            BY COLS;
-        RUN;
-
-        PROC TRANSPOSE DATA=CRDLY
-            OUT=TRNDLY(DROP=_NAME_ DLY_INTEXP_:);
-            ID COLS;
-        RUN;
-
-        PROC SORT DATA=DM_TD_DP.DM_REPO&PREVDT
-            OUT=FULLBASE_REPO(KEEP=DEALREF M_BAL);
-            BY DEALREF;
-        RUN;
-
-        DATA FULLBASE_REPO;
-            SET FULLBASE_REPO TRNDLY;
-        RUN;
-
-        DATA DM_TD_DP.BALBASE_REPO&REPTYEAR;
-            MERGE FULLBASE_REPO(
-                      RENAME=(M_BAL=PREV_YEAR_END_BAL)
-                  )
-                  BASE_REPO(
-                      KEEP=DEALREF M_BAL
-                      RENAME=(M_BAL=DLY_BAL_&REPTMD)
-                  );
-            BY DEALREF;
-        RUN;
-
-        PROC TRANSPOSE DATA=CRDLY
-            OUT=INTDLY(DROP=_NAME_ DLY_BAL_:);
-            ID COLS;
-        RUN;
-
-        DATA DM_TD_PL.DAILY_REPO_INTEXP_&REPTYEAR;
-            SET BASE_REPO(KEEP=DEALREF OBS=0)
-                INTDLY
-                BASE_REPO(
-                    KEEP=DEALREF M_DAILY_INT
-                    RENAME=(M_DAILY_INT=DLY_INTEXP_&REPTMD)
-                );
-        RUN;
-
-    %END;
-    %ELSE %DO;
-
-        DATA DM_TD_DP.BALBASE_REPO&REPTYEAR;
-            MERGE DM_TD_DP.BALBASE_REPO&REPTYEAR
-                  BASE_REPO(
-                      KEEP=DEALREF M_BAL
-                      RENAME=(M_BAL=DLY_BAL_&REPTMD)
-                  );
-            BY DEALREF;
-        RUN;
-
-        DATA DM_TD_PL.DAILY_REPO_INTEXP_&REPTYEAR;
-            MERGE DM_TD_PL.DAILY_REPO_INTEXP_&REPTYEAR
-                  BASE_REPO(
-                      KEEP=DEALREF M_DAILY_INT
-                      RENAME=(M_DAILY_INT=DLY_INTEXP_&REPTMD)
-                  );
-            BY DEALREF;
-        RUN;
-
-    %END;
+	DATA DM_TD_PL.DAILY_REPO_INTEXP_&REPTYEAR;
+		MERGE DM_TD_PL.DAILY_REPO_INTEXP_&REPTYEAR BASE_REPO(KEEP=DEALREF M_DAILY_INT RENAME=(M_DAILY_INT=DLY_INTEXP_&REPTMD));
+		BY DEALREF;
+	RUN;
+%END;
 
 %MEND EXEC;
-
 %EXEC;
 
-PROC SORT DATA=DM_TD_DP.BALBASE_REPO&REPTYEAR;
-    BY DEALREF;
-RUN;
-
-PROC SORT DATA=DM_TD_PL.DAILY_REPO_INTEXP_&REPTYEAR;
-    BY DEALREF;
-RUN;
+PROC SORT DATA=DM_TD_DP.BALBASE_REPO&REPTYEAR; BY DEALREF; RUN;
+PROC SORT DATA=DM_TD_PL.DAILY_REPO_INTEXP_&REPTYEAR; BY DEALREF; RUN;
