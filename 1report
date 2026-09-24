@@ -1,102 +1,229 @@
-LIBNAME HOLDOUT '/stgsrcsys/host/holding';
 
-PROC SORT DATA=HOLDOUT.DM_REPO260228X OUT=REPO_OLD;
-	BY D_BANK_ENTITY DEALREF;
-RUN;
+Before and After - Records with Differences 
 
-PROC SORT DATA=HOLDOUT.DM_REPO260228 OUT=REPO_NEW;
-	BY D_BANK_ENTITY DEALREF;
-RUN;
 
-/* Compare all fields */
-PROC COMPARE BASE=REPO_OLD
-             COMPARE=REPO_NEW
-             METHOD=EXACT
-             OUT=REPO_DIFF
-             OUTNOEQUAL
-             OUTBASE
-             OUTCOMP
-             NOPRINT;
-	ID D_BANK_ENTITY DEALREF;
-RUN;
 
-/* Show before and after for records with differences */
-DATA REPO_BEFORE_AFTER;
-	LENGTH VERSION $6;
-	SET REPO_DIFF;
-	IF _TYPE_ = 'BASE' THEN VERSION = 'BEFORE';
-	ELSE IF _TYPE_ = 'COMPARE' THEN VERSION = 'AFTER';
-	ELSE DELETE;
-	DROP _TYPE_ _OBS_;
-RUN;
+D_BANK_ENTITY=PBBH DEALREF=R3713
 
-PROC SORT DATA=REPO_BEFORE_AFTER;
-	BY D_BANK_ENTITY DEALREF DESCENDING VERSION;
-RUN;
 
-PROC PRINT DATA=REPO_BEFORE_AFTER NOOBS;
-	BY D_BANK_ENTITY DEALREF;
-	ID VERSION;
-	VAR D_CURRENCY_CD D_IDENTIFIER
-	    D_PRODUCT_TYPE D_RECON_PROD_TYPE;
-	TITLE 'Before and After - Records with Differences';
-RUN;
-TITLE;
 
-/* Validate ALL new REPO records against the requirement */
-DATA REPO_VALIDATION;
-	LENGTH EXPECTED_VALUE $50 CHECK_RESULT $6;
-	SET REPO_NEW;
-	WHERE D_IDENTIFIER = 'REPO';
 
-	IF D_CURRENCY_CD = 'MYR' THEN
-		EXPECTED_VALUE = 'RM REPURCHASE AGREEMENTS';
-	ELSE
-		EXPECTED_VALUE = 'FX REPURCHASE AGREEMENT';
 
-	IF D_PRODUCT_TYPE = EXPECTED_VALUE AND
-	   D_RECON_PROD_TYPE = EXPECTED_VALUE THEN
-		CHECK_RESULT = 'PASS';
-	ELSE
-		CHECK_RESULT = 'FAIL';
 
-	/* Blank currency needs review even though it is not MYR */
-	IF MISSING(D_CURRENCY_CD) THEN CHECK_RESULT = 'REVIEW';
-RUN;
 
-/* Summary of enhancement results */
-PROC FREQ DATA=REPO_VALIDATION;
-	TABLES D_CURRENCY_CD*CHECK_RESULT / MISSING NOCOL NOROW NOPERCENT;
-	TITLE 'Enhancement Validation - All New REPO Records';
-RUN;
-TITLE;
 
-/* Show records that do not meet the requirement */
-PROC PRINT DATA=REPO_VALIDATION NOOBS;
-	WHERE CHECK_RESULT NE 'PASS';
-	VAR D_BANK_ENTITY DEALREF D_CURRENCY_CD D_IDENTIFIER
-	    D_PRODUCT_TYPE D_RECON_PROD_TYPE
-	    EXPECTED_VALUE CHECK_RESULT;
-	TITLE 'Enhancement Validation - Failed or Review Records';
-RUN;
-TITLE;
 
-/* Other fields and record keys should remain unchanged */
-PROC COMPARE
-	BASE=REPO_OLD(DROP=D_PRODUCT_TYPE D_RECON_PROD_TYPE)
-	COMPARE=REPO_NEW(DROP=D_PRODUCT_TYPE D_RECON_PROD_TYPE)
-	METHOD=EXACT;
-	ID D_BANK_ENTITY DEALREF;
-	TITLE 'Other Fields - Expected to Have No Differences';
-RUN;
-TITLE;
 
-/* Non-REPO records should remain unchanged, including product fields */
-PROC COMPARE
-	BASE=REPO_OLD(WHERE=(D_IDENTIFIER NE 'REPO'))
-	COMPARE=REPO_NEW(WHERE=(D_IDENTIFIER NE 'REPO'))
-	METHOD=EXACT;
-	ID D_BANK_ENTITY DEALREF;
-	TITLE 'Non-REPO Records - Expected to Have No Differences';
-RUN;
-TITLE;
+VERSION
+
+D_CURRENCY_CD
+
+D_IDENTIFIER
+
+D_PRODUCT_TYPE
+
+D_RECON_PROD_TYPE
+
+
+
+BEFORE
+USD REPO FX REPURCHASE AGREEMENT FX REPURCHASE AGREEMENT 
+
+AFTER
+USD REPO FX REPURCHASE AGREEMENTS FX REPURCHASE AGREEMENTS 
+
+
+
+
+Enhancement Validation - All New REPO Records 
+
+
+The FREQ Procedure
+
+
+
+
+
+
+
+
+
+Frequency
+ 
+ 
+
+
+
+
+
+
+
+
+Table of D_CURRENCY_CD by CHECK_RESULT
+
+
+D_CURRENCY_CD
+
+CHECK_RESULT
+
+
+FAIL
+
+PASS
+
+Total
+
+
+
+MYR
+
+
+0
+ 
+
+39
+ 
+
+39
+ 
+
+USD
+
+
+1
+ 
+
+0
+ 
+
+1
+ 
+
+Total
+
+
+1
+ 
+
+39
+ 
+
+40
+ 
+ 
+
+
+
+
+Enhancement Validation - Failed or Review Records 
+
+
+
+
+
+
+
+
+
+
+
+
+
+D_BANK_ENTITY
+
+DEALREF
+
+D_CURRENCY_CD
+
+D_IDENTIFIER
+
+D_PRODUCT_TYPE
+
+D_RECON_PROD_TYPE
+
+EXPECTED_VALUE
+
+CHECK_RESULT
+
+
+PBBH R3713 USD REPO FX REPURCHASE AGREEMENTS FX REPURCHASE AGREEMENTS FX REPURCHASE AGREEMENT FAIL 
+
+
+
+
+Other Fields - Expected to Have No Differences 
+
+                                                       The COMPARE Procedure                                                        
+                                           Comparison of WORK.REPO_OLD with WORK.REPO_NEW                                           
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                                         Data Set Summary                                                           
+                                                                                                                                    
+                                  Dataset                 Created          Modified  NVar    NObs                                   
+                                                                                                                                    
+                                  WORK.REPO_OLD  24SEP26:15:47:25  24SEP26:15:47:25    51      40                                   
+                                  WORK.REPO_NEW  24SEP26:15:47:25  24SEP26:15:47:25    51      40                                   
+                                                                                                                                    
+                                                                                                                                    
+                                                         Variables Summary                                                          
+                                                                                                                                    
+                                               Number of Variables in Common: 51.                                                   
+                                               Number of ID Variables: 2.                                                           
+
+
+                                                                                                                                    
+                                                                                                                                    
+                                                        Observation Summary                                                         
+                                                                                                                                    
+                                 Observation      Base  Compare  ID                                                                 
+                                                                                                                                    
+                                 First Obs           1        1  D_BANK_ENTITY=PBBH DEALREF=R3251                                   
+                                 Last  Obs          40       40  D_BANK_ENTITY=PIBB DEALREF=R3711                                   
+                                                                                                                                    
+                                  Number of Observations in Common: 40.                                                             
+                                  Total Number of Observations Read from WORK.REPO_OLD: 40.                                         
+                                  Total Number of Observations Read from WORK.REPO_NEW: 40.                                         
+                                                                                                                                    
+                                  Number of Observations with Some Compared Variables Unequal: 0.                                   
+                                  Number of Observations with All Compared Variables Equal: 40.                                     
+                                                                                                                                    
+                                  NOTE: No unequal values were found. All values compared are exactly equal.                        
+                                                                                                                                    
+
+
+
+
+
+Non-REPO Records - Expected to Have No Differences 
+
+                                                       The COMPARE Procedure                                                        
+                                           Comparison of WORK.REPO_OLD with WORK.REPO_NEW                                           
+                                                           (Method=EXACT)                                                           
+                                                                                                                                    
+                                                         Data Set Summary                                                           
+                                                                                                                                    
+                                  Dataset                 Created          Modified  NVar    NObs                                   
+                                                                                                                                    
+                                  WORK.REPO_OLD  24SEP26:15:47:25  24SEP26:15:47:25    53      40                                   
+                                  WORK.REPO_NEW  24SEP26:15:47:25  24SEP26:15:47:25    53      40                                   
+                                                                                                                                    
+                                                                                                                                    
+                                                         Variables Summary                                                          
+                                                                                                                                    
+                                               Number of Variables in Common: 53.                                                   
+                                               Number of ID Variables: 2.                                                           
+
+
+                                                                                                                                    
+                                                                                                                                    
+                                                        Observation Summary                                                         
+                                                                                                                                    
+                                                                                                                                    
+                                  Number of Observations in Common: 0.                                                              
+                                  Total Number of Observations Read from WORK.REPO_OLD: 0.                                          
+                                  Total Number of Observations Read from WORK.REPO_NEW: 0.                                          
+                                                                                                                                    
+                                  Number of Observations with Some Compared Variables Unequal: 0.                                   
+                                  Number of Observations with All Compared Variables Equal: 0.                                      
+                                                                                                                                    
+
