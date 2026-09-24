@@ -1,150 +1,89 @@
-LIBNAME  HOLDOUT  '/stgsrcsys/host/holding';
-/* Standalone extract: production balance and interest datasets are not updated. */
-LIBNAME  MNL      '/dwh/dwh_m/tempsource/mis';
-LIBNAME  EQ       ('/dwh/eq_d' '/dwh/ieq_d'); 
+/*DATA _NULL_;*/
+/*	FILE "/sasdata/dwh/logs/&TXTFILE..txt" TERMSTR=CRLF;*/
+/*	PUT @1 'cd "/WMTB-SA&S/DEP - SAS/CAMPAIGN/FD/"'"&FOLDERNME";*/
+/*	PUT @1 "put /dwh/ftp/drr/D-&TXTFILE.-CUST@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /dwh/ftp/drr/D-&TXTFILE@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /dwh/ftp/drr/D-&TXTFILE.-CWP@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /dwh/ftp/drr/W-&TXTFILE.-BR@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /dwh/ftp/drr/W-&TXTFILE.-SUMM@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*		;*/
+/*RUN;*/
 
-OPTIONS YEARCUTOFF=1960 NOCENTER COMPRESS=Y;
+%END;
+%ELSE %DO;
 
-/*  
-	Desc		: MIS Data Mart: Create Repurchase Agreement (REPO) related data marts, balance base and interest expense in SAS Data Warehouse           
-	eSMR 		: 2024-3419 (AAB) 
-	Frequency	: Daily
-	Requester 	: Woon Tyen Likh, Finance Division - MIS
-*/
+/*DATA _NULL_;*/
+/*	FILE "/sasdata/dwh/logs/&TXTFILE..txt" TERMSTR=CRLF;*/
+/*	PUT @1 'cd "/WMTB-SA&S/DEP - SAS/CAMPAIGN/FD/"'"&FOLDERNME";*/
+/*	PUT @1 "put /dwh/ftp/drr/D-&TXTFILE.-CUST@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /dwh/ftp/drr/D-&TXTFILE@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	PUT @1 "put /dwh/ftp/drr/D-&TXTFILE.-CWP@&REPTDAY&REPTMON&REPTYEAR..TXT";*/
+/*	;*/
+/*RUN;*/
 
-DATA REPTDATE;
-   	REPTDATE = '28FEB26'D; /* February 2026 month-end position */
-   	CALL SYMPUT('REPTDT',PUT(REPTDATE, YYMMDDN6.));	
-   	CALL SYMPUT('PREVDT',PUT(REPTDATE-1, YYMMDDN6.));	
-	CALL SYMPUT('RDATE',REPTDATE); 
-	CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.)); 
-	CALL SYMPUT('REPTMD',SUBSTR(PUT(REPTDATE,YYMMDDN6.),3,4));
-RUN; 
+%END;
 
-PROC FORMAT LIBRARY=MNL CNTLOUT=ALLFMTS; RUN;
-PROC FORMAT CNTLIN=ALLFMTS; RUN;
+%MEND;
+%CHECKDATE;
 
-/* REPO MART */
+/*data _null_;*/
+/*	set ctl.ctl_dwh_sftp_info;*/
+/*	where index(trim(host_desc),'Data Report Repository (DRR)');*/
+/*	*/
+/*	call symput('idx',compress(sftp_id));*/
+/*	call symput('passwordx',compress(sftp_pw));*/
+/*	call symput('hostx',compress(host_ip));*/
+/*run;*/
+/**/
+/*data _null_;*/
+/*   	sftp_cmd =  "echo y|psftp -b /sasdata/dwh/logs/&TXTFILE..txt -be -pw &passwordx. &idx.@&hostx. > /sasdata/dwh/logs/&TXTFILE._log.txt";*/
+/*   	rc = system(sftp_cmd);*/
+/*   	if rc > 0 then abort;*/
+/*run;*/
 
-DATA BASE_REPO;
-	LENGTH D_PROD_GROUP $ 20 D_IDENTIFIER D_PORTFOLIO $ 30 D_PRODUCT_TYPE $ 50 D_RECON_PROD_TYPE $ 200 ;
 
-	SET EQ.UTRP&REPTDT(IN=A) EQ.IUTRP&REPTDT; 
-	IF A THEN D_BANK_ENTITY = 'PBBH';
-	ELSE      D_BANK_ENTITY = 'PIBB'; 
 
-	F_M12_REPORT_FLAG   = 1;
-	F_RECON_REPORT_FLAG = 1;
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@23092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@23092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@23092026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@22092026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@22092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@22092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@22092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@22092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@21092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@21092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@21092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@20092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@20092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@20092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@19092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@19092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@19092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@18092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@18092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@18092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@17092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@17092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@17092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@16092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@16092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@16092026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@15092026.TXT
+/stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@15092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@15092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@15092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@15092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@14092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@14092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@14092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@13092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@13092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@13092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@12092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@12092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@12092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@11092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@11092026.TXT
+/stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@11092026.TXT
 
-	ACCTNO_REF        = input(substr(CUSTACC,4,10),10.);
-	DEALTYPE_ENTITY   = compress(DEALTYPE||D_BANK_ENTITY);
-	D_IDENTIFIER      = put(DEALTYPE_ENTITY,$D_TD_IDENTIFIER.);
-	D_PROD_GROUP      = put(D_IDENTIFIER,$D_TD_PROD_GROUP.);
-	D_PRODUCT_TYPE    = put(D_IDENTIFIER,$D_TD_PRODUCT_TYPE.);
-	D_RECON_PROD_TYPE = put(D_IDENTIFIER,$D_TD_PRODUCT_TYPE.);
-
-	/* enhance here */
-	IF D_IDENTIFIER = 'REPO' AND CURRENCY NE 'MYR' THEN DO;
-		D_PRODUCT_TYPE    = TRANWRD(D_PRODUCT_TYPE,'RM','FX');
-		D_RECON_PROD_TYPE = TRANWRD(D_RECON_PROD_TYPE,'RM','FX');
-	END;
-	/* end enhancement */
-
-	D_SEC_MATURE_YR   = YEAR(MATDATE);
-	D_SEC_MATURE_MTH  = MONTH(MATDATE);
-	D_SEC_MATURE_DAY  = DAY(MATDATE);
-	D_MATURE_YR       = YEAR(REPOMATD);
-	D_MATURE_MTH      = MONTH(REPOMATD);
-	D_MATURE_DAY      = DAY(REPOMATD);
-	D_PLACEMENT_YR    = YEAR(REPOSRTD);
-	D_PLACEMENT_MTH   = MONTH(REPOSRTD);
-	D_PLACEMENT_DAY   = DAY(REPOSRTD);
-	
-	D_CUST_TYPE       = put(CUSTFISS, $D_Cust_Type.);
-	D_RESIDENT        = put(CUSTFISS, $D_Resident.);
-	D_SME             = put(CUSTFISS, $D_Sme.);
-	D_SME_CATEGORY    = put(CUSTFISS, $D_SME_CATEGORY.);	
-	D_CUST_BUMI       = put(CUSTFISS, $D_CUST_BUMI.);	
-	D_INDV_ORG        = put(CUSTFISS, $D_Indv_Org.);
-	D_FINANCIAL_INSTITUTION = PUT(CUSTFISS, $D_Financial_Institution.);
-	D_CUST_GROUP      = put(CUSTFISS, $D_CUST_GROUP.);
-	D_SUB_CUST_GROUP  = put(CUSTFISS, $D_SUB_CUST_GROUP.);
-	D_PORTFOLIO       = put(D_IDENTIFIER,$D_TD_PORTFOLIO.);
-	D_PCC             = put(DEALTYPE_ENTITY,$D_PCC_MM.);
-	D_GL_NA_PROD      = put(DEALTYPE_ENTITY,$D_GL_NA_PROD_MM.);
-	D_SUB_PROD_GROUP  = PUT(DEALTYPE_ENTITY, $D_SUB_PROD_GROUP_MM.);
-
-	M_BAL         = ifn(D_IDENTIFIER='REPO',TSALPROC,TPCHPROC);
-	M_DAILY_INT   = round( (TSALPROC*RPINTRAT*((REPOMATD-REPOSRTD)/36500)) / (REPOMATD - REPOSRTD),0.01);
-	M_CNT         = 1;
-	SAS_DATE      = &RDATE;
-	REPORT_DATE   = PUT(&RDATE,YYMMDDN8.)*1; 
-	
-   	IF REPOSRTD > SAS_DATE THEN DO;
-		F_M12_REPORT_FLAG   = 0;
-		F_RECON_REPORT_FLAG = 0;
-   	END;
-
-	RENAME ORIGPORT=PORTFOLIO_REF MATDATE=SEC_MATURITY_DT CUSTEQNO=ACCTNO REPOMATD=MATURITY_DT REPOSRTD=PLACEMENT_DT CURRENCY=D_CURRENCY_CD TPCHPROC=TOTAL_PURCH_PROC TSALPROC=TOTAL_SALE_PROC
-               RPINTRAT=RATE;
-RUN;
-PROC SORT DATA=BASE_REPO; BY DEALREF; RUN;
-
-PROC SQL;
-   CREATE TABLE HOLDOUT.DM_REPO&REPTDT AS 
-   SELECT t1.D_BANK_ENTITY,
-          t1.BRANCH,
-          t1.DEALTYPE,
-          t1.DEALREF,
-          t1.SECTYPE,
-          t1.PORTFOLIO_REF,
-          t1.CUSTNO,
-          t1.CUSTLOC,
-          t1.CUSTNAME,
-          t1.CUSTEQTP,
-          t1.CUSTFISS,
-          t1.SEC_MATURITY_DT,
-          t1.ACCTNO,
-          t1.ACCTNO_REF,
-          t1.MATURITY_DT,
-          t1.PLACEMENT_DT,
-          t1.TOTAL_PURCH_PROC,
-          t1.TOTAL_SALE_PROC,
-          t1.RATE,
-          t1.F_M12_REPORT_FLAG,
-          t1.F_RECON_REPORT_FLAG,
-          t1.D_CURRENCY_CD,
-          t1.D_IDENTIFIER,
-          t1.D_PROD_GROUP,
-          t1.D_PRODUCT_TYPE,
-          t1.D_RECON_PROD_TYPE,
-          t1.D_SEC_MATURE_YR,
-          t1.D_SEC_MATURE_MTH,
-          t1.D_SEC_MATURE_DAY,
-          t1.D_MATURE_YR,
-          t1.D_MATURE_MTH,
-          t1.D_MATURE_DAY,
-          t1.D_PLACEMENT_YR,
-          t1.D_PLACEMENT_MTH,
-          t1.D_PLACEMENT_DAY,
-          t1.D_CUST_TYPE,
-          t1.D_RESIDENT,
-          t1.D_SME,
-          t1.D_SME_CATEGORY,
-          t1.D_CUST_BUMI,
-          t1.D_INDV_ORG,
-          t1.D_FINANCIAL_INSTITUTION,
-          t1.D_CUST_GROUP,
-          t1.D_SUB_CUST_GROUP,
-          t1.D_PORTFOLIO,
-          t1.D_PCC,
-          t1.D_GL_NA_PROD,
-		  t1.D_SUB_PROD_GROUP,
-          t1.M_BAL,
-          t1.M_CNT,
-          t1.M_DAILY_INT,
-          t1.SAS_DATE,
-          t1.REPORT_DATE
-      FROM BASE_REPO t1
-	  ORDER BY t1.D_BANK_ENTITY, t1.DEALREF;
-QUIT;
