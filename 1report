@@ -1,3 +1,17 @@
+	/* enhance here */
+	IF D_IDENTIFIER = 'REPO' THEN DO;
+		IF CURRENCY = 'MYR' THEN DO;
+			D_PRODUCT_TYPE    = 'RM REPURCHASE AGREEMENTS';
+			D_RECON_PROD_TYPE = 'RM REPURCHASE AGREEMENTS';
+		END;
+		ELSE DO;
+			D_PRODUCT_TYPE    = 'FX REPURCHASE AGREEMENT';
+			D_RECON_PROD_TYPE = 'FX REPURCHASE AGREEMENT';
+		END;
+	END;
+	/* end enhancement */
+
+
 
 Before and After - Records with Differences 
 
