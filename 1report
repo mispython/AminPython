@@ -1,64 +1,16 @@
-LIBNAME CTL '/sasdata/dwh/control';
+LIBNAME HOLDOUT '/stgsrcsys/host/holding';
 
-DATA _NULL_;
-	FILE "/sasdata/dwh/logs/PB-eFDFPX-0126_backfill.txt" TERMSTR=CRLF;
-	PUT 'cd "/WMTB-SA&S/DEP - SAS/CAMPAIGN/FD/PBeFDFPX0126"';
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@23092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@23092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@23092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@22092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@22092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@22092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@22092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@22092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@21092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@21092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@21092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@20092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@20092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@20092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@19092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@19092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@19092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@18092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@18092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@18092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@17092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@17092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@17092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@16092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@16092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@16092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-SUMM@15092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/W-PB-eFDFPX-0126-BR@15092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@15092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@15092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@15092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@14092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@14092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@14092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@13092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@13092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@13092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@12092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@12092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@12092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CWP@11092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126@11092026.TXT";
-	PUT "put /stgsrcsys/host/holding/pas/D-PB-eFDFPX-0126-CUST@11092026.TXT";
+PROC SORT DATA=HOLDOUT.DM_REPO260228 OUT=REPO_OLD;
+	BY D_BANK_ENTITY DEALREF;
 RUN;
 
-data _null_;
-	set ctl.ctl_dwh_sftp_info;
-	where index(trim(host_desc),'Data Report Repository (DRR)');
-	
-	call symput('idx',compress(sftp_id));
-	call symput('passwordx',compress(sftp_pw));
-	call symput('hostx',compress(host_ip));
-run;
+PROC SORT DATA=HOLDOUT.DM_REPO260228X OUT=REPO_NEW;
+	BY D_BANK_ENTITY DEALREF;
+RUN;
 
-data _null_;
-   	sftp_cmd = "echo y|psftp -b /sasdata/dwh/logs/PB-eFDFPX-0126_backfill.txt -be -pw &passwordx. &idx.@&hostx. > /sasdata/dwh/logs/PB-eFDFPX-0126_backfill_log.txt";
-   	rc = system(sftp_cmd);
-   	if rc > 0 then abort;
-run;
+PROC COMPARE BASE=REPO_OLD
+             COMPARE=REPO_NEW
+             METHOD=EXACT
+             LISTALL;
+	ID D_BANK_ENTITY DEALREF;
+RUN;
