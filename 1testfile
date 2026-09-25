@@ -1,173 +1,390 @@
-"""Converted SAS include: PBMISFMT.
+1                                                          The SAS System                           10:51 Friday, September 25, 2026
 
-MIS lookup formats used by the converted jobs. Keep this module separate from
-main job scripts so it can be shared by multiple conversions.
-"""
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='Program 2';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='';
+9          %LET _SASPROGRAMFILEHOST='';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         /* =========================================================
+29            TEST ONLY
+30            Simulate run : 01MAY2026
+31            Report month : APRIL 2026
+32            Compare      : 29APR2026 vs 30APR2026
+33            Output       : SAS Log sahaja
+34            ========================================================= */
+35         
+36         /* Library aliases khas untuk testing */
+37         libname ztbal26
+38             ("/dwh/dm_dp" "/dwh/misdm/dm_dp");
+NOTE: Libref ZTBAL26 was successfully assigned as follows: 
+      Levels:           2
+      Engine(1):        V9 
+      Physical Name(1): /dwh/dm_dp
+      Engine(2):        V9 
+      Physical Name(2): /dwh/misdm/dm_dp
+39         
+40         libname ztint26
+41             "/dwh/misdm/dm_dp_pl";
+NOTE: Libref ZTINT26 was successfully assigned as follows: 
+      Engine:        V9 
+      Physical Name: /dwh/misdm/dm_dp_pl
+42         
+43         
+44         /* Macro variables khas untuk testing */
+45         %global zt_year zt_last zt_prev;
+46         
+47         /* Set reporting dates — tidak create dataset */
+48         data _null_;
+2                                                          The SAS System                           10:51 Friday, September 25, 2026
 
-from __future__ import annotations
+49             rundate   = '01MAY2026'd;
+50             firstdate = intnx('month', rundate, -1, 'beginning');
+51             lastdate  = intnx('month', rundate, -1, 'end');
+52             prevdate  = lastdate - 1;
+53         
+54             call symputx('zt_year', year(lastdate), 'G');
+55         
+56             call symputx('zt_last',
+57                 cats(put(month(lastdate), z2.),
+58                      put(day(lastdate), z2.)), 'G');
+59         
+60             call symputx('zt_prev',
+61                 cats(put(month(prevdate), z2.),
+62                      put(day(prevdate), z2.)), 'G');
+63         
+64             put 'NOTE: === TEST REPORTING DATES ===';
+65             put rundate= date9.
+66                 firstdate= date9.
+67                 lastdate= date9.;
+68         run;
 
-from typing import Any
+NOTE: === TEST REPORTING DATES ===
+rundate=01MAY2026 firstdate=01APR2026 lastdate=30APR2026
+NOTE: DATA statement used (Total process time):
+      real time           0.00 seconds
+      cpu time            0.01 seconds
+      
 
+69         
+70         
+71         /* Read source and display diagnostic results in SAS Log */
+72         %macro zt_check_filter(lib=, table=, prefix=, label=);
+73         
+74         data _null_;
+75             set &lib..&table
+76                 (keep=ACCTNO CDNO
+77                       &prefix.&zt_prev
+78                       &prefix.&zt_last)
+79                 end=last_record;
+80         
+81             retain total_rows 0
+82                    missing_last 0
+83                    zero_last 0
+84                    kept_last 0
+85                    prev_kept_last_removed 0
+86                    shown 0;
+87         
+88             total_rows + 1;
+89         
+90             previous_amount = &prefix.&zt_prev;
+91             last_amount     = &prefix.&zt_last;
+92         
+93             /* Same condition as the original report */
+94             previous_kept = (previous_amount not in (., 0));
+95             last_kept     = (last_amount not in (., 0));
+96         
+97             if last_amount = . then missing_last + 1;
+98             else if last_amount = 0 then zero_last + 1;
+3                                                          The SAS System                           10:51 Friday, September 25, 2026
 
-def lookup(code: int | str, mapping: dict[Any, Any], default: Any = None) -> Any:
-    return mapping.get(code, default)
+99         
+100            if last_kept then kept_last + 1;
+101        
+102            /*
+103               Show up to 20 examples where:
+104               29 April survives the filter,
+105               but 30 April is removed.
+106            */
+107            if previous_kept and not last_kept then do;
+108                prev_kept_last_removed + 1;
+109        
+110                if shown < 20 then do;
+111                    shown + 1;
+112        
+113                    put "NOTE: === &label: 29APR KEPT, 30APR REMOVED ===";
+114                    put ACCTNO= best32.
+115                        CDNO= best32.;
+116                    put previous_amount= best32.
+117                        last_amount= best32.;
+118        
+119                    if last_amount = . then
+120                        put 'NOTE: Reason: 30APR amount is missing (.)';
+121                    else if last_amount = 0 then
+122                        put 'NOTE: Reason: 30APR amount is zero';
+123                end;
+124            end;
+125        
+126            if last_record then do;
+127                put "NOTE: === &label SUMMARY ===";
+128                put 'NOTE: Source rows checked: ' total_rows;
+129                put 'NOTE: 30APR removed - missing (.): ' missing_last;
+130                put 'NOTE: 30APR removed - zero: ' zero_last;
+131                put 'NOTE: 30APR kept by original filter: ' kept_last;
+132                put 'NOTE: 29APR kept but 30APR removed: '
+133                    prev_kept_last_removed;
+134            end;
+135        run;
+136        
+137        %mend zt_check_filter;
+138        
+139        
+140        /* Test balance filter */
+141        %zt_check_filter(
+142            lib=ztbal26,
+143            table=BALBASE_FD_CD&zt_year,
+144            prefix=DLY_BAL_,
+145            label=BALANCE
+146        );
 
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031001
+previous_amount=50892.6 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031002
+previous_amount=80630.76 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+4                                                          The SAS System                           10:51 Friday, September 25, 2026
 
-STATECD = {
-    1: "W", 2: "W", 3: "W", 4: "M", 5: "A", 6: "P", 7: "J", 8: "C",
-    9: "A", 10: "K", 11: "K", 12: "D", 13: "D", 14: "D", 15: "W",
-    16: "N", 17: "N", 18: "B", 19: "B", 20: "B", 21: "J", 22: "B",
-    23: "A", 24: "N", 25: "B", 26: "W", 27: "P", 28: "J", 29: "W",
-    30: "T", 31: "B", 32: "Q", 33: "S", 34: "R", 35: "B", 36: "B",
-    37: "J", 38: "W", 39: "N", 40: "W", 41: "W", 42: "P", 43: "B",
-    44: "S", 45: "N", 46: "B", 47: "J", 48: "C", 49: "A", 50: "Q",
-    51: "A", 52: "J", 53: "W", 54: "P", 55: "L", 56: "B", 57: "K",
-    58: "Q", 59: "J", 60: "P", 61: "J", 62: "S", 63: "N", 64: "N",
-    65: "N", 66: "W", 67: "A", 68: "P", 69: "B", 70: "K", 71: "C",
-    72: "S", 73: "B", 74: "K", 75: "J", 76: "A", 77: "K", 78: "B",
-    79: "J", 80: "A", 81: "B", 82: "D", 83: "W", 84: "D", 85: "A",
-    86: "K", 87: "J", 88: "K", 89: "J", 90: "Q", 91: "J", 92: "B",
-    93: "J", 94: "W", 95: "A", 96: "B", 97: "W", 98: "J",
-    102: "J", 103: "W", 104: "K", 105: "J", 106: "T", 107: "P",
-    108: "A", 109: "B", 110: "J", 111: "M", 112: "S", 113: "C",
-    114: "P", 115: "S", 116: "C", 117: "D", 118: "B", 119: "A",
-    120: "B", 121: "P", 122: "B", 123: "A", 124: "B", 125: "B",
-    126: "P", 127: "B", 128: "W", 129: "W", 130: "Q", 131: "B",
-    133: "B", 134: "D", 135: "B", 136: "W", 137: "A", 138: "W",
-    139: "C", 140: "S", 141: "W", 142: "S", 143: "S", 144: "J",
-    145: "B", 146: "A", 147: "J", 148: "B", 149: "S", 150: "P",
-    151: "W", 152: "A", 153: "B", 154: "P", 155: "B", 156: "M",
-    157: "B", 158: "A", 159: "P", 160: "M", 161: "S", 162: "B",
-    163: "W", 164: "P", 165: "M", 166: "J", 167: "B", 168: "W",
-    169: "W", 170: "B", 171: "P", 172: "M", 173: "B", 174: "J",
-    175: "Q", 176: "J", 177: "P", 178: "W", 179: "W", 180: "B",
-    183: "Q", 184: "Q", 185: "Q", 186: "Q", 188: "Q", 189: "Q",
-    190: "Q", 191: "Q", 192: "Q", 193: "Q", 194: "Q", 195: "W",
-    196: "W", 197: "W", 198: "W", 199: "B", 201: "B", 202: "B",
-    203: "B", 204: "P", 205: "P", 206: "P", 207: "A", 208: "A",
-    209: "A", 210: "A", 211: "A", 214: "J", 215: "J", 216: "J",
-    217: "J", 220: "C", 221: "B", 222: "J", 224: "J", 225: "B",
-    226: "W", 227: "B", 228: "S", 230: "W", 231: "M", 232: "W",
-    233: "C", 234: "J", 235: "B", 237: "C", 238: "K", 239: "C",
-    240: "B", 241: "B", 242: "J", 243: "A", 244: "A", 245: "A",
-    246: "A", 247: "J", 248: "W", 249: "A", 250: "B", 251: "A",
-    252: "B", 253: "P", 254: "N", 256: "A", 257: "C", 258: "K",
-    259: "Q", 260: "T", 261: "D", 262: "W", 263: "C", 264: "C",
-    265: "P", 266: "P", 267: "W", 268: "B", 269: "W", 270: "B",
-    273: "Q", 274: "Q", 275: "Q", 276: "S", 277: "D", 278: "S",
-    279: "W", 280: "B", 281: "Q", 282: "S", 283: "S", 284: "W",
-    285: "B", 286: "J", 287: "J", 288: "W", 289: "B", 290: "J",
-    291: "B", 292: "W", 293: "B", 294: "B", 295: "B", 296: "W",
-    701: "W", 702: "W", 703: "D", 704: "K", 800: "N", 801: "P",
-    802: "W", 803: "S", 804: "J", 805: "J", 806: "K", 807: "M",
-    808: "P", 809: "A", 811: "W", 812: "W", 813: "Q", 814: "B",
-    815: "B", 816: "B", 817: "P", 818: "W", 819: "C", 820: "B",
-    821: "W", 822: "W", 823: "A", 824: "K", 825: "B", 826: "P",
-    827: "D",
-}
+ACCTNO=1000709816 CDNO=251031003
+previous_amount=75358.38 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031004
+previous_amount=75358.38 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031005
+previous_amount=75358.38 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031006
+previous_amount=145742.31 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031007
+previous_amount=145742.31 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031008
+previous_amount=125294.57 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031009
+previous_amount=108597.78 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031010
+previous_amount=108597.78 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031011
+previous_amount=108597.78 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031012
+previous_amount=108597.78 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031013
+previous_amount=108597.78 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031014
+previous_amount=108597.78 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031015
+previous_amount=108597.78 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031016
+previous_amount=108597.78 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031017
+previous_amount=146251.23 last_amount=0
+5                                                          The SAS System                           10:51 Friday, September 25, 2026
 
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031018
+previous_amount=146251.23 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031019
+previous_amount=146251.23 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031020
+previous_amount=146251.23 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === BALANCE SUMMARY ===
+NOTE: Source rows checked: 5055248
+NOTE: 30APR removed - missing (.): 1895293
+NOTE: 30APR removed - zero: 0
+NOTE: 30APR kept by original filter: 3159955
+NOTE: 29APR kept but 30APR removed: 12504
+NOTE: There were 5055248 observations read from the data set ZTBAL26.BALBASE_FD_CD2026.
+NOTE: DATA statement used (Total process time):
+      real time           38.65 seconds
+      cpu time            32.13 seconds
+      
 
-def statecd(branch: int) -> str:
-    return lookup(branch, STATECD, "B")
+147        
+148        
+149        /* Test interest filter */
+150        %zt_check_filter(
+151            lib=ztint26,
+152            table=DAILY_FDCD_INTEXP_&zt_year,
+153            prefix=DLY_INTEXP_,
+154            label=INTEREST
+155        );
 
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000626828 CDNO=250429001
+previous_amount=-3.45 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031001
+previous_amount=4.92999999999995 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031002
+previous_amount=7.80999999999994 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031003
+previous_amount=7.30999999999994 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031004
+previous_amount=7.30999999999994 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031005
+previous_amount=7.30999999999994 last_amount=0
+6                                                          The SAS System                           10:51 Friday, September 25, 2026
 
-BRANCHCD = {
-    1: "HEAD OFFICE", 2: "JLN SULTAN SULAIMAN", 3: "JLN RAJA CHULAN",
-    4: "MELAKA", 5: "IPOH MAIN OFFICE", 6: "PENANG", 7: "JOHOR BAHRU",
-    8: "KUANTAN", 9: "JLN YANG KALSOM", 10: "ALOR SETAR", 11: "GURUN",
-    12: "PASIR PUTEH", 13: "KOTA BHARU", 14: "TANAH MERAH", 15: "KEPUNG",
-    16: "NILAI", 17: "TAMPIN", 18: "PJ NEW TOWN", 19: "DAMANSARA UTAMA",
-    20: "TMN CHI LIUNG", 21: "BATU PAHAT", 22: "SEMENYIH", 23: "KAMUNTING",
-    24: "RASAH", 25: "SHAH ALAM", 26: "SERI PETALING", 27: "NIBONG TEBAL",
-    28: "MUAR", 29: "JLN RAJA LAUT", 30: "KUALA TRENGGANU",
-    31: "SEKINCHAN", 32: "WISMA SABERKAS (WSS)", 33: "KOTA KINABALU",
-    34: "KANGAR", 35: "SERI SETIA", 36: "S S 2", 37: "TMN SENTOSA",
-    38: "JLN KELANG LAMA", 39: "KUALA KELAWANG", 40: "JLN SUNGEI BESI",
-    41: "JLN IPOH", 42: "BKT MERTAJAM", 43: "BANTING", 44: "TAWAU",
-    45: "SEREMBAN", 46: "AMPANG", 47: "SEGAMAT", 48: "MENTAKAB",
-    49: "JELAPANG", 50: "MIRI", 51: "SERI MANJUNG", 52: "ULU TIRAM",
-    53: "TMN MALURI", 54: "BDR BAYAN BARU", 55: "LABUAN", 56: "KAJANG",
-    57: "SG PETANI", 58: "SIBU", 59: "PONTIAN KECIL", 60: "BAGAN AJAM",
-    61: "KULAI", 62: "SANDAKAN", 63: "GEMAS", 64: "PORT DICKSON",
-    65: "BAHAU", 66: "BKT DAMANSARA", 67: "CHEMOR", 68: "SIMPANG AMPAT",
-    69: "BATANG KALI", 70: "POKOK SENA", 71: "BRINCHANG", 72: "PAPAR",
-    73: "SG PELEK", 74: "SIK", 75: "CHAAH", 76: "PANTAI REMIS",
-    77: "PULAU LANGKAWI", 78: "SUBANG JAYA", 79: "MASAI", 80: "MENGLEMBU",
-    81: "SG BULOH", 82: "MACHANG", 83: "JLN BUKIT BINTANG", 84: "PASIR MAS",
-    85: "SG SIPUT", 86: "CHANGLUN", 87: "MERSING", 88: "KULIM",
-    89: "TAMPOI", 90: "BINTULU", 91: "KLUANG", 92: "KLANG", 93: "ENDAU",
-    94: "SETAPAK", 95: "TELUK INTAN", 96: "SERI GOMBAK",
-    97: "JLN TUN H S LEE", 98: "TMN CENTURY", 101: "KAMPONG BAHRU",
-    102: "PARIT RAJA", 103: "JINJANG", 104: "KUALA KETIL",
-    105: "KOTA TINGGI", 106: "CHUKAI", 107: "JELUTONG", 108: "BAGAN SERAI",
-    109: "KUALA SELANGOR", 110: "TMN JOHOR JAYA", 111: "AIR KEROH",
-    112: "LIDO", 113: "TEMERLOH", 114: "BANDAR BARU AIR ITAM",
-    115: "KENINGAU", 116: "TRIANG", 117: "KUALA KRAI", 118: "TMN MELAWATI",
-    120: "PANDAN INDAH", 121: "PRAI", 122: "SERI KEMBANGAN",
-    123: "IPOH GARDEN", 124: "SECTION 14", 125: "KELANA JAYA",
-    126: "PULAU TIKUS", 127: "TMN SERI MUDA", 128: "SEGAMBUT",
-    129: "BANGSAR", 130: "PADUNGAN", 131: "TMN MAYANG", 133: "PORT KLANG",
-    134: "RANTAU PANJANG", 135: "BDR SUNWAY", 136: "TMN CHERAS",
-    137: "JLN PASIR PUTEH", 138: "WANGSA MAJU", 139: "JERANTUT",
-    140: "CITY PARADE", 141: "SENTUL", 142: "KOTA BELUD", 143: "LAHAD DATU",
-    144: "KAHANG", 145: "BDR SRI DAMANSARA", 146: "PUSING",
-    147: "PEKAN NENAS", 148: "PJ OLD TOWN", 149: "BEAUFORT",
-    150: "LEBOH MACALLUM", 151: "SELAYANG", 152: "AIR TAWAR", 153: "USJ",
-    154: "BDR SEBERANG JAYA", 155: "TMN TAMING JAYA", 156: "TMN MELAKA RAYA",
-    157: "BDR PUCHONG JAYA", 158: "SIMPANG PULAI", 159: "RELAU",
-    160: "MASJID TANAH", 161: "DONGGONGON", 162: "SEA PARK",
-    163: "JLN KUCHAI LAMA", 164: "KEPALA BATAS", 165: "TENGKERA",
-    166: "PASIR GUDANG", 167: "BKT BERUNTUNG", 168: "KLCITY MAIN",
-    169: "CKT THAMBI DOLLAH", 170: "PANDAN JAYA", 171: "JLN MACALLISTER",
-    172: "TMN MALIM JAYA", 173: "SG CHUA", 174: "BDR BARU PERMAS JAYA",
-    175: "LIMBANG", 176: "TMN PERLING", 177: "JLN RAJA UDA",
-    178: "MEDAN IDAMAN", 179: "OVERSEAS UNION GDN", 180: "KG BARU SUBANG",
-    183: "JLN CENTRAL, SIBU", 184: "JLN PENRISSEN, KUCHING",
-    185: "KUCHING CITY (KCY)", 186: "JLN TUN ZAIDI, KUCHING",
-    188: "PELITA, MIRI", 189: "BATU NIAH", 190: "BINTANGOR", 191: "KAPIT",
-    192: "MARUDI", 193: "MUKAH", 194: "SARIKEI", 195: "BINTANG WALK, KL",
-    196: "JLN HANG LEKIU", 197: "TIONG NAM, KL",
-    198: "TMN DESA,JLN KELANG LAMA", 199: "JLN TAPAH,KLANG",
-    201: "PANDAMARAN, KLANG", 202: "RAWANG", 203: "SG JAROM",
-    204: "BUTTERWORTH", 205: "SG NIBONG", 206: "TAMAN BUKIT MAS",
-    207: "BERCHAM (BCM)", 208: "JLN SULTAN IDRIS SHAH, IPOH",
-    209: "SITIAWAN", 210: "TANJUNG MALIM", 211: "TANJUNG PIANDANG",
-    214: "JLN GEREJA, JOHOR BARU", 215: "JLN KUKUP, PONTIAN KECHIL",
-    216: "SKUDAI", 217: "TMN MUNSHI IBRAHIM, TAMPOI",
-    220: "GENTING HIGHLANDS, PAHANG", 221: "TMN SENTOSA, KLANG",
-    222: "TMN DESA CEMERLANG,JOHOR", 224: "JLN ABDULLAH, MUAR",
-    225: "TMN INDAH, SELANGOR", 226: "JLN PASAR, KUALA LUMPUR",
-    228: "INANAM, KOTA KINABALU", 230: "SALAK SOUTH, KUALA LUMPUR",
-    231: "BATU BERENDAM, MELAKA", 232: "TMN MIDAH, KUALA LUMPUR",
-    233: "BENTONG", 234: "SIMPANG RENGAM", 235: "SABAK BERNAM, SELANGOR",
-    237: "KUALA LIPIS, PAHANG", 238: "JALAN KOTA, KEDAH",
-    239: "KEMAYAN, PAHANG", 240: "KAPAR, SELANGOR",
-    241: "DAMANSARA JAYA, SELANGOR", 242: "TANGKAK JOHOR",
-    243: "KUALA KANGSAR PERAK", 244: "GUNUNG RAPAT IPOH PERAK",
-    245: "BIDOR PERAK", 247: "BUKIT PASIR MUAR JOHOR",
-    248: "JLN TUN SAMBANTHAN KL", 249: "TAIPING PERAK",
-    250: "TAMAN ENG ANN SELANGOR", 251: "KAMPAR PERAK",
-    252: "TAMAN MUDA SELANGOR", 253: "JLN TANJONG TOKONG P.PINANG",
-    254: "KUALA PILAH N. SEMBILAN", 256: "PARIT BUNTAR PERAK",
-    257: "RAUB PAHANG", 258: "JITRA KEDAH", 259: "SRI AMAN SARAWAK",
-    260: "KUALA DUNGUN TERENGGANU", 261: "GUA MUSANG KELANTAN",
-    262: "TAMAN CONNAUGHT CHERAS", 263: "BENTA PAHANG",
-    264: "JALAN BESERAH PAHANG", 265: "JALAN AIR ITAM PENANG",
-    266: "JALAN DATUK KERAMAT PENANG", 267: "TMN TUN DR ISMAIL WILAYAH",
-    268: "BANDAR BUKIT TINGGI", 269: "MONT KIARA",
-    270: "BANDAR PUTERI PUCHONG", 273: "LI HUA SARAWAK",
-    274: "STUTONG SARAWAK", 275: "MEDAN SENTRAL SARAWAK",
-    276: "JALAN APAS SABAH", 277: "WAKAF SIKU KELANTAN",
-    278: "JALAN PANTAI SABAH", 279: "PUTRAJAYA", 280: "KOTA DAMANSARA",
-    281: "PELITA", 282: "PUTATAN", 283: "PRIMA SQUARE",
-    284: "BANDAR SRI PERMAISURI", 285: "BANDAR MAHKOTA CHERAS",
-    286: "BUKIT INDAH BRANCH", 287: "SUTERA UTAMA", 288: "STARPARC POINT",
-    289: "TAMAN EQUINE", 290: "TAMAN DAYA", 291: "BANDAR SUNGAI LONG",
-    292: "BANDAR MENJALARA", 293: "BANDAR SETIA ALAM",
-    294: "KOTA KEMUNING", 295: "BANDAR KINRARA", 296: "BUKIT JALIL",
-    702: "PUTRAJAYA", 703: "ISLAMIC WAKAF SIKU", 704: "ISLAMIC JALAN KOTA",
-}
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031006
+previous_amount=14.1299999999996 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031007
+previous_amount=14.1299999999996 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031008
+previous_amount=12.1399999999998 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031009
+previous_amount=10.5199999999999 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031010
+previous_amount=10.5199999999999 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031011
+previous_amount=10.5199999999999 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031012
+previous_amount=10.5199999999999 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031013
+previous_amount=10.5199999999999 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031014
+previous_amount=10.5199999999999 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031015
+previous_amount=10.5199999999999 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031016
+previous_amount=10.5199999999999 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031017
+previous_amount=14.17 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031018
+previous_amount=14.17 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST: 29APR KEPT, 30APR REMOVED ===
+ACCTNO=1000709816 CDNO=251031019
+previous_amount=14.17 last_amount=0
+NOTE: Reason: 30APR amount is missing (.)
+NOTE: === INTEREST SUMMARY ===
+7                                                          The SAS System                           10:51 Friday, September 25, 2026
 
+NOTE: Source rows checked: 5005867
+NOTE: 30APR removed - missing (.): 1879656
+NOTE: 30APR removed - zero: 16
+NOTE: 30APR kept by original filter: 3126195
+NOTE: 29APR kept but 30APR removed: 12162
+NOTE: There were 5005867 observations read from the data set ZTINT26.DAILY_FDCD_INTEXP_2026.
+NOTE: DATA statement used (Total process time):
+      real time           37.47 seconds
+      cpu time            29.04 seconds
+      
 
-def branchcd(branch: int) -> str:
-    return lookup(branch, BRANCHCD, "OTHER")
+156        
+157        
+158        
+159        %LET _CLIENTTASKLABEL=;
+160        %LET _CLIENTPROCESSFLOWNAME=;
+161        %LET _CLIENTPROJECTPATH=;
+162        %LET _CLIENTPROJECTPATHHOST=;
+163        %LET _CLIENTPROJECTNAME=;
+164        %LET _SASPROGRAMFILE=;
+165        %LET _SASPROGRAMFILEHOST=;
+166        
+167        ;*';*";*/;quit;run;
+168        ODS _ALL_ CLOSE;
+169        
+170        
+171        QUIT; RUN;
+172        
