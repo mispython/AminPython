@@ -1,3 +1,151 @@
+/* =========================================================
+   TEST ONLY
+   Simulate run : 01MAY2026
+   Report month : APRIL 2026
+   Compare      : 29APR2026 vs 30APR2026
+   Output       : SAS Log sahaja
+   ========================================================= */
+
+/* Library aliases khas untuk testing */
+libname ztbal26
+    ("/dwh/dm_dp" "/dwh/misdm/dm_dp");
+
+libname ztint26
+    "/dwh/misdm/dm_dp_pl";
+
+
+/* Macro variables khas untuk testing */
+%global zt_year zt_last zt_prev;
+
+/* Set reporting dates — tidak create dataset */
+data _null_;
+    rundate   = '01MAY2026'd;
+    firstdate = intnx('month', rundate, -1, 'beginning');
+    lastdate  = intnx('month', rundate, -1, 'end');
+    prevdate  = lastdate - 1;
+
+    call symputx('zt_year', year(lastdate), 'G');
+
+    call symputx('zt_last',
+        cats(put(month(lastdate), z2.),
+             put(day(lastdate), z2.)), 'G');
+
+    call symputx('zt_prev',
+        cats(put(month(prevdate), z2.),
+             put(day(prevdate), z2.)), 'G');
+
+    put 'NOTE: === TEST REPORTING DATES ===';
+    put rundate= date9.
+        firstdate= date9.
+        lastdate= date9.;
+run;
+
+
+/* Read source and display diagnostic results in SAS Log */
+%macro zt_check_filter(lib=, table=, prefix=, label=);
+
+data _null_;
+    set &lib..&table
+        (keep=ACCTNO CDNO
+              &prefix.&zt_prev
+              &prefix.&zt_last)
+        end=last_record;
+
+    retain total_rows 0
+           missing_last 0
+           zero_last 0
+           kept_last 0
+           prev_kept_last_removed 0
+           shown 0;
+
+    total_rows + 1;
+
+    previous_amount = &prefix.&zt_prev;
+    last_amount     = &prefix.&zt_last;
+
+    /* Same condition as the original report */
+    previous_kept = (previous_amount not in (., 0));
+    last_kept     = (last_amount not in (., 0));
+
+    if last_amount = . then missing_last + 1;
+    else if last_amount = 0 then zero_last + 1;
+
+    if last_kept then kept_last + 1;
+
+    /*
+       Show up to 20 examples where:
+       29 April survives the filter,
+       but 30 April is removed.
+    */
+    if previous_kept and not last_kept then do;
+        prev_kept_last_removed + 1;
+
+        if shown < 20 then do;
+            shown + 1;
+
+            put "NOTE: === &label: 29APR KEPT, 30APR REMOVED ===";
+            put ACCTNO= best32.
+                CDNO= best32.;
+            put previous_amount= best32.
+                last_amount= best32.;
+
+            if last_amount = . then
+                put 'NOTE: Reason: 30APR amount is missing (.)';
+            else if last_amount = 0 then
+                put 'NOTE: Reason: 30APR amount is zero';
+        end;
+    end;
+
+    if last_record then do;
+        put "NOTE: === &label SUMMARY ===";
+        put 'NOTE: Source rows checked: ' total_rows;
+        put 'NOTE: 30APR removed - missing (.): ' missing_last;
+        put 'NOTE: 30APR removed - zero: ' zero_last;
+        put 'NOTE: 30APR kept by original filter: ' kept_last;
+        put 'NOTE: 29APR kept but 30APR removed: '
+            prev_kept_last_removed;
+    end;
+run;
+
+%mend zt_check_filter;
+
+
+/* Test balance filter */
+%zt_check_filter(
+    lib=ztbal26,
+    table=BALBASE_FD_CD&zt_year,
+    prefix=DLY_BAL_,
+    label=BALANCE
+);
+
+
+/* Test interest filter */
+%zt_check_filter(
+    lib=ztint26,
+    table=DAILY_FDCD_INTEXP_&zt_year,
+    prefix=DLY_INTEXP_,
+    label=INTEREST
+);
+
+
+/* Disconnect testing aliases — does not delete files */
+libname ztbal26 clear;
+libname ztint26 clear;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Dear Amin,
 
 Good morning. We noted that the FD listings generated in DRR, have missing deals for last day of each month, starting from April to August 2026.
