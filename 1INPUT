@@ -1,15 +1,22 @@
 libname fccmart '/stgsrcsys/host/uat';
-/stgsrcsys/host/uat/cir_close_102026.sas7bdat
-%macro load_cir_close(input_ds=);
 
-    %local min_year max_year load_year
+%macro load_cir_close;
+
+    %local input_ds min_year max_year load_year
            row_count step_rc;
 
-    /*==========================================================
-      1. Prepare historical records: Jan 2024 through today
+    /* Hardcode source */
+    %let input_ds = fccmart.cir_close_102026;
 
-      APPR_DATE is CHARACTER length 26:
-      YYYY-MM-DD-HH.MM.SS.ffffff
+    %if not %sysfunc(exist(&input_ds)) %then %do;
+        %put ERROR: Source dataset &input_ds does not exist.;
+        %let syscc = 8;
+        %return;
+    %end;
+
+    /*==========================================================
+      1. Select approvals from 1 Jan 2024 through today
+         APPROVE_DATE is numeric SAS datetime
     ==========================================================*/
 
     data work._cir_close_ready(drop=_appr_day)
@@ -17,8 +24,7 @@ libname fccmart '/stgsrcsys/host/uat';
 
         set &input_ds;
 
-        /* Read the date portion; retain original APPR_DATE */
-        _appr_day = input(substr(APPR_DATE,1,10), ?? yymmdd10.);
+        _appr_day = datepart(APPROVE_DATE);
 
         if missing(_appr_day) then
             output work._cir_close_invalid_date;
@@ -30,20 +36,20 @@ libname fccmart '/stgsrcsys/host/uat';
 
     %let step_rc = &syserr;
 
-    %if &step_rc > 4 %then %do;
+    %if &step_rc ne 0 %then %do;
         %put ERROR: Failed to prepare CIR_CLOSE records.;
         %let syscc = 8;
         %return;
     %end;
 
     /*==========================================================
-      2. Get earliest and latest approval years in this batch
+      2. Determine approval-year range
     ==========================================================*/
 
     proc sql noprint;
         select count(*),
-               min(input(substr(APPR_DATE,1,4),4.)),
-               max(input(substr(APPR_DATE,1,4),4.))
+               min(year(datepart(APPROVE_DATE))),
+               max(year(datepart(APPROVE_DATE)))
           into :row_count trimmed,
                :min_year trimmed,
                :max_year trimmed
@@ -62,20 +68,19 @@ libname fccmart '/stgsrcsys/host/uat';
     %end;
 
     /*==========================================================
-      3. Separate records by APPR_DATE year
+      3. Process each approval year
     ==========================================================*/
 
     %do load_year = &min_year %to &max_year;
 
         data work._cir_close_year;
             set work._cir_close_ready;
-
-            where substr(APPR_DATE,1,4) = "&load_year";
+            where year(datepart(APPROVE_DATE)) = &load_year;
         run;
 
         %let step_rc = &syserr;
 
-        %if &step_rc > 4 %then %do;
+        %if &step_rc ne 0 %then %do;
             %put ERROR: Failed to prepare year &load_year.;
             %let syscc = 8;
             %return;
@@ -88,31 +93,28 @@ libname fccmart '/stgsrcsys/host/uat';
         quit;
 
         %if &sqlrc ne 0 %then %do;
-            %put ERROR: Failed to count records for &load_year.;
+            %put ERROR: Failed to count year &load_year.;
             %let syscc = 8;
             %return;
         %end;
 
-        /*======================================================
-          4. Create target if absent; otherwise append
-        ======================================================*/
-
         %if &row_count > 0 %then %do;
 
+            /* Start with existing yearly records, if any */
             %if %sysfunc(
                 exist(fccmart.CIR_CLOSE_&load_year)
             ) %then %do;
 
-                proc append
-                    base=fccmart.CIR_CLOSE_&load_year
-                    data=work._cir_close_year;
+                data work._cir_close_combined;
+                    set fccmart.CIR_CLOSE_&load_year;
                 run;
 
             %end;
             %else %do;
 
-                data fccmart.CIR_CLOSE_&load_year;
-                    set work._cir_close_year;
+                /* Create empty dataset with source structure */
+                data work._cir_close_combined;
+                    set work._cir_close_year(obs=0);
                 run;
 
             %end;
@@ -120,13 +122,72 @@ libname fccmart '/stgsrcsys/host/uat';
             %let step_rc = &syserr;
 
             %if &step_rc ne 0 %then %do;
-                %put ERROR: Load returned code &step_rc for CIR_CLOSE_&load_year..;
-                %put ERROR: Review the SAS log before rerunning.;
+                %put ERROR: Failed to prepare existing records for &load_year.;
                 %let syscc = 8;
                 %return;
             %end;
 
-            %put NOTE: Loaded &row_count records into FCCMART.CIR_CLOSE_&load_year..;
+            /* Add incoming records to WORK first */
+            proc append
+                base=work._cir_close_combined
+                data=work._cir_close_year;
+            run;
+
+            %let step_rc = &syserr;
+
+            %if &step_rc ne 0 %then %do;
+                %put ERROR: Failed to combine records for &load_year.;
+                %put ERROR: Check source and target column structures.;
+                %let syscc = 8;
+                %return;
+            %end;
+
+            /*==================================================
+              Compare ALL fields.
+              Keep one record for each identical full row.
+            ==================================================*/
+
+            proc sort
+                data=work._cir_close_combined
+                out=work._cir_close_unique
+                nodupkey;
+                by _all_;
+            run;
+
+            %let step_rc = &syserr;
+
+            %if &step_rc ne 0 %then %do;
+                %put ERROR: Failed to remove duplicates for &load_year.;
+                %let syscc = 8;
+                %return;
+            %end;
+
+            /* Save existing + incoming unique records */
+            data fccmart.CIR_CLOSE_&load_year;
+                set work._cir_close_unique;
+            run;
+
+            %let step_rc = &syserr;
+
+            %if &step_rc ne 0 %then %do;
+                %put ERROR: Failed to save CIR_CLOSE_&load_year..;
+                %let syscc = 8;
+                %return;
+            %end;
+
+            proc sql noprint;
+                select count(*)
+                  into :row_count trimmed
+                from fccmart.CIR_CLOSE_&load_year;
+            quit;
+
+            %if &sqlrc ne 0 %then %do;
+                %put ERROR: Failed to count final records for &load_year.;
+                %let syscc = 8;
+                %return;
+            %end;
+
+            %put NOTE: FCCMART.CIR_CLOSE_&load_year contains &row_count unique records.;
 
         %end;
 
@@ -135,8 +196,8 @@ libname fccmart '/stgsrcsys/host/uat';
 %mend load_cir_close;
 
 
-/* Run using the SAS DI User Written input */
-%load_cir_close(input_ds=&_INPUT);
+/* Run */
+%load_cir_close;
 
-/* Existing SAS DI return-code macro */
+/* Use within SAS DI where rcSet is already defined */
 %rcSet(&syscc);
