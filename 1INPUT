@@ -1,5 +1,5 @@
 libname fccmart '/stgsrcsys/host/uat';
-
+/stgsrcsys/host/uat/cir_close_102026.sas7bdat
 %macro load_cir_close(input_ds=);
 
     %local min_year max_year load_year
