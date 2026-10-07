@@ -1,2171 +1,420 @@
-//EIIMPORT  JOB MISEIS,EIBWCCR3,MSGCLASS=X,MSGLEVEL=(1,1),CLASS=A,      JOB78647
-//         REGION=64M,NOTIFY=&SYSUID
-//********************************************************************
-//** ESMR: 2014-691
-//** DESC: GENERATE NEW REPORT: REPORTING REQUIREMENTS FOR ISLAMIC
-//**       PORTFOLIO EXPOSURE
-//** FREQ: QUARTERLY BASIS
-//********************************************************************
+
+
+
+
+
+
+
+//EIBWFISS JOB MISEIS,EIBWEEK1,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID        JOB22595
+/*JOBPARM S=S1M1
 //*
-//SAS609  EXEC SAS609
-//BNM     DD DSN=SAP.PIBB.MNITB(0),DISP=SHR
-//PGM     DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-//EQUT    DD DSN=SAP.PIBB.EQUT(-4),DISP=SHR
-//PORTF   DD DSN=SAP.PIBB.BANK.PORTF(+1),
-//           DISP=(NEW,CATLG,DELETE),
-//           SPACE=(CYL,(3,2),RLSE),UNIT=SYSDA,
-//           DCB=(LRECL=154,RECFM=FB,BLKSIZE=0)
-//SYSIN   DD *
+//DELETE   EXEC PGM=IEFBR14
+//DEL01     DD DSN=SAP.PBB.FISS.RPT,DISP=(MOD,DELETE,DELETE),
+//            DCB=(RECFM=FB,LRECL=132,BLKSIZE=27984),
+//            SPACE=(CYL,(1,1)),UNIT=SYSDA
+//DEL01     DD DSN=SAP.PIBB.FISS.RPT,DISP=(MOD,DELETE,DELETE),
+//            SPACE=(CYL,(1,1)),UNIT=SYSDA
+//*
+//EIBWFISS EXEC SAS609,REGION=8M,WORK='120000,8000'
+//BNM       DD DSN=SAP.PBB.SASDATA,DISP=SHR
+//FD        DD DSN=SAP.PBB.MNIFD(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD DSN=SAP.PBB.FISS.RPT,DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=132,BLKSIZE=27984),
+//            SPACE=(CYL,(1,1)),UNIT=SYSDA
+//SYSIN     DD *
 
-OPTIONS YEARCUTOFF=1950 NOCENTER;
-
-%INC PGM(PBBDPFMT);
-
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
 DATA REPTDATE;
-     SET BNM.REPTDATE;
-     SELECT;
-     WHEN(01 <= DAY(REPTDATE)<= 08) DO;
-          CALL SYMPUT('NOWK', PUT('1', $1.));
-          REPTDATE1 = MDY(MONTH(REPTDATE),1,YEAR(REPTDATE))-1;
-     END;
-     WHEN(09 <= DAY(REPTDATE)<= 15)  CALL SYMPUT('NOWK', PUT('2',
-          $1.));
-     WHEN(16 <= DAY(REPTDATE)<= 22)  CALL SYMPUT('NOWK', PUT('3',
-          $1.));
-     OTHERWISE
-          CALL SYMPUT('NOWK', PUT('4', $1.));
-     END;
-   CALL SYMPUT('RDATE', PUT(REPTDATE,DDMMYY10.));
-   CALL SYMPUT('REPTDATE',REPTDATE);
-   CALL SYMPUT('REPTDAY', PUT(DAY(REPTDATE), Z2.));
-   CALL SYMPUT('REPTMON', PUT(MONTH(REPTDATE), Z2.));
-   CALL SYMPUT('REPTYEAR1', PUT(REPTDATE, YEAR2.));
-   CALL SYMPUT('REPTYEAR', PUT(REPTDATE, YEAR4.));
+  SET BNM.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END;
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  SDESC = 'PUBLIC BANK BERHAD';
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+  CALL SYMPUT('SDESC',PUT(SDESC,$26.));
 RUN;
-%PUT &RDATE;
+*;
+%INC PGM(EIBWFI01);
+//*
+//EIIWFISS EXEC SAS609,REGION=8M,WORK='120000,8000'
+//BNM       DD DSN=SAP.PIBB.SASDATA,DISP=SHR
+//FD        DD DSN=SAP.PIBB.MNIFD(0),DISP=SHR
+//PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//SASLIST   DD DSN=SAP.PIBB.FISS.RPT,DISP=(NEW,CATLG,DELETE),
+//            DCB=(RECFM=FB,LRECL=132,BLKSIZE=27984),
+//            SPACE=(CYL,(1,1)),UNIT=SYSDA
+//SYSIN     DD *
 
-LIBNAME MIS "SAP.PIBB.D&REPTYEAR" DISP=SHR;
-
-DATA SA;
-  SET BNM.SAVING;
-      FORMAT CONCEPT1   $35.
-             AMOUNT1    16.2
-             REPTDATE   Z5.;
-      RETAIN AMOUNT1    0.;
-
-      REPTDATE = &REPTDATE;
-      IF PRODUCT IN (204,207,214,215);
-      IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
-      CUSTCD=PUT(CUSTCODE, SACUSTCD.);
-      STATECD=PUT(BRANCH, STATECD.);
-      PRODCD=PUT(PRODUCT, SAPROD.);
-      AMTIND=PUT(PRODUCT, SADENOM.);
-      RANGE=INPUT(CURBAL, SDRANGE.);
-      RACE=PUT(RACE, $RACE.);
-      CONCEPT1 = 'WADIAH';
-      AMOUNT1 = CURBAL;
+OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;
+DATA REPTDATE;
+  SET BNM.REPTDATE;
+  SELECT(DAY(REPTDATE));
+    WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;
+    WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;
+    WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;
+    OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3'; END; 
+  END;
+  MM = MONTH(REPTDATE);
+  IF WK = '1' THEN DO;
+     MM1 = MM - 1;
+     IF MM1 = 0 THEN MM1 = 12;
+  END;
+  ELSE MM1 = MM;
+  SDATE = MDY(MM,SDD,YEAR(REPTDATE));
+  SDESC = 'PUBLIC ISLAMIC BANK BERHAD';
+  CALL SYMPUT('NOWK',PUT(WK,$1.));
+  CALL SYMPUT('NOWK1',PUT(WK1,$1.));
+  CALL SYMPUT('REPTMON',PUT(MM,Z2.));
+  CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));
+  CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));
+  CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));
+  CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));
+  CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
+  CALL SYMPUT('SDESC',PUT(SDESC,$26.));
 RUN;
-PROC SUMMARY DATA=SA NWAY;
-BY REPTDATE CONCEPT1;
-VAR AMOUNT1 INTPAYBL;
-WHERE CONCEPT1 NE ' ';
-OUTPUT OUT=SUM_SA (DROP=_TYPE_ _FREQ_)
-       SUM=AMOUNT1 INTPAYBL;
-RUN;
-
-PROC SUMMARY DATA =SUM_SA (KEEP=REPTDATE AMOUNT1) NWAY;
-BY REPTDATE;
-VAR AMOUNT1;
-OUTPUT OUT = TEST1(DROP=_TYPE_ _FREQ_) SUM=AMOUNT1;
-RUN;
-
-DATA BASE1;
-     FORMAT CONCEPT1   $35.
-            REPTDATE   Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT1 = 'WADIAH'; AMOUNT1 = 0; OUTPUT;
-RUN;
-PROC SORT DATA=BASE1; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_SA; BY REPTDATE; RUN;
-PROC SORT DATA=TEST1(RENAME=(AMOUNT1=TOTAL1)); BY REPTDATE; RUN;
-
-DATA BASE_SA;
-     MERGE BASE1(IN=A) SUM_SA(IN=B) TEST1(IN=C);
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT1 AMOUNT1 TOTAL1;
-RUN;
-
-DATA CA;
-  SET BNM.CURRENT;
-      FORMAT CONCEPT2  $35.
-             AMOUNT2   16.2
-             REPTDATE  Z5.;
-      RETAIN AMOUNT2   0.;
-
-      REPTDATE = &REPTDATE;
-      IF PRODUCT IN (32,33,60,61,62,63,64,66,67,70,71,73,
-         93,94,95,96,97,160,161,162,163,164,165,166,
-         167,168,169,182,183,184,185,186,440,441,442,443,444);
-      IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
-      CUSTCD=PUT(CUSTCODE, SACUSTCD.);
-      STATECD=PUT(BRANCH, STATECD.);
-      PRODCD=PUT(PRODUCT, SAPROD.);
-      AMTIND=PUT(PRODUCT, SADENOM.);
-      RANGE=INPUT(CURBAL, SDRANGE.);
-      RACE=PUT(RACE, $RACE.);
-      IF PRODUCT IN (60,61,62,63,64,66,67,93,96,97,160,161,162,
-         163,164,165,182) THEN CONCEPT2 = 'WADIAH';
-      IF PRODUCT IN (32,70,73,94,95,166,183,184,185,187,188) THEN
-         CONCEPT2 = 'BAI BITHAMAN AJIL';
-      IF PRODUCT IN (169) THEN CONCEPT2 = 'MURABAHAH';
-      IF PRODUCT IN (33,71,167,168) THEN CONCEPT2 = 'BAI AL INAH';
-      IF PRODUCT IN (440,441,442,443,444) THEN CONCEPT2 = 'QARD';
-      IF PRODUCT IN (186) THEN CONCEPT2 = 'MUSYARAKAH';
-      AMOUNT2 = CURBAL;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT2; RUN;
-
-PROC SUMMARY DATA=CA NWAY;
-BY REPTDATE CONCEPT2;
-VAR AMOUNT2 INTPAYBL;
-WHERE CONCEPT2 NE ' ';
-OUTPUT OUT=SUM_CA (DROP=_TYPE_ _FREQ_)
-       SUM=AMOUNT2 INTPAYBL;
-RUN;
-
-PROC SUMMARY DATA =SUM_CA(KEEP=REPTDATE AMOUNT2)    NWAY;
-BY REPTDATE;
-VAR AMOUNT2;
-OUTPUT OUT = TEST2(DROP=_TYPE_ _FREQ_) SUM=AMOUNT2;
-RUN;
-
-DATA BASE2;
-     FORMAT CONCEPT2   $35.
-            REPTDATE   Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT2 = 'WADIAH'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'BAI BITHAMAN AJIL'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'BAI AL INAH'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'MURABAHAH'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'QARD'; AMOUNT2 = 0; OUTPUT;
-     CONCEPT2 = 'MUSYARAKAH'; AMOUNT2 = 0; OUTPUT;
-RUN;
-
-PROC SORT DATA=BASE2; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_CA; BY REPTDATE; RUN;
-PROC SORT DATA=TEST2(RENAME=(AMOUNT2=TOTAL2)); BY REPTDATE; RUN;
-
-DATA BASE_CA;
-     MERGE BASE2(IN=A) SUM_CA(IN=B) TEST2(IN=C);
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT2 AMOUNT2 TOTAL2;
-RUN;
-
-DATA MGIA;
-  SET BNM.FD;
-      FORMAT CONCEPT3  $35.
-             AMOUNT3   16.2
-             REPTDATE  Z5.;
-      RETAIN AMOUNT3   0.;
-
-      REPTDATE = &REPTDATE;
-      IF PRODUCT IN (302,396,315,394);
-      IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
-      CUSTCD=PUT(CUSTCODE, SACUSTCD.);
-      STATECD=PUT(BRANCH, STATECD.);
-      PRODCD=PUT(PRODUCT, SAPROD.);
-      AMTIND=PUT(PRODUCT, SADENOM.);
-      RANGE=INPUT(CURBAL, SDRANGE.);
-      RACE=PUT(RACE, $RACE.);
-      IF PRODUCT IN (302,396) THEN CONCEPT3 = 'MUDARABAH';
-      IF PRODUCT IN (315,394) THEN CONCEPT3 = 'ISTISMAR';
-      AMOUNT3 = CURBAL;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT3; RUN;
-
-PROC SUMMARY DATA=MGIA NWAY;
-BY REPTDATE CONCEPT3;
-VAR AMOUNT3 INTPAYBL;
-WHERE CONCEPT3 NE ' ';
-OUTPUT OUT=SUM_MGIA (DROP=_TYPE_ _FREQ_)
-       SUM=AMOUNT3 INTPAYBL;
-RUN;
-
-PROC SUMMARY DATA =SUM_MGIA (KEEP=REPTDATE AMOUNT3) NWAY;
-BY REPTDATE;
-VAR AMOUNT3;
-OUTPUT OUT = TEST3(DROP=_TYPE_ _FREQ_) SUM=AMOUNT3;
-RUN;
-
-DATA BASE3;
-     FORMAT CONCEPT3  $35.
-            REPTDATE  Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT3 = 'MUDARABAH'; AMOUNT3 = 0; OUTPUT;
-     CONCEPT3 = 'ISTISMAR';  AMOUNT3 = 0; OUTPUT;
-RUN;
-
-PROC SORT DATA=BASE3; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_MGIA; BY REPTDATE; RUN;
-PROC SORT DATA=TEST3(RENAME=(AMOUNT3=TOTAL3)); BY REPTDATE; RUN;
-
-DATA BASE_MGIA;
-     MERGE BASE3(IN=A) SUM_MGIA(IN=B) TEST3(IN=C);
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT3 AMOUNT3 TOTAL3;
-RUN;
-
-DATA COMM;
-     SET BNM.FD;
-     FORMAT CONCEPT4    $35.
-            AMOUNT4     16.2
-            REPTDATE    Z5.;
-     RETAIN AMOUNT4     0;
-
-     REPTDATE = &REPTDATE;
-     IF PRODUCT IN (316,393);
-     IF OPENIND NOT IN ('B','C','P') AND CURBAL GE 0;
-     CUSTCD=PUT(CUSTCODE, SACUSTCD.);
-     STATECD=PUT(BRANCH, STATECD.);
-     PRODCD=PUT(PRODUCT, SAPROD.);
-     AMTIND=PUT(PRODUCT, SADENOM.);
-     RANGE=INPUT(CURBAL, SDRANGE.);
-     RACE=PUT(RACE, $RACE.);
-     CONCEPT4 = 'COMMODITY MURABAHAH TAWWARRUQ';
-     AMOUNT4 = CURBAL;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT4; RUN;
-
-PROC SUMMARY DATA=COMM NWAY;
-BY REPTDATE CONCEPT4;
-VAR AMOUNT4 INTPAYBL;
-WHERE CONCEPT4 NE ' ';
-OUTPUT OUT=SUM_COMM (DROP=_TYPE_ _FREQ_)
-       SUM=AMOUNT4 INTPAYBL;
-RUN;
-
-PROC SUMMARY DATA =COMM (KEEP=REPTDATE AMOUNT4) NWAY;
-BY REPTDATE;
-VAR AMOUNT4;
-OUTPUT OUT = TEST4(DROP=_TYPE_ _FREQ_) SUM=AMOUNT4;
-RUN;
-
-DATA BASE4;
-     FORMAT CONCEPT4  $35.
-            REPTDATE  Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT4 = 'COMMODITY MURABAHAH TAWARRUQ'; AMOUNT4 = 0;
-     OUTPUT;
-RUN;
-
-PROC SORT DATA=BASE4; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_COMM; BY REPTDATE; RUN;
-PROC SORT DATA=TEST4(RENAME=(AMOUNT4=TOTAL4)); BY REPTDATE; RUN;
-
-DATA BASE_COMM;
-     MERGE BASE4(IN=A) SUM_COMM TEST4;
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT4 AMOUNT4 TOTAL4;
-RUN;
-
-DATA EQT;
-     SET EQUT.IUTFX&REPTYEAR1&REPTMON&REPTDAY;
-     FORMAT CONCEPT5   $35.
-            AMOUNT5    16.2
-            REPTDATE   Z5.;
-     RETAIN AMOUNT5    0;
-
-     REPTDATE = &REPTDATE;
-     IF DEALTYPE IN ('BCS') THEN CONCEPT5 = 'ISTISMAR';
-     IF DEALTYPE IN ('BCI') THEN CONCEPT5 = 'MUDARABAH';
-     IF DEALTYPE IN ('BCT') THEN
-        CONCEPT5='COMMODITY MURABAHAH TAWARRUQ';
-     IF DEALTYPE IN ('BCW') THEN CONCEPT5 = 'WADIAH';
-     AMOUNT5 = AMTPAY;
-     AMOUNT5 = AMTPAY;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT5; RUN;
-
-PROC SUMMARY DATA = EQT NWAY;
-BY REPTDATE CONCEPT5;
-VAR AMOUNT5;
-WHERE CONCEPT5 NE ' ';
-OUTPUT OUT=SUM_EQT (DROP=_TYPE_ _FREQ_) SUM=;
-RUN;
-
-PROC SUMMARY DATA =SUM_EQT (KEEP=REPTDATE AMOUNT5) NWAY;
-BY REPTDATE;
-VAR AMOUNT5;
-OUTPUT OUT = TEST5(DROP=_TYPE_ _FREQ_) SUM=AMOUNT5;
-RUN;
-
-PROC SORT DATA=SUM_EQT; BY REPTDATE; RUN;
-PROC SORT DATA=TEST5(RENAME=(AMOUNT5=TOTAL5)); BY REPTDATE; RUN;
-
-DATA BASE_EQT;
-     MERGE SUM_EQT TEST5;
-     BY REPTDATE;
-   KEEP REPTDATE CONCEPT5 AMOUNT5 TOTAL5;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT5 AMOUNT5 TOTAL5;
-
-DATA BASE5;
-     FORMAT CONCEPT5   $35.
-            REPTDATE   Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT5 = 'MUDARABAH'; AMOUNT5 = 0; OUTPUT;
-     CONCEPT5 = 'ISTISMAR'; AMOUNT5 = 0;  OUTPUT;
-     CONCEPT5 = 'WADIAH'; AMOUNT5 = 0;  OUTPUT;
-     CONCEPT5 = 'COMMODITY MURABAHAH TAWARRUQ'; AMOUNT5 = 0; OUTPUT;
-RUN;
-
-PROC SORT DATA=BASE5; BY REPTDATE CONCEPT5; RUN;
-
-DATA BASE_EQT;
-     MERGE BASE5(IN=A) BASE_EQT;
-     BY REPTDATE CONCEPT5;
-   KEEP CONCEPT5 AMOUNT5 TOTAL5;
-RUN;
-
-DATA INI;
-     SET MIS.W1AL&REPTMON&NOWK;
-     FORMAT CONCEPT6  $35.
-            AMOUNT6   16.2
-            REPTDATE  Z5.;
-     RETAIN AMOUNT6   0.;
-
-     REPTDATE = &REPTDATE;
-     IF SET_ID IN ('F142150NIDI') THEN DO;
-        CONCEPT6 = 'BAI AL INAH';
-        AMOUNT6 = AMOUNT;
-     END;
-RUN;
-PROC SORT; BY REPTDATE CONCEPT6; RUN;
-
-PROC SUMMARY DATA = INI NWAY;
-BY REPTDATE CONCEPT6;
-VAR AMOUNT6;
-WHERE CONCEPT6 NE ' ';
-OUTPUT OUT=SUM_INI (DROP=_TYPE_ _FREQ_) SUM=;
-RUN;
-
-PROC SUMMARY DATA =SUM_INI (KEEP=REPTDATE AMOUNT6) NWAY;
-BY REPTDATE;
-VAR AMOUNT6;
-OUTPUT OUT = TEST6(DROP=_TYPE_ _FREQ_) SUM=AMOUNT6;
-RUN;
-
-DATA BASE6;
-     FORMAT CONCEPT6   $35.
-            REPTDATE   Z5.;
-     REPTDATE = &REPTDATE;
-     CONCEPT6 = 'BAI AL INAH'; AMOUNT6 = 0;
-     OUTPUT;
-RUN;
-
-PROC SORT DATA=BASE6; BY REPTDATE; RUN;
-PROC SORT DATA=SUM_INI; BY REPTDATE; RUN;
-PROC SORT DATA=TEST6(RENAME=(AMOUNT6=TOTAL6)); BY REPTDATE; RUN;
-
-DATA BASE_INI;
-     MERGE BASE6(IN=A) SUM_INI(IN=B) TEST6(IN=C);
-     BY REPTDATE;
-     IF A;
-   KEEP CONCEPT6 AMOUNT6 TOTAL6;
-RUN;
-
-DATA TERM;
-     SET TEST3(RENAME=(TOTAL3=AMOUNT))
-         TEST4(RENAME=(TOTAL4=AMOUNT))
-         TEST5(RENAME=(TOTAL5=AMOUNT))
-         TEST6(RENAME=(TOTAL6=AMOUNT));
-     FORMAT TERM    16.2;
-     RETAIN TERM    0.;
-     TERM = SUM(TERM,AMOUNT);
-RUN;
-PROC SORT; BY TERM; RUN;
-
-DATA TERM1;
-     SET TERM(KEEP=TERM)  END=LASTONE;
-     FORMAT HIGH_TERM    16.2;
-     HIGH_TERM = 0;
-     IF TERM > HIGH_TERM THEN HIGH_TERM=TERM;
-     IF LASTONE;
-     KEEP HIGH_TERM;
-RUN;
-PROC PRINT DATA=TERM1; RUN;
-
-DATA PORTEX;
-     SET BASE_SA(IN=A) BASE_CA(IN=B) BASE_MGIA(IN=C)
-         BASE_COMM(IN=D) BASE_EQT(IN=E) BASE_INI(IN=F);
-     FORMAT CONCEPT $60.
-            AMT   16.2;
-     IF      A THEN DO; ID=1.1;  CONCEPT=CONCEPT1; AMT=AMOUNT1; END;
-     ELSE IF B THEN DO; ID=2.1;  CONCEPT=CONCEPT2; AMT=AMOUNT2; END;
-     ELSE IF C THEN DO; ID=3.11; CONCEPT=CONCEPT3; AMT=AMOUNT3; END;
-     ELSE IF D THEN DO; ID=3.21; CONCEPT=CONCEPT4; AMT=AMOUNT4; END;
-     ELSE IF E THEN DO; ID=3.31; CONCEPT=CONCEPT5; AMT=AMOUNT5; END;
-     ELSE IF F THEN DO; ID=3.41; CONCEPT=CONCEPT6; AMT=AMOUNT6; END;
-     KEEP ID  CONCEPT AMT;
-RUN;
-
-DATA TOTAL;
-     SET BASE_SA(IN=A) BASE_CA(IN=B) TERM1(IN=C) BASE_MGIA(IN=D)
-         BASE_COMM(IN=E) BASE_EQT(IN=F) BASE_INI(IN=G);
-     FORMAT CONCEPT $60.
-            AMT 16.2;
-     IF A THEN DO;      ID=1.0; CONCEPT='1.SAVINGS';  AMT=TOTAL1; END;
-     ELSE IF B THEN DO; ID=2.0; CONCEPT='2.CURRENT';  AMT=TOTAL2; END;
-     ELSE IF C THEN DO; ID=3.0; CONCEPT='3.TERM';   AMT=HIGH_TERM; END;
-     ELSE IF D THEN DO; ID=3.1; CONCEPT='A.MGIA';   AMT=TOTAL3; END;
-     ELSE IF E THEN DO; ID=3.2; CONCEPT='B.COMMODITY MURABAHAH';
-                                                    AMT=TOTAL4; END;
-     ELSE IF F THEN DO; ID=3.3; CONCEPT='C.SHORT TERM DEPOSIT';
-                                                    AMT=TOTAL5; END;
-     ELSE IF G THEN DO; ID=3.4; CONCEPT='D.INI';    AMT=TOTAL6; END;
-     KEEP ID CONCEPT AMT;
-RUN;
-PROC SORT DATA=TOTAL; BY ID DESCENDING AMT; RUN;
-PROC SORT DATA=TOTAL NODUPKEYS; BY ID; RUN;
-
-DATA PORTALL;
-     SET PORTEX TOTAL;
-RUN;
-PROC SORT DATA=PORTALL; BY ID; RUN;
-
-DATA _NULL_;
-   SET PORTALL;
-   FILE PORTF;
-
-   IF _N_ = 1 THEN DO;
-   PUT @001 ' ';
-   PUT @001 'TITLE: REPORTING REQUIREMENTS FOR ISLAMIC BANKING'
-   PUT @051 'PORTFOLIO EXPOSURE ';
-   PUT @008 '(INVESTMENT,DEPOSIT,DERIVATIVES AND SUKUK HOLDING)'
-   PUT @058 'ACCORDING TO PRODUCT AND SHARIAH APPROVED';
-   PUT @008 'AS AT :' "&RDATE";
-
-   PUT @1 'ITEM/CONCEPT';
-   PUT @1 'DEPOSIT/INVESTMENT'  ';'   'RM(AMOUNT)'       ';'
-          ;
-     END;
-
-     PUT @1 CONCEPT           ';' AMT              ';'
-          ;
-RUN;
-
-
-
-
-
-
-
-
-
-
-
-REVIEWER_COMMENT	STATUS	APPROVER_REASON	APPROVER_COMMENT
-TRX DETAILS-IN ORDER	CLOSE ACCEPT	Other	No customer initiated trx for the past 6 mth (S/c in June'24 ). No intention to exit business relationship. 13/12/2024 @   8:33am.(Branch's review/comment & email replied dated 11/12/2024)
-	CLOSE ACCEPT	Other	Recent occupation updated. No CASA. No intention to exit business relationship. 29/05/25 9:51
-	CLOSE ACCEPT	Economic Justification	"8/1/26 7.38am
-…STMT NOV TO JAN IN ORDER
-…Trx mainly consist of DrMyDr, PB Dr Card, Duitnow QR Dr & Tfr Dr - Trx in order. To cont biz r'ship."
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**************************************************************************** 
- * Job:             LOAD_EXDWH_DETICA_CIR_ODD             A5GUQBM3.BF000AND * 
- * Description:                                                             * 
- *                                                                          * 
- * Metadata Server: svdwh005                                                * 
- * Port:            8565                                                    * 
- * Location:        /Shared Data/DETICA/02 Jobs/05 Loading                  * 
- *                                                                          * 
- * Server:          SASEDW                                A5GUQBM3.AS000002 * 
- *                                                                          * 
- * Source Tables:   ENRH_EXDWH_CISR1 -                    A5GUQBM3.BD00072V * 
- *                   cismenh.ENRH_EXDWH_CISR1                               * 
- *                  STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  ALERT_HEADER - detora.ALERT_HEADER    A5GUQBM3.BD0008AQ * 
- *                  ALERT_DETAILS_CDD -                   A5GUQBM3.BD0008AP * 
- *                   detora.ALERT_DETAILS_CDD                               * 
- *                  CDD_CUSTOMER_SCORE -                  A5GUQBM3.BD0008AU * 
- *                   detora.CDD_CUSTOMER_SCORE                              * 
- *                  RISK_LEVEL - detora.RISK_LEVEL        A5GUQBM3.BD0008B6 * 
- *                  CDD_CUSTOMER_SCORE_CONTRIB -          A5GUQBM3.BD0008AV * 
- *                   detora.CDD_CUSTOMER_SCORE_CONTRIB                      * 
- *                  CIR_CLOSE_yyyy -                      A5GUQBM3.BD000EAV * 
- *                   fccmart.CIR_CLOSE_&mmyyyy_sas                          * 
- *                  STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  ALERT_HEADER - detora.ALERT_HEADER    A5GUQBM3.BD0008AQ * 
- *                  ALERT_DETAILS_CDD -                   A5GUQBM3.BD0008AP * 
- *                   detora.ALERT_DETAILS_CDD                               * 
- *                  CDD_CUSTOMER_SCORE_CONTRIB -          A5GUQBM3.BD0008AV * 
- *                   detora.CDD_CUSTOMER_SCORE_CONTRIB                      * 
- * Target Tables:   CIS_ODD_mmyyyy -                      A5GUQBM3.BD000C8W * 
- *                   fccmart.CIS_ODD_&mmyyyy_sas                            * 
- *                  CIR_CLOSE_yyyy -                      A5GUQBM3.BD000EAV * 
- *                   fccmart.CIR_CLOSE_&mmyyyy_sas                          * 
- *                                                                          * 
- * Generated on:    Monday, 5 October 2026, 4:00:39 pm Malaysia Time        * 
- * Generated by:    sasdemo_edw_dev                                         * 
- * Version:         SAS Data Integration Studio 4.910                       * 
- ****************************************************************************/ 
-
-/* Generate the process id for job  */ 
-%put Process ID: &SYSJOBID;
-
-/* General macro variables  */ 
-%let jobID = %quote(A5GUQBM3.BF000AND);
-%let etls_jobName = %nrquote(LOAD_EXDWH_DETICA_CIR_ODD);
-%let etls_userID = %nrquote(sasdemo_edw_dev);
-
-/* Setup to capture return codes  */ 
-%global job_rc trans_rc sqlrc;
-%let sysrc = 0;
-%let job_rc = 0;
-%let trans_rc = 0;
-%let sqlrc = 0;
-%let syscc = 0;
-%global etls_stepStartTime; 
-/* initialize syserr to 0 */ 
-data _null_; run;
-
-%macro rcSet(error); 
-   %if (&error gt &trans_rc) %then 
-      %let trans_rc = &error;
-   %if (&error gt &job_rc) %then 
-      %let job_rc = &error;
-%mend rcSet; 
-
-%macro rcSetDS(error); 
-   if &error gt input(symget('trans_rc'),12.) then 
-      call symput('trans_rc',trim(left(put(&error,12.))));
-   if &error gt input(symget('job_rc'),12.) then 
-      call symput('job_rc',trim(left(put(&error,12.))));
-%mend rcSetDS; 
-
-/* Create metadata macro variables */
-%let IOMServer      = %nrquote(SASEDW);
-%let metaPort       = %nrquote(8565);
-%let metaServer     = %nrquote(svdwh005);
-
-/* Setup for capturing job status  */ 
-%let etls_startTime = %sysfunc(datetime(),datetime.);
-%let etls_recordsBefore = 0;
-%let etls_recordsAfter = 0;
-%let etls_lib = 0;
-%let etls_table = 0;
-
-%global etls_debug; 
-%macro etls_setDebug; 
-   %if %str(&etls_debug) ne 0 %then 
-      OPTIONS MPRINT%str(;); 
-%mend; 
-%etls_setDebug; 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILL * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   ENRH_EXDWH_CISR1 -                    A5GUQBM3.BD00072V * 
- *                   cismenh.ENRH_EXDWH_CISR1                               * 
- *                  STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- * Target Table:    Join - work.W34U192                   A5GUQBM3.BK001PA2 * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILM * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  ALERT_HEADER - detora.ALERT_HEADER    A5GUQBM3.BD0008AQ * 
- *                  ALERT_DETAILS_CDD -                   A5GUQBM3.BD0008AP * 
- *                   detora.ALERT_DETAILS_CDD                               * 
- * Target Table:    Join - work.W3JBAKN                   A5GUQBM3.BK001PA3 * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILN * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   CDD_CUSTOMER_SCORE -                  A5GUQBM3.BD0008AU * 
- *                   detora.CDD_CUSTOMER_SCORE                              * 
- *                  RISK_LEVEL - detora.RISK_LEVEL        A5GUQBM3.BD0008B6 * 
- * Target Table:    Join - work.W6ZUPCY                   A5GUQBM3.BK001PA4 * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILO * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   CDD_CUSTOMER_SCORE_CONTRIB -          A5GUQBM3.BD0008AV * 
- *                   detora.CDD_CUSTOMER_SCORE_CONTRIB                      * 
- *                  Join - work.W3JBAKN                   A5GUQBM3.BK001PA3 * 
- * Target Table:    Join - work.WDFLNVE                   A5GUQBM3.BK001PA5 * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            User Written                          A5GUQBM3.BI002ILP * 
- * Transform:       User Written                                            * 
- * Description:     CUST_SCORE_CONT                                         * 
- *                                                                          * 
- * Source Table:    Join - work.WDFLNVE                   A5GUQBM3.BK001PA5 * 
- * Target Table:    User Written - work.W86RSA2           A5GUQBM3.BK001PA6 * 
- *                                                                          * 
- * User Written:    SourceCode                                              * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILQ * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   Join - work.W34U192                   A5GUQBM3.BK001PA2 * 
- *                  Join - work.W3JBAKN                   A5GUQBM3.BK001PA3 * 
- *                  Join - work.W6ZUPCY                   A5GUQBM3.BK001PA4 * 
- *                  User Written - work.W86RSA2           A5GUQBM3.BK001PA6 * 
- * Target Table:    Join - work.WD3FWB2                   A5GUQBM3.BK001PA7 * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Table Loader                          A5GUQBM3.BI002NW7 * 
- * Transform:       Table Loader (Version 2.1)                              * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Table:    Join - work.WD3FWB2                   A5GUQBM3.BK001PA7 * 
- * Target Table:    CIS_ODD_mmyyyy -                      A5GUQBM3.BD000C8W * 
- *                   fccmart.CIS_ODD_&mmyyyy_sas                            * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI0039SK * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  ALERT_HEADER - detora.ALERT_HEADER    A5GUQBM3.BD0008AQ * 
- *                  ALERT_DETAILS_CDD -                   A5GUQBM3.BD0008AP * 
- *                   detora.ALERT_DETAILS_CDD                               * 
- * Target Table:    Join - work.WQFI72                    A5GUQBM3.BK0025ZU * 
- *==========================================================================*/ 
-
-%let transformID = %quote(A5GUQBM3.BI0039SK);
-%let trans_rc = 0;
-%let etls_stepStartTime = %sysfunc(datetime(), datetime20.); 
-
-/* Access the data for CIS Staging  */ 
-LIBNAME cisstg BASE "/sas/cis/dwh/staging";
-%rcSet(&syslibrc); 
-
-/* Access the data for DETICA Oracle  */ 
-LIBNAME detora ORACLE  DBMAX_TEXT=32767  PATH=AMLTMPBB  SCHEMA=amltmpbb  AUTHDOMAIN="DETICAOraAuth" ;
-%rcSet(&syslibrc); 
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = -1;
-option DBIDIRECTEXEC;
-
-proc datasets lib = work nolist nowarn memtype = (data view);
-   delete WQFI72;
-quit;
-
-proc sql;
-   create view work.WQFI72 as
-   select
-      t2.ALERT_KEY length = 8   
-         label = 'ALERT_KEY',
-      t2.ALERT_IDENTIFIER length = 64   
-         format = $64.
-         informat = $64.
-         label = 'ALERT_IDENTIFIER',
-      t2.ALERT_SCORE length = 8   
-         label = 'ALERT_SCORE',
-      t2.CUSTOMER_CDD_RISK length = 80   
-         format = $80.
-         informat = $80.
-         label = 'CUSTOMER_CDD_RISK',
-      t2.CUSTOMER_ID length = 32   
-         format = $32.
-         informat = $32.
-         label = 'CUSTOMER_ID',
-      t3.SCORE_ID length = 8   
-         label = 'SCORE_ID',
-      t1.RECORD_LOAD_DATE length = 10,
-      t2.WW_CREATION_TIMESTAMP length = 8   
-         format = DATETIME27.6
-         informat = DATETIME27.6
-         label = 'WW_CREATION_TIMESTAMP',
-      t2.WW_DOMAIN_CODE length = 50   
-         format = $50.
-         informat = $50.
-         label = 'WW_DOMAIN_CODE',
-      t1.APPR_DATE length = 26
-   from
-      cisstg.STG_CIS_CIDEODDT as t1, 
-      detora.ALERT_HEADER as t2, 
-      detora.ALERT_DETAILS_CDD as t3
-   where
-      t1.ALERT_ID = t2.ALERT_IDENTIFIER
-      and t2.ALERT_KEY = t3.ALERT_KEY
-      and t1.APPR_DATE >= '2024-01-01-01.01.01.000000'
-   ;
-quit;
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = &sys_sql_ip_all;
-
-%rcSet(&sqlrc); 
-
-
-
-/** Step end Join **/
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI0039SM * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   Join - work.WQFI72                    A5GUQBM3.BK0025ZU * 
- *                  CDD_CUSTOMER_SCORE_CONTRIB -          A5GUQBM3.BD0008AV * 
- *                   detora.CDD_CUSTOMER_SCORE_CONTRIB                      * 
- * Target Table:    Join - work.WVY4HG                    A5GUQBM3.BK0025ZW * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            User Written                          A5GUQBM3.BI0039SN * 
- * Transform:       User Written                                            * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Table:    Join - work.WVY4HG                    A5GUQBM3.BK0025ZW * 
- * Target Table:    User Written - work.WXQZ6N            A5GUQBM3.BK0025ZV * 
- *                                                                          * 
- * User Written:    SourceCode                                              * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI0039SL * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   Join - work.W34U192                   A5GUQBM3.BK001PA2 * 
- *                  Join - work.WQFI72                    A5GUQBM3.BK0025ZU * 
- *                  Join - work.W6ZUPCY                   A5GUQBM3.BK001PA4 * 
- *                  User Written - work.WXQZ6N            A5GUQBM3.BK0025ZV * 
- * Target Table:    Join - work.WS8XEV                    A5GUQBM3.BK0025ZT * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Table Loader                          A5GUQBM3.BI0039RY * 
- * Transform:       Table Loader (Version 2.1)                              * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Table:    Join - work.WS8XEV                    A5GUQBM3.BK0025ZT * 
- * Target Table:    CIR_CLOSE_yyyy -                      A5GUQBM3.BD000EAV * 
- *                   fccmart.CIR_CLOSE_&mmyyyy_sas                          * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            User Written                          A5GUQBM3.BI0039RZ * 
- * Transform:       User Written                                            * 
- * Description:     To append weekly basis                                  * 
- *                                                                          * 
- * Source Table:    CIR_CLOSE_yyyy -                      A5GUQBM3.BD000EAV * 
- *                   fccmart.CIR_CLOSE_&mmyyyy_sas                          * 
- * Target Table:    User Written - work.W52RR87           A5GUQBM3.BK0025ZB * 
- *                                                                          * 
- * User Written:    SourceCode                                              * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-%let etls_endTime = %sysfunc(datetime(),datetime.);
-
-
-LIBNAME UAT '/stgsrcsys/host/uat';
-
-DATA UAT.JOINCHECK;
-	SET work.WQFI72;
-RUN;
-
-
-i goT 
-
-ALERT_SCORE	CUSTOMER_CDD_RISK	CUSTOMER_ID
-315	High	CIS00014929418
-63	Medium	CIS00015880569
-42	Medium	CIS00022011957
-
-
-
-=============================================================================================================
-
-
-/**************************************************************************** 
- * Job:             LOAD_EXDWH_DETICA_CIR_ODD             A5GUQBM3.BF000AND * 
- * Description:                                                             * 
- *                                                                          * 
- * Metadata Server: svdwh005                                                * 
- * Port:            8565                                                    * 
- * Location:        /Shared Data/DETICA/02 Jobs/05 Loading                  * 
- *                                                                          * 
- * Server:          SASEDW                                A5GUQBM3.AS000002 * 
- *                                                                          * 
- * Source Tables:   ENRH_EXDWH_CISR1 -                    A5GUQBM3.BD00072V * 
- *                   cismenh.ENRH_EXDWH_CISR1                               * 
- *                  STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  ALERT_HEADER - detora.ALERT_HEADER    A5GUQBM3.BD0008AQ * 
- *                  ALERT_DETAILS_CDD -                   A5GUQBM3.BD0008AP * 
- *                   detora.ALERT_DETAILS_CDD                               * 
- *                  CDD_CUSTOMER_SCORE -                  A5GUQBM3.BD0008AU * 
- *                   detora.CDD_CUSTOMER_SCORE                              * 
- *                  RISK_LEVEL - detora.RISK_LEVEL        A5GUQBM3.BD0008B6 * 
- *                  CDD_CUSTOMER_SCORE_CONTRIB -          A5GUQBM3.BD0008AV * 
- *                   detora.CDD_CUSTOMER_SCORE_CONTRIB                      * 
- *                  CIR_CLOSE_yyyy -                      A5GUQBM3.BD000EAV * 
- *                   fccmart.CIR_CLOSE_&mmyyyy_sas                          * 
- *                  STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  ALERT_HEADER - detora.ALERT_HEADER    A5GUQBM3.BD0008AQ * 
- *                  ALERT_DETAILS_CDD -                   A5GUQBM3.BD0008AP * 
- *                   detora.ALERT_DETAILS_CDD                               * 
- *                  CDD_CUSTOMER_SCORE_CONTRIB -          A5GUQBM3.BD0008AV * 
- *                   detora.CDD_CUSTOMER_SCORE_CONTRIB                      * 
- * Target Tables:   CIS_ODD_mmyyyy -                      A5GUQBM3.BD000C8W * 
- *                   fccmart.CIS_ODD_&mmyyyy_sas                            * 
- *                  CIR_CLOSE_yyyy -                      A5GUQBM3.BD000EAV * 
- *                   fccmart.CIR_CLOSE_&mmyyyy_sas                          * 
- *                                                                          * 
- * Generated on:    Monday, 5 October 2026, 6:22:43 pm Malaysia Time        * 
- * Generated by:    sasdemo_edw_dev                                         * 
- * Version:         SAS Data Integration Studio 4.910                       * 
- ****************************************************************************/ 
-
-/* Generate the process id for job  */ 
-%put Process ID: &SYSJOBID;
-
-/* General macro variables  */ 
-%let jobID = %quote(A5GUQBM3.BF000AND);
-%let etls_jobName = %nrquote(LOAD_EXDWH_DETICA_CIR_ODD);
-%let etls_userID = %nrquote(sasdemo_edw_dev);
-
-/* Setup to capture return codes  */ 
-%global job_rc trans_rc sqlrc;
-%let sysrc = 0;
-%let job_rc = 0;
-%let trans_rc = 0;
-%let sqlrc = 0;
-%let syscc = 0;
-%global etls_stepStartTime; 
-/* initialize syserr to 0 */ 
-data _null_; run;
-
-%macro rcSet(error); 
-   %if (&error gt &trans_rc) %then 
-      %let trans_rc = &error;
-   %if (&error gt &job_rc) %then 
-      %let job_rc = &error;
-%mend rcSet; 
-
-%macro rcSetDS(error); 
-   if &error gt input(symget('trans_rc'),12.) then 
-      call symput('trans_rc',trim(left(put(&error,12.))));
-   if &error gt input(symget('job_rc'),12.) then 
-      call symput('job_rc',trim(left(put(&error,12.))));
-%mend rcSetDS; 
-
-/* Create metadata macro variables */
-%let IOMServer      = %nrquote(SASEDW);
-%let metaPort       = %nrquote(8565);
-%let metaServer     = %nrquote(svdwh005);
-
-/* Setup for capturing job status  */ 
-%let etls_startTime = %sysfunc(datetime(),datetime.);
-%let etls_recordsBefore = 0;
-%let etls_recordsAfter = 0;
-%let etls_lib = 0;
-%let etls_table = 0;
-
-%global etls_debug; 
-%macro etls_setDebug; 
-   %if %str(&etls_debug) ne 0 %then 
-      OPTIONS MPRINT%str(;); 
-%mend; 
-%etls_setDebug; 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILL * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   ENRH_EXDWH_CISR1 -                    A5GUQBM3.BD00072V * 
- *                   cismenh.ENRH_EXDWH_CISR1                               * 
- *                  STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- * Target Table:    Join - work.W34U192                   A5GUQBM3.BK001PA2 * 
- *==========================================================================*/ 
-
-%let transformID = %quote(A5GUQBM3.BI002ILL);
-%let trans_rc = 0;
-%let etls_stepStartTime = %sysfunc(datetime(), datetime20.); 
-
-/* Access the data for CIS Mart Enrichment  */ 
-LIBNAME cismenh BASE "/sas/cis/mart/enrichment";
-%rcSet(&syslibrc); 
-
-/* Access the data for CIS Staging  */ 
-LIBNAME cisstg BASE "/sas/cis/dwh/staging";
-%rcSet(&syslibrc); 
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = -1;
-option DBIDIRECTEXEC;
-
-proc datasets lib = work nolist nowarn memtype = (data view);
-   delete W34U192;
-quit;
-
-proc sql;
-   create view work.W34U192 as
-   select distinct
-      t1.ALERT_ID length = 64,
-      t1.DET_ALERT_KEY length = 38,
-      t1.DET_STATUS_CODE length = 16,
-      t1.DET_WKFLW_NOTES_ID length = 38,
-      dhms(input(t1.RECORD_LOAD_DATE,yymmdd10.),0,0,0) as RECORD_LOAD_DATE length = 8   
-         format = datetime24.,
-      t1.CUSTNO length = 20,
-      t1.ACCT_BRANCH_NO length = 5,
-      t1.ACCT_BRANCH_ABBRV length = 5,
-      t1.CUSTOMER_NAME length = 150,
-      t1.RISK_LEVEL as BDS_CDD_RISK length = 6,
-      t1.PERSONAL_SME length = 10,
-      t1.PENDING_STATUS length = 20,
-      t1.OCCUP_UPTODATE length = 1,
-      t1.MASCO_CODE length = 20,
-      t1.MASCO_DESC length = 150,
-      t1.EMPL_TYPE length = 10,
-      t1.EMPL_NAME length = 150,
-      t1.CUST_NOT_CONTACT length = 1,
-      case when t1.TRX_DETAILS='1' then 'Recommend to Accept' 
-      else 'Recommend to Reject' end as TRX_DETAILS length = 40,
-      t1.REVIEWER_ID length = 10,
-      t1.REVWR_RECOMM_STATUS length = 2,
-      t1.REVWR_RECOMM_REASON length = 100,
-      t1.REVWR_RECOMM_COMMENT length = 200,
-      input(t1.REVWR_DATE,anydtdtm.) as REVWR_DATE length = 8   
-         format = datetime24.,
-      t1.APPROVER_ID length = 10,
-      t1.APPR_RECOMM_STATUS length = 2,
-      t1.APPR_RECOMM_REASON length = 100,
-      t1.APPR_RECOMM_COMMENT length = 200,
-      input(t1.APPR_DATE,anydtdtm.) as APPR_DATE length = 8   
-         format = datetime24.,
-      t1.REWORK_ID length = 10,
-      input(t1.REWORK_DATE,anydtdtm.) as REWORK_DATE length = 8   
-         format = datetime24.,
-      t1.REWORK_INDICATOR length = 1,
-      input(t1.UPDATE_DATE,anydtdtm.) as UPDATE_DATE length = 8   
-         format = datetime24.,
-      t1.RECORD_IN_USE_BY length = 10,
-      dhms(input(t1.OCCUP_LAST_MAINT_DT,yymmdd10.),0,0,0) as OCCUP_LAST_MAINT_DT length = 8   
-         format = datetime24.,
-      t1.REVWR_REMARKS length = 50,
-      t1.COLOR_BDSINDC length = 1,
-      t1.PREV_MASCO length = 10,
-      t1.RECORD_CATEGORY length = 30,
-      t1.COMPANY_SEARCH length = 1,
-      t1.OT_SUPPORT_DOC length = 1,
-      t1.LATEST_CONTACT length = 10,
-      t1.NOB_UP2DATE length = 1,
-      t1.LATEST_MSIC length = 5,
-      t1.BO_INFO_UP2DATE length = 1,
-      t1.LATEST_BO_UPDATE length = 1,
-      t1.BRCH_COMMENT length = 200,
-      t1.RVWR_STATUS length = 1,
-      t1.RVWR_SAVE_ID length = 10,
-      dhms(input(t1.RVWR_SAVE_DATE,yymmdd10.),0,0,0) as RVWR_SAVE_DATE length = 8   
-         format = datetime24.,
-      t1.PUSH_NOTIFICATION_INDC length = 1,
-      t1.EMAIL_BLAST_INDC length = 1,
-      t1.AUTOMAIL_INDC length = 1,
-      dhms(input(t1.NOTIFICATION_DATE,yymmdd10.),0,0,0) as NOTIFICATION_DATE length = 8   
-         format = datetime24.,
-      t2.INDORG length = 1,
-      t2.NEWIC length = 20,
-      t2.NEWICIND length = 3,
-      t2.OLDIC length = 20,
-      t2.BGC length = 2,
-      t2.OCCUPAT_MASCO_CD length = 5,
-      t2.SIC_ISS length = 5,
-      ifc(coalescec(t2.CISCUSTCD1,t2.CISCUSTCD2,t2.CISCUSTCD3,t2.CISCUSTCD4,t2.CISCUSTCD5,t2.CISCUSTCD6,t2.CISCUSTCD7,t2.CISCUSTCD8,
-      t2.CISCUSTCD9,t2.CISCUSTCD10,t2.CISCUSTCD11,t2.CISCUSTCD12,t2.CISCUSTCD13,t2.CISCUSTCD14,t2.CISCUSTCD15)<>'','Y','N') as HRCIND length = 1
-   from
-      cisstg.STG_CIS_CIDEODDT as t1 left join 
-      cismenh.ENRH_EXDWH_CISR1 as t2
-         on
-         (
-            t1.CUSTNO = put(t2.CUSTNO,z11.)
-         )
-   ;
-quit;
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = &sys_sql_ip_all;
-
-%rcSet(&sqlrc); 
-
-
-
-/** Step end Join **/
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILM * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  ALERT_HEADER - detora.ALERT_HEADER    A5GUQBM3.BD0008AQ * 
- *                  ALERT_DETAILS_CDD -                   A5GUQBM3.BD0008AP * 
- *                   detora.ALERT_DETAILS_CDD                               * 
- * Target Table:    Join - work.W3JBAKN                   A5GUQBM3.BK001PA3 * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILN * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   CDD_CUSTOMER_SCORE -                  A5GUQBM3.BD0008AU * 
- *                   detora.CDD_CUSTOMER_SCORE                              * 
- *                  RISK_LEVEL - detora.RISK_LEVEL        A5GUQBM3.BD0008B6 * 
- * Target Table:    Join - work.W6ZUPCY                   A5GUQBM3.BK001PA4 * 
- *==========================================================================*/ 
-
-%let transformID = %quote(A5GUQBM3.BI002ILN);
-%let trans_rc = 0;
-%let etls_stepStartTime = %sysfunc(datetime(), datetime20.); 
-
-/* Access the data for DETICA Oracle  */ 
-LIBNAME detora ORACLE  DBMAX_TEXT=32767  PATH=AMLTMPBB  SCHEMA=amltmpbb  AUTHDOMAIN="DETICAOraAuth" ;
-%rcSet(&syslibrc); 
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = -1;
-option DBIDIRECTEXEC;
-
-proc datasets lib = work nolist nowarn memtype = (data view);
-   delete W6ZUPCY;
-quit;
-
-proc sql;
-   create view work.W6ZUPCY as
-   select
-      t1.ID length = 8   
-         label = 'ID',
-      t1.SCORE_TIMESTAMP length = 8   
-         format = DATETIME27.6
-         informat = DATETIME27.6
-         label = 'SCORE_TIMESTAMP',
-      t1.SCORE length = 8   
-         label = 'SCORE',
-      t1.CALCULATED_RISK_ID length = 8   
-         label = 'CALCULATED_RISK_ID',
-      t1.CUSTOMER_ID length = 32   
-         format = $32.
-         informat = $32.
-         label = 'CUSTOMER_ID',
-      t2.RISK_LEVEL length = 80   
-         format = $80.
-         informat = $80.
-         label = 'RISK_LEVEL'
-   from
-      detora.CDD_CUSTOMER_SCORE as t1, 
-      detora.RISK_LEVEL as t2
-   where
-      t1.CALCULATED_RISK_ID = t2.ID
-   ;
-quit;
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = &sys_sql_ip_all;
-
-%rcSet(&sqlrc); 
-
-
-
-/** Step end Join **/
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILO * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   CDD_CUSTOMER_SCORE_CONTRIB -          A5GUQBM3.BD0008AV * 
- *                   detora.CDD_CUSTOMER_SCORE_CONTRIB                      * 
- *                  Join - work.W3JBAKN                   A5GUQBM3.BK001PA3 * 
- * Target Table:    Join - work.WDFLNVE                   A5GUQBM3.BK001PA5 * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            User Written                          A5GUQBM3.BI002ILP * 
- * Transform:       User Written                                            * 
- * Description:     CUST_SCORE_CONT                                         * 
- *                                                                          * 
- * Source Table:    Join - work.WDFLNVE                   A5GUQBM3.BK001PA5 * 
- * Target Table:    User Written - work.W86RSA2           A5GUQBM3.BK001PA6 * 
- *                                                                          * 
- * User Written:    SourceCode                                              * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI002ILQ * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   Join - work.W34U192                   A5GUQBM3.BK001PA2 * 
- *                  Join - work.W3JBAKN                   A5GUQBM3.BK001PA3 * 
- *                  Join - work.W6ZUPCY                   A5GUQBM3.BK001PA4 * 
- *                  User Written - work.W86RSA2           A5GUQBM3.BK001PA6 * 
- * Target Table:    Join - work.WD3FWB2                   A5GUQBM3.BK001PA7 * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Table Loader                          A5GUQBM3.BI002NW7 * 
- * Transform:       Table Loader (Version 2.1)                              * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Table:    Join - work.WD3FWB2                   A5GUQBM3.BK001PA7 * 
- * Target Table:    CIS_ODD_mmyyyy -                      A5GUQBM3.BD000C8W * 
- *                   fccmart.CIS_ODD_&mmyyyy_sas                            * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI0039SK * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   STG_CIS_CIDEODDT -                    A5GUQBM3.BD000C1P * 
- *                   cisstg.STG_CIS_CIDEODDT                                * 
- *                  ALERT_HEADER - detora.ALERT_HEADER    A5GUQBM3.BD0008AQ * 
- *                  ALERT_DETAILS_CDD -                   A5GUQBM3.BD0008AP * 
- *                   detora.ALERT_DETAILS_CDD                               * 
- * Target Table:    Join - work.WQFI72                    A5GUQBM3.BK0025ZU * 
- *==========================================================================*/ 
-
-%let transformID = %quote(A5GUQBM3.BI0039SK);
-%let trans_rc = 0;
-%let etls_stepStartTime = %sysfunc(datetime(), datetime20.); 
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = -1;
-option DBIDIRECTEXEC;
-
-proc datasets lib = work nolist nowarn memtype = (data view);
-   delete WQFI72;
-quit;
-
-proc sql;
-   create view work.WQFI72 as
-   select
-      t2.ALERT_KEY length = 8   
-         label = 'ALERT_KEY',
-      t2.ALERT_IDENTIFIER length = 64   
-         format = $64.
-         informat = $64.
-         label = 'ALERT_IDENTIFIER',
-      t2.ALERT_SCORE length = 8   
-         label = 'ALERT_SCORE',
-      t2.CUSTOMER_CDD_RISK length = 80   
-         format = $80.
-         informat = $80.
-         label = 'CUSTOMER_CDD_RISK',
-      t2.CUSTOMER_ID length = 32   
-         format = $32.
-         informat = $32.
-         label = 'CUSTOMER_ID',
-      t3.SCORE_ID length = 8   
-         label = 'SCORE_ID',
-      t1.RECORD_LOAD_DATE length = 10,
-      t2.WW_CREATION_TIMESTAMP length = 8   
-         format = DATETIME27.6
-         informat = DATETIME27.6
-         label = 'WW_CREATION_TIMESTAMP',
-      t2.WW_DOMAIN_CODE length = 50   
-         format = $50.
-         informat = $50.
-         label = 'WW_DOMAIN_CODE',
-      t1.APPR_DATE length = 26
-   from
-      cisstg.STG_CIS_CIDEODDT as t1, 
-      detora.ALERT_HEADER as t2, 
-      detora.ALERT_DETAILS_CDD as t3
-   where
-      t1.ALERT_ID = t2.ALERT_IDENTIFIER
-      and t2.ALERT_KEY = t3.ALERT_KEY
-      and t1.APPR_DATE >= '2024-01-01-01.01.01.000000'
-   ;
-quit;
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = &sys_sql_ip_all;
-
-%rcSet(&sqlrc); 
-
-
-
-/** Step end Join **/
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI0039SM * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   Join - work.WQFI72                    A5GUQBM3.BK0025ZU * 
- *                  CDD_CUSTOMER_SCORE_CONTRIB -          A5GUQBM3.BD0008AV * 
- *                   detora.CDD_CUSTOMER_SCORE_CONTRIB                      * 
- * Target Table:    Join - work.WVY4HG                    A5GUQBM3.BK0025ZW * 
- *==========================================================================*/ 
-
-%let transformID = %quote(A5GUQBM3.BI0039SM);
-%let trans_rc = 0;
-%let etls_stepStartTime = %sysfunc(datetime(), datetime20.); 
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = -1;
-option DBIDIRECTEXEC;
-
-proc datasets lib = work nolist nowarn memtype = (data view);
-   delete WVY4HG;
-quit;
-
-proc sql;
-   create view work.WVY4HG as
-   select
-      t2.SCORE_ID length = 8   
-         label = 'SCORE_ID',
-      t2.CHECK_NAME length = 200   
-         format = $200.
-         informat = $200.
-         label = 'CHECK_NAME',
-      t2.INFO length = 4000   
-         format = $4000.
-         informat = $4000.
-         label = 'INFO',
-      t2.CONTRIBUTION length = 8   
-         label = 'CONTRIBUTION'
-   from
-      work.WQFI72 as t1, 
-      detora.CDD_CUSTOMER_SCORE_CONTRIB as t2
-   where
-      t1.SCORE_ID = t2.SCORE_ID
-      and t2.CHECK_NAME IN ('Industry Segment Risk','Customer Account Types Risk','Company Form Risk','Manual Risk Adjustment','Overall Score Adjustment')
-   ;
-quit;
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = &sys_sql_ip_all;
-
-%rcSet(&sqlrc); 
-
-
-
-/** Step end Join **/
-
-/*==========================================================================* 
- * Step:            User Written                          A5GUQBM3.BI0039SN * 
- * Transform:       User Written                                            * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Table:    Join - work.WVY4HG                    A5GUQBM3.BK0025ZW * 
- * Target Table:    User Written - work.WXQZ6N            A5GUQBM3.BK0025ZV * 
- *                                                                          * 
- * User Written:    SourceCode                                              * 
- *==========================================================================*/ 
-
-%let transformID = %quote(A5GUQBM3.BI0039SN);
-%let trans_rc = 0;
-%let etls_stepStartTime = %sysfunc(datetime(), datetime20.); 
-
-%let SYSLAST = %nrquote(work.WVY4HG); 
-
-%let _INPUT_count = 1;
-%let _INPUT = work.WVY4HG;
-%let _INPUT_connect = ;
-%let _INPUT_engine = ;
-%let _INPUT_memtype = VIEW;
-%let _INPUT_options = %nrquote();
-%let _INPUT_alter = %nrquote();
-%let _INPUT_path = %nrquote(/Join_A5GUQBM3.BK0025ZW%(WorkTable%));
-%let _INPUT_type = 1;
-%let _INPUT_label = %nrquote();
-%let _INPUT_filetype = WorkTable;
-
-%let _INPUT1 = work.WVY4HG;
-%let _INPUT1_connect = ;
-%let _INPUT1_engine = ;
-%let _INPUT1_memtype = VIEW;
-%let _INPUT1_options = %nrquote();
-%let _INPUT1_alter = %nrquote();
-%let _INPUT1_path = %nrquote(/Join_A5GUQBM3.BK0025ZW%(WorkTable%));
-%let _INPUT1_type = 1;
-%let _INPUT1_label = %nrquote();
-%let _INPUT1_filetype = WorkTable;
-
-%let _OUTPUT_count = 1;
-%let _OUTPUT = work.WXQZ6N;
-%let _OUTPUT_connect = ;
-%let _OUTPUT_engine = ;
-%let _OUTPUT_memtype = DATA;
-%let _OUTPUT_options = %nrquote();
-%let _OUTPUT_alter = %nrquote();
-%let _OUTPUT_path = %nrquote(/User Written_A5GUQBM3.BK0025ZV%(WorkTable%));
-%let _OUTPUT_type = 1;
-%let _OUTPUT_label = %nrquote();
-/* List of target columns to keep  */ 
-%let _OUTPUT_keep = SCORE_ID IND_SEG_RISK IND_SEG_RISK_SCORE CUST_ACC_TYPES_RISK 
-        CUST_ACC_TYPES_RISK_SCORE COMPANY_FORM_RISK COMPANY_FORM_RISK_SCORE 
-        MANUAL_RISK_ADJ MANUAL_RISK_ADJ_SCORE OVERALL_SCORE_ADJ 
-        OVERALL_SCORE_ADJ_SCORE;
-%let _OUTPUT_col_count = 11;
-%let _OUTPUT_col0_name = SCORE_ID;
-%let _OUTPUT_col0_table = work.WXQZ6N;
-%let _OUTPUT_col0_length = 8;
-%let _OUTPUT_col0_type = ;
-%let _OUTPUT_col0_format = ;
-%let _OUTPUT_col0_informat = ;
-%let _OUTPUT_col0_label = %nrquote();
-%let _OUTPUT_col0_exp = ;
-%let _OUTPUT_col0_input_count = 0;
-%let _OUTPUT_col1_name = IND_SEG_RISK;
-%let _OUTPUT_col1_table = work.WXQZ6N;
-%let _OUTPUT_col1_length = 4000;
-%let _OUTPUT_col1_type = $;
-%let _OUTPUT_col1_format = ;
-%let _OUTPUT_col1_informat = ;
-%let _OUTPUT_col1_label = %nrquote();
-%let _OUTPUT_col1_exp = ;
-%let _OUTPUT_col1_input_count = 0;
-%let _OUTPUT_col2_name = IND_SEG_RISK_SCORE;
-%let _OUTPUT_col2_table = work.WXQZ6N;
-%let _OUTPUT_col2_length = 8;
-%let _OUTPUT_col2_type = ;
-%let _OUTPUT_col2_format = ;
-%let _OUTPUT_col2_informat = ;
-%let _OUTPUT_col2_label = %nrquote();
-%let _OUTPUT_col2_exp = ;
-%let _OUTPUT_col2_input_count = 0;
-%let _OUTPUT_col3_name = CUST_ACC_TYPES_RISK;
-%let _OUTPUT_col3_table = work.WXQZ6N;
-%let _OUTPUT_col3_length = 4000;
-%let _OUTPUT_col3_type = $;
-%let _OUTPUT_col3_format = ;
-%let _OUTPUT_col3_informat = ;
-%let _OUTPUT_col3_label = %nrquote();
-%let _OUTPUT_col3_exp = ;
-%let _OUTPUT_col3_input_count = 0;
-%let _OUTPUT_col4_name = CUST_ACC_TYPES_RISK_SCORE;
-%let _OUTPUT_col4_table = work.WXQZ6N;
-%let _OUTPUT_col4_length = 8;
-%let _OUTPUT_col4_type = ;
-%let _OUTPUT_col4_format = ;
-%let _OUTPUT_col4_informat = ;
-%let _OUTPUT_col4_label = %nrquote();
-%let _OUTPUT_col4_exp = ;
-%let _OUTPUT_col4_input_count = 0;
-%let _OUTPUT_col5_name = COMPANY_FORM_RISK;
-%let _OUTPUT_col5_table = work.WXQZ6N;
-%let _OUTPUT_col5_length = 4000;
-%let _OUTPUT_col5_type = $;
-%let _OUTPUT_col5_format = ;
-%let _OUTPUT_col5_informat = ;
-%let _OUTPUT_col5_label = %nrquote();
-%let _OUTPUT_col5_exp = ;
-%let _OUTPUT_col5_input_count = 0;
-%let _OUTPUT_col6_name = COMPANY_FORM_RISK_SCORE;
-%let _OUTPUT_col6_table = work.WXQZ6N;
-%let _OUTPUT_col6_length = 8;
-%let _OUTPUT_col6_type = ;
-%let _OUTPUT_col6_format = ;
-%let _OUTPUT_col6_informat = ;
-%let _OUTPUT_col6_label = %nrquote();
-%let _OUTPUT_col6_exp = ;
-%let _OUTPUT_col6_input_count = 0;
-%let _OUTPUT_col7_name = MANUAL_RISK_ADJ;
-%let _OUTPUT_col7_table = work.WXQZ6N;
-%let _OUTPUT_col7_length = 4000;
-%let _OUTPUT_col7_type = $;
-%let _OUTPUT_col7_format = ;
-%let _OUTPUT_col7_informat = ;
-%let _OUTPUT_col7_label = %nrquote();
-%let _OUTPUT_col7_exp = ;
-%let _OUTPUT_col7_input_count = 0;
-%let _OUTPUT_col8_name = MANUAL_RISK_ADJ_SCORE;
-%let _OUTPUT_col8_table = work.WXQZ6N;
-%let _OUTPUT_col8_length = 8;
-%let _OUTPUT_col8_type = ;
-%let _OUTPUT_col8_format = ;
-%let _OUTPUT_col8_informat = ;
-%let _OUTPUT_col8_label = %nrquote();
-%let _OUTPUT_col8_exp = ;
-%let _OUTPUT_col8_input_count = 0;
-%let _OUTPUT_col9_name = OVERALL_SCORE_ADJ;
-%let _OUTPUT_col9_table = work.WXQZ6N;
-%let _OUTPUT_col9_length = 4000;
-%let _OUTPUT_col9_type = $;
-%let _OUTPUT_col9_format = ;
-%let _OUTPUT_col9_informat = ;
-%let _OUTPUT_col9_label = %nrquote();
-%let _OUTPUT_col9_exp = ;
-%let _OUTPUT_col9_input_count = 0;
-%let _OUTPUT_col10_name = OVERALL_SCORE_ADJ_SCORE;
-%let _OUTPUT_col10_table = work.WXQZ6N;
-%let _OUTPUT_col10_length = 8;
-%let _OUTPUT_col10_type = ;
-%let _OUTPUT_col10_format = ;
-%let _OUTPUT_col10_informat = ;
-%let _OUTPUT_col10_label = %nrquote();
-%let _OUTPUT_col10_exp = ;
-%let _OUTPUT_col10_input_count = 0;
-%let _OUTPUT_filetype = WorkTable;
-
-%let _OUTPUT1 = work.WXQZ6N;
-%let _OUTPUT1_connect = ;
-%let _OUTPUT1_engine = ;
-%let _OUTPUT1_memtype = DATA;
-%let _OUTPUT1_options = %nrquote();
-%let _OUTPUT1_alter = %nrquote();
-%let _OUTPUT1_path = %nrquote(/User Written_A5GUQBM3.BK0025ZV%(WorkTable%));
-%let _OUTPUT1_type = 1;
-%let _OUTPUT1_label = %nrquote();
-/* List of target columns to keep  */ 
-%let _OUTPUT1_keep = SCORE_ID IND_SEG_RISK IND_SEG_RISK_SCORE CUST_ACC_TYPES_RISK 
-        CUST_ACC_TYPES_RISK_SCORE COMPANY_FORM_RISK COMPANY_FORM_RISK_SCORE 
-        MANUAL_RISK_ADJ MANUAL_RISK_ADJ_SCORE OVERALL_SCORE_ADJ 
-        OVERALL_SCORE_ADJ_SCORE;
-%let _OUTPUT1_col_count = 11;
-%let _OUTPUT1_col0_name = SCORE_ID;
-%let _OUTPUT1_col0_table = work.WXQZ6N;
-%let _OUTPUT1_col0_length = 8;
-%let _OUTPUT1_col0_type = ;
-%let _OUTPUT1_col0_format = ;
-%let _OUTPUT1_col0_informat = ;
-%let _OUTPUT1_col0_label = %nrquote();
-%let _OUTPUT1_col0_exp = ;
-%let _OUTPUT1_col0_input_count = 0;
-%let _OUTPUT1_col1_name = IND_SEG_RISK;
-%let _OUTPUT1_col1_table = work.WXQZ6N;
-%let _OUTPUT1_col1_length = 4000;
-%let _OUTPUT1_col1_type = $;
-%let _OUTPUT1_col1_format = ;
-%let _OUTPUT1_col1_informat = ;
-%let _OUTPUT1_col1_label = %nrquote();
-%let _OUTPUT1_col1_exp = ;
-%let _OUTPUT1_col1_input_count = 0;
-%let _OUTPUT1_col2_name = IND_SEG_RISK_SCORE;
-%let _OUTPUT1_col2_table = work.WXQZ6N;
-%let _OUTPUT1_col2_length = 8;
-%let _OUTPUT1_col2_type = ;
-%let _OUTPUT1_col2_format = ;
-%let _OUTPUT1_col2_informat = ;
-%let _OUTPUT1_col2_label = %nrquote();
-%let _OUTPUT1_col2_exp = ;
-%let _OUTPUT1_col2_input_count = 0;
-%let _OUTPUT1_col3_name = CUST_ACC_TYPES_RISK;
-%let _OUTPUT1_col3_table = work.WXQZ6N;
-%let _OUTPUT1_col3_length = 4000;
-%let _OUTPUT1_col3_type = $;
-%let _OUTPUT1_col3_format = ;
-%let _OUTPUT1_col3_informat = ;
-%let _OUTPUT1_col3_label = %nrquote();
-%let _OUTPUT1_col3_exp = ;
-%let _OUTPUT1_col3_input_count = 0;
-%let _OUTPUT1_col4_name = CUST_ACC_TYPES_RISK_SCORE;
-%let _OUTPUT1_col4_table = work.WXQZ6N;
-%let _OUTPUT1_col4_length = 8;
-%let _OUTPUT1_col4_type = ;
-%let _OUTPUT1_col4_format = ;
-%let _OUTPUT1_col4_informat = ;
-%let _OUTPUT1_col4_label = %nrquote();
-%let _OUTPUT1_col4_exp = ;
-%let _OUTPUT1_col4_input_count = 0;
-%let _OUTPUT1_col5_name = COMPANY_FORM_RISK;
-%let _OUTPUT1_col5_table = work.WXQZ6N;
-%let _OUTPUT1_col5_length = 4000;
-%let _OUTPUT1_col5_type = $;
-%let _OUTPUT1_col5_format = ;
-%let _OUTPUT1_col5_informat = ;
-%let _OUTPUT1_col5_label = %nrquote();
-%let _OUTPUT1_col5_exp = ;
-%let _OUTPUT1_col5_input_count = 0;
-%let _OUTPUT1_col6_name = COMPANY_FORM_RISK_SCORE;
-%let _OUTPUT1_col6_table = work.WXQZ6N;
-%let _OUTPUT1_col6_length = 8;
-%let _OUTPUT1_col6_type = ;
-%let _OUTPUT1_col6_format = ;
-%let _OUTPUT1_col6_informat = ;
-%let _OUTPUT1_col6_label = %nrquote();
-%let _OUTPUT1_col6_exp = ;
-%let _OUTPUT1_col6_input_count = 0;
-%let _OUTPUT1_col7_name = MANUAL_RISK_ADJ;
-%let _OUTPUT1_col7_table = work.WXQZ6N;
-%let _OUTPUT1_col7_length = 4000;
-%let _OUTPUT1_col7_type = $;
-%let _OUTPUT1_col7_format = ;
-%let _OUTPUT1_col7_informat = ;
-%let _OUTPUT1_col7_label = %nrquote();
-%let _OUTPUT1_col7_exp = ;
-%let _OUTPUT1_col7_input_count = 0;
-%let _OUTPUT1_col8_name = MANUAL_RISK_ADJ_SCORE;
-%let _OUTPUT1_col8_table = work.WXQZ6N;
-%let _OUTPUT1_col8_length = 8;
-%let _OUTPUT1_col8_type = ;
-%let _OUTPUT1_col8_format = ;
-%let _OUTPUT1_col8_informat = ;
-%let _OUTPUT1_col8_label = %nrquote();
-%let _OUTPUT1_col8_exp = ;
-%let _OUTPUT1_col8_input_count = 0;
-%let _OUTPUT1_col9_name = OVERALL_SCORE_ADJ;
-%let _OUTPUT1_col9_table = work.WXQZ6N;
-%let _OUTPUT1_col9_length = 4000;
-%let _OUTPUT1_col9_type = $;
-%let _OUTPUT1_col9_format = ;
-%let _OUTPUT1_col9_informat = ;
-%let _OUTPUT1_col9_label = %nrquote();
-%let _OUTPUT1_col9_exp = ;
-%let _OUTPUT1_col9_input_count = 0;
-%let _OUTPUT1_col10_name = OVERALL_SCORE_ADJ_SCORE;
-%let _OUTPUT1_col10_table = work.WXQZ6N;
-%let _OUTPUT1_col10_length = 8;
-%let _OUTPUT1_col10_type = ;
-%let _OUTPUT1_col10_format = ;
-%let _OUTPUT1_col10_informat = ;
-%let _OUTPUT1_col10_label = %nrquote();
-%let _OUTPUT1_col10_exp = ;
-%let _OUTPUT1_col10_input_count = 0;
-%let _OUTPUT1_filetype = WorkTable;
-
-/*---- Start of User Written Code  ----*/ 
-
-proc sort data=&_INPUT out=input_sorted; by SCORE_ID; run;
-
-data test1(rename=(INFO=IND_SEG_RISK CONTRIBUTION=IND_SEG_RISK_SCORE))
-     test2(rename=(INFO=CUST_ACC_TYPES_RISK CONTRIBUTION=CUST_ACC_TYPES_RISK_SCORE))
-     test3(rename=(INFO=COMPANY_FORM_RISK CONTRIBUTION=COMPANY_FORM_RISK_SCORE))
-     test4(rename=(INFO=MANUAL_RISK_ADJ CONTRIBUTION=MANUAL_RISK_ADJ_SCORE))
-     test5(rename=(INFO=OVERALL_SCORE_ADJ CONTRIBUTION=OVERALL_SCORE_ADJ_SCORE));;
-	set input_sorted;
-   if      CHECK_NAME = 'Industry Segment Risk' then 
-      output test1;
-   else if CHECK_NAME = 'Customer Account Types Risk' then 
-      output test2;
-   else if CHECK_NAME = 'Company Form Risk' then 
-      output test3;
-   else if CHECK_NAME = 'Manual Risk Adjustment' then 
-      output test4;
-   else if CHECK_NAME = 'Overall Score Adjustment' then 
-      output test5;
-run;
-
-data &_OUTPUT; 
-	merge test1 test2 test3 test4 test5;
-	by SCORE_ID;
-run;
-/*---- End of User Written Code  ----*/ 
-
-%rcSet(&syserr); 
-%rcSet(&sqlrc); 
-
-
-/** Step end User Written **/
-
-/*==========================================================================* 
- * Step:            Join                                  A5GUQBM3.BI0039SL * 
- * Transform:       Join                                                    * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Tables:   Join - work.W34U192                   A5GUQBM3.BK001PA2 * 
- *                  Join - work.WQFI72                    A5GUQBM3.BK0025ZU * 
- *                  Join - work.W6ZUPCY                   A5GUQBM3.BK001PA4 * 
- *                  User Written - work.WXQZ6N            A5GUQBM3.BK0025ZV * 
- * Target Table:    Join - work.WS8XEV                    A5GUQBM3.BK0025ZT * 
- *==========================================================================*/ 
-
-%let transformID = %quote(A5GUQBM3.BI0039SL);
-%let trans_rc = 0;
-%let etls_stepStartTime = %sysfunc(datetime(), datetime20.); 
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = -1;
-option DBIDIRECTEXEC;
-
-proc datasets lib = work nolist nowarn memtype = (data view);
-   delete WS8XEV;
-quit;
-
-proc sql;
-   create view work.WS8XEV as
-   select
-      t1.ALERT_ID length = 64,
-      t1.DET_ALERT_KEY length = 38,
-      t1.DET_STATUS_CODE length = 16,
-      t1.DET_WKFLW_NOTES_ID length = 38,
-      t1.RECORD_LOAD_DATE length = 8   
-         format = datetime24.,
-      t1.CUSTNO length = 20,
-      t1.ACCT_BRANCH_NO length = 5,
-      t1.ACCT_BRANCH_ABBRV length = 5,
-      t1.CUSTOMER_NAME length = 150,
-      t1.BDS_CDD_RISK length = 6,
-      t1.PERSONAL_SME length = 10,
-      t1.PENDING_STATUS length = 20,
-      t1.OCCUP_UPTODATE length = 1,
-      t1.MASCO_CODE length = 20,
-      t1.MASCO_DESC length = 150,
-      t1.EMPL_TYPE length = 10,
-      t1.EMPL_NAME length = 150,
-      t1.CUST_NOT_CONTACT length = 1,
-      t1.TRX_DETAILS length = 40,
-      t1.REVIEWER_ID length = 10,
-      t1.REVWR_RECOMM_STATUS length = 2,
-      t1.REVWR_RECOMM_REASON length = 100,
-      t1.REVWR_RECOMM_COMMENT length = 200,
-      t1.REVWR_DATE length = 8   
-         format = datetime24.,
-      t1.APPROVER_ID length = 10,
-      t1.APPR_RECOMM_STATUS length = 2,
-      t1.APPR_RECOMM_REASON length = 100,
-      t1.APPR_RECOMM_COMMENT length = 200,
-      t1.APPR_DATE length = 8   
-         format = datetime24.,
-      t1.REWORK_ID length = 10,
-      t1.REWORK_DATE length = 8   
-         format = datetime24.,
-      t1.REWORK_INDICATOR length = 1,
-      t1.UPDATE_DATE length = 8   
-         format = datetime24.,
-      t1.RECORD_IN_USE_BY length = 10,
-      t1.OCCUP_LAST_MAINT_DT length = 8   
-         format = datetime24.,
-      t1.REVWR_REMARKS length = 50,
-      t1.COLOR_BDSINDC length = 1,
-      t1.PREV_MASCO length = 10,
-      t1.RECORD_CATEGORY length = 30,
-      t1.COMPANY_SEARCH length = 1,
-      t1.OT_SUPPORT_DOC length = 1,
-      t1.LATEST_CONTACT length = 10,
-      t1.NOB_UP2DATE length = 1,
-      t1.LATEST_MSIC length = 5,
-      t1.BO_INFO_UP2DATE length = 1,
-      t1.LATEST_BO_UPDATE length = 1,
-      t1.BRCH_COMMENT length = 200,
-      t1.RVWR_STATUS length = 1,
-      t1.RVWR_SAVE_ID length = 10,
-      t1.RVWR_SAVE_DATE length = 8   
-         format = datetime24.,
-      t1.PUSH_NOTIFICATION_INDC length = 1,
-      t1.EMAIL_BLAST_INDC length = 1,
-      t1.AUTOMAIL_INDC length = 1,
-      t1.NOTIFICATION_DATE length = 8   
-         format = datetime24.,
-      t1.INDORG length = 1,
-      t1.NEWIC length = 20,
-      t1.NEWICIND length = 3,
-      t1.OLDIC length = 20,
-      t1.BGC length = 2,
-      t1.OCCUPAT_MASCO_CD length = 5,
-      t1.SIC_ISS length = 5,
-      t1.HRCIND length = 1,
-      t2.ALERT_KEY length = 8   
-         label = 'ALERT_KEY',
-      t2.ALERT_IDENTIFIER length = 64   
-         format = $64.
-         informat = $64.
-         label = 'ALERT_IDENTIFIER',
-      t2.ALERT_SCORE length = 8   
-         label = 'ALERT_SCORE',
-      t2.CUSTOMER_CDD_RISK length = 80   
-         format = $80.
-         informat = $80.
-         label = 'CUSTOMER_CDD_RISK',
-      t2.CUSTOMER_ID length = 32   
-         format = $32.
-         informat = $32.
-         label = 'CUSTOMER_ID',
-      t2.SCORE_ID length = 8   
-         label = 'SCORE_ID',
-      t2.WW_CREATION_TIMESTAMP length = 8   
-         format = DATETIME27.6
-         informat = DATETIME27.6
-         label = 'WW_CREATION_TIMESTAMP',
-      t3.ID length = 8   
-         label = 'ID',
-      t3.SCORE_TIMESTAMP length = 8   
-         format = DATETIME27.6
-         informat = DATETIME27.6
-         label = 'SCORE_TIMESTAMP',
-      t3.SCORE as CDD_RISK_SCORE length = 8   
-         label = 'SCORE',
-      t3.RISK_LEVEL as CDD_RISK length = 80   
-         format = $80.
-         informat = $80.
-         label = 'RISK_LEVEL',
-      t4.IND_SEG_RISK length = 4000,
-      t4.IND_SEG_RISK_SCORE length = 8,
-      t4.CUST_ACC_TYPES_RISK length = 4000,
-      t4.CUST_ACC_TYPES_RISK_SCORE length = 8,
-      t4.COMPANY_FORM_RISK length = 4000,
-      t4.COMPANY_FORM_RISK_SCORE length = 8,
-      t4.MANUAL_RISK_ADJ length = 4000,
-      t4.MANUAL_RISK_ADJ_SCORE length = 8,
-      t4.OVERALL_SCORE_ADJ length = 4000,
-      t4.OVERALL_SCORE_ADJ_SCORE length = 8
-   from
-      work.W34U192 as t1, 
-      work.WQFI72 as t2, 
-      work.W6ZUPCY as t3, 
-      work.WXQZ6N as t4
-   where
-      t1.ALERT_ID = t2.ALERT_IDENTIFIER
-      and t2.CUSTOMER_ID = t3.CUSTOMER_ID
-      and t2.SCORE_ID = t4.SCORE_ID
-      and t1.APPR_DATE >= '01JAN2024:01:01:01'dt
-   ;
-quit;
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = &sys_sql_ip_all;
-
-%rcSet(&sqlrc); 
-
-
-
-/** Step end Join **/
-
-/*==========================================================================* 
- * Step:            Table Loader                          A5GUQBM3.BI0039RY * 
- * Transform:       Table Loader (Version 2.1)                              * 
- * Description:                                                             * 
- *                                                                          * 
- * Source Table:    Join - work.WS8XEV                    A5GUQBM3.BK0025ZT * 
- * Target Table:    CIR_CLOSE_yyyy -                      A5GUQBM3.BD000EAV * 
- *                   fccmart.CIR_CLOSE_&mmyyyy_sas                          * 
- *==========================================================================*/ 
-
-%let transformID = %quote(A5GUQBM3.BI0039RY);
-%let trans_rc = 0;
-%let etls_stepStartTime = %sysfunc(datetime(), datetime20.); 
-
-/* Access the data for FCC_MART  */ 
-LIBNAME fccmart BASE "/stgsrcsys/host/uat";
-%rcSet(&syslibrc); 
-
-%let SYSLAST = %nrquote(work.WS8XEV); 
-
-%global etls_sql_pushDown;
-%let etls_sql_pushDown = -1;
-option DBIDIRECTEXEC;
-
-%global etls_tableExist;
-%global etls_numIndex;
-%global etls_lastTable;
-%let etls_tableExist = -1; 
-%let etls_numIndex = -1; 
-%let etls_lastTable = &SYSLAST; 
-
-/*---- Define load data macro  ----*/ 
-
-/* --------------------------------------------------------------
-   Load Technique Selection: Replace - EntireTable
-   Constraint and index action selections: 'ASIS','ASIS','ASIS','ASIS'
-   Additional options selections... 
-      Set unmapped to missing on updates: false 
-   -------------------------------------------------------------- */
-%macro etls_loader;
-
-   %let etls_tableOptions = ;
-   
-   /*---- Map the columns  ----*/ 
-   proc datasets lib = work nolist nowarn memtype = (data view);
-      delete W5H9KNP;
-   quit;
-   
-   %put %str(NOTE: Mapping columns ...);
-   proc sql;
-      create view work.W5H9KNP as
-         select
-            CUSTOMER_NAME as CUSTNAME,
-            CUSTNO,
-            NEWIC,
-            NEWICIND,
-            OLDIC,
-            BGC,
-            OCCUPAT_MASCO_CD,
-            SIC_ISS,
-            HRCIND,
-            CDD_RISK_SCORE,
-            CDD_RISK,
-            ACCT_BRANCH_ABBRV as BRANCH,
-            ALERT_ID,
-            WW_CREATION_TIMESTAMP as DETICA_PROMPT_DATE,
-            RECORD_LOAD_DATE,
-            REVWR_DATE as REVIEW_DATE,
-            APPR_DATE as APPROVE_DATE,
-            REVIEWER_ID,
-            APPROVER_ID,
-            OCCUP_UPTODATE,
-            MASCO_CODE,
-            MASCO_DESC,
-            PREV_MASCO,
-            EMPL_TYPE,
-            EMPL_NAME,
-            CUST_NOT_CONTACT,
-            TRX_DETAILS as TRANSACTION_DETAILS,
-            REVWR_RECOMM_REASON as REVIEWER_REASON,
-            REVWR_REMARKS as REVIEWER_COMMENT length = 200,
-            PENDING_STATUS as STATUS,
-            APPR_RECOMM_REASON as APPROVER_REASON,
-            APPR_RECOMM_COMMENT as APPROVER_COMMENT,
-            IND_SEG_RISK,
-            CUST_ACC_TYPES_RISK,
-            COMPANY_FORM_RISK,
-            MANUAL_RISK_ADJ,
-            OVERALL_SCORE_ADJ,
-            BDS_CDD_RISK
-      from &etls_lastTable
-      ;
-   quit;
-   
-   %let SYSLAST = work.W5H9KNP;
-   
-   %let etls_lastTable = &SYSLAST; 
-   /* Determine if the target table exists  */ 
-   %let etls_tableExist = %eval(%sysfunc(exist(fccmart.CIR_CLOSE_&mmyyyy_sas, DATA)) or 
-         %sysfunc(exist(fccmart.CIR_CLOSE_&mmyyyy_sas, VIEW))); 
-   
-   %if &etls_tableExist %then 
-   %do;/* table exists  */ 
-      %let etls_hasPreExistingConstraint=0; 
-      
-      proc datasets lib = work nolist nowarn memtype = (data view);
-         delete etls_commands etls_commands_F;
-      quit;
-      
-      %let etls_otherTablesReferToThisTable=0;
-      
-      %macro etls_CIContents(table=,workTableOut=,inDSOptions=);
-         %put NOTE: Building table listing Constraints and Indexes for: &table;
-         proc datasets lib=work nolist; delete &workTableOut; quit;
-         proc contents data=&table&inDSOptions out2=&workTableOut noprint; run;
-         
-         %if %sysfunc(exist(&workTableOut)) ne 0 %then %do;
-            %let _etlsDsid = %sysfunc(open(&workTableOut));
-            %let _etlsVarnum = %sysfunc(varnum(&_etlsDsid,RECREATE));
-            %if &_etlsVarnum > 0 %then %do;
-               %let _etlsRecreateLen = %sysfunc(varlen(&_etlsDsid,&_etlsVarnum)); /* variable length */
-            %end;
-            %else %let _etlsRecreateLen=5000;
-            %let rc = %sysfunc(close(&_etlsDsid));
-         %end;
-         %else %let _etlsRecreateLen=5000; /* Set a default of 5000 for length if the retrieval is not successful */
-         
-         data &workTableOut;
-            length name $60 type $20 icown idxUnique idxNoMiss $3 recreate $&_etlsRecreateLen;
-            name = '';
-            type = '';
-            icown = '';
-            idxUnique = '';
-            idxNoMiss = '';
-            recreate = '';
-            set &workTableOut;
-            ref = '';
-            type=upcase(type);
-            if type eq 'REFERENTIAL' then
-            do;
-               put "WARNING%QUOTE(:) Target table is referenced by constraints in"
-                    " another table: " ref;
-               call symput('etls_otherTablesReferToThisTable','1');
-               delete;
-            end;
-            if type='INDEX' and ICOwn eq 'YES' then delete;
-         run;
-         %rcSet(&syserr); 
-         
-      %mend etls_CIContents;
-      
-      %etls_CIContents(table=fccmart.CIR_CLOSE_&mmyyyy_sas, workTableOut=etls_commands, inDSOptions=);
-      
-      %if &etls_otherTablesReferToThisTable %then 
-         %put WARNING%QUOTE(:) Replacing entire table will fail. Consider an alternate load technique or revising constraints.; 
-      %else 
-      %do; /* okay - remove foreign keys  */ 
-      
-         data etls_commands_F; 
-            set etls_commands; 
-            if upcase(type)="FOREIGN KEY" then 
-            do; 
-               command='ic delete '||trim(name)||';';
-               output etls_commands_F; 
-            end; 
-         run; 
-         
-         %put %str(NOTE: Removing foreign keys before dropping table...);
-         data _null_;
-            set etls_commands_F end=eof;
-            if _n_=1 then 
-               call execute('proc datasets nolist lib=fccmart;modify CIR_CLOSE_&mmyyyy_sas;');
-            call execute(command);
-            if eof then call execute('; quit;');
-         run;
-         %rcSet(&syserr); 
-         
-   %end; /* okay - remove foreign keys  */ 
-   
-   proc datasets lib = work nolist nowarn memtype = (data view);
-      delete etls_commands etls_commands_F;
-   quit;
-   
-   /*---- Drop a table  ----*/ 
-   %put %str(NOTE: Dropping table ...);
-   proc datasets lib = fccmart nolist nowarn memtype = (data view);
-      delete CIR_CLOSE_&mmyyyy_sas;
-   quit;
-   
-   %rcSet(&syserr); 
-   
-   %let etls_tableExist = 0;
-   
-%end; /* table exists  */ 
-
-/*---- Create a new table  ----*/ 
-%if (&etls_tableExist eq 0) %then 
-%do;  /* if table does not exist  */ 
-
-   %put %str(NOTE: Creating table ...);
-   
-   data fccmart.CIR_CLOSE_&mmyyyy_sas
-           (label = 'CIR_CLOSE_yyyy');
-      attrib CUSTNAME length = $150; 
-      attrib CUSTNO length = $20; 
-      attrib NEWIC length = $20; 
-      attrib NEWICIND length = $3; 
-      attrib OLDIC length = $20; 
-      attrib BGC length = $2; 
-      attrib OCCUPAT_MASCO_CD length = $5; 
-      attrib SIC_ISS length = $5; 
-      attrib HRCIND length = $1; 
-      attrib CDD_RISK_SCORE length = 8; 
-      attrib CDD_RISK length = $80
-         format = $80.
-         informat = $80.; 
-      attrib BRANCH length = $5; 
-      attrib ALERT_ID length = $64; 
-      attrib DETICA_PROMPT_DATE length = 8
-         format = DATETIME27.6
-         informat = DATETIME27.6; 
-      attrib RECORD_LOAD_DATE length = 8
-         format = datetime24.; 
-      attrib REVIEW_DATE length = 8
-         format = datetime24.; 
-      attrib APPROVE_DATE length = 8
-         format = datetime24.; 
-      attrib REVIEWER_ID length = $10; 
-      attrib APPROVER_ID length = $10; 
-      attrib OCCUP_UPTODATE length = $1; 
-      attrib MASCO_CODE length = $20; 
-      attrib MASCO_DESC length = $150; 
-      attrib PREV_MASCO length = $10; 
-      attrib EMPL_TYPE length = $10; 
-      attrib EMPL_NAME length = $150; 
-      attrib CUST_NOT_CONTACT length = $1; 
-      attrib TRANSACTION_DETAILS length = $40; 
-      attrib REVIEWER_REASON length = $100; 
-      attrib REVIEWER_COMMENT length = $200; 
-      attrib STATUS length = $20; 
-      attrib APPROVER_REASON length = $100; 
-      attrib APPROVER_COMMENT length = $200; 
-      attrib IND_SEG_RISK length = $4000; 
-      attrib CUST_ACC_TYPES_RISK length = $4000; 
-      attrib COMPANY_FORM_RISK length = $4000; 
-      attrib MANUAL_RISK_ADJ length = $4000; 
-      attrib OVERALL_SCORE_ADJ length = $4000; 
-      attrib BDS_CDD_RISK length = $6; 
-      call missing(of _all_);
-      stop;
-   run;
-   
-   %rcSet(&syserr); 
-   
-%end;  /* if table does not exist  */ 
-
-/*---- Append  ----*/ 
-%put %str(NOTE: Appending data ...);
-
-proc append base = fccmart.CIR_CLOSE_&mmyyyy_sas 
-   data = &etls_lastTable (&etls_tableOptions)  force ; 
- run; 
-
-%rcSet(&syserr); 
-
-proc datasets lib = work nolist nowarn memtype = (data view);
-   delete W5H9KNP;
-quit;
-
-%mend etls_loader;
-%etls_loader;
-
-
-
-/** Step end Table Loader **/
-
-/*==========================================================================* 
- * Step:            User Written                          A5GUQBM3.BI0039RZ * 
- * Transform:       User Written                                            * 
- * Description:     To append weekly basis                                  * 
- *                                                                          * 
- * Source Table:    CIR_CLOSE_yyyy -                      A5GUQBM3.BD000EAV * 
- *                   fccmart.CIR_CLOSE_&mmyyyy_sas                          * 
- * Target Table:    User Written - work.W52RR87           A5GUQBM3.BK0025ZB * 
- *                                                                          * 
- * User Written:    SourceCode                                              * 
- *==========================================================================*
- *                                                                          * 
- * Nothing will be generated for this process because the "Exclude          * 
- *  transformation from run" option is selected.                            * 
- *                                                                          * 
- *==========================================================================*/ 
-
-%let etls_endTime = %sysfunc(datetime(),datetime.);
-
-
-
-
-I GOT 
-
-CUSTNO
-00014929418
-00015880569
-00022011957
-
-CDD_RISK_SCORE	CDD_RISK
-315	High
-361	High
-343	High
-
-
+*;
+%INC PGM(EIBWFI01);
+
+
+
+
+
+%INC PGM(EIBWFI01) is as below
+
+
+*+--------------------------------------------------------------+               
+ |  ADDITIONAL STATISTICS FOR FISS                              |               
+ +--------------------------------------------------------------+;              
+*;                                                                              
+OPTIONS YEARCUTOFF=1950 SORTDEV=3390 NODATE NOCENTER;                           
+*;                                                                              
+PROC FORMAT;                                                                    
+   VALUE FDTYPF                                                                 
+      1 = 'RM FD ACCEPTED WITH ORIG. MATURITY <= 1 MONTH   '                    
+      2 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 1-2 MONTH  '                    
+      3 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 2-3 MONTH  '                    
+      4 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 3-6 MONTH  '                    
+      5 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 6-9 MONTH  '                    
+      6 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 9-12 MONTH '                    
+      7 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 12-15 MONTH'                    
+      8 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 15-18 MONTH'                    
+      9 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 18-24 MONTH'                    
+     10 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 24-36 MONTH'                    
+     11 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 36-48 MONTH'                    
+     12 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 48-60 MONTH'                    
+     13 = 'RM FD ACCEPTED WITH ORIG. MATURITY > 60 MONTH   ';                   
+*;                                                                              
+   VALUE LNTYP1F                                                                
+      1 = 'LOANS TO SMI FOR PURCHASE OF SECURITIES                   '          
+      2 = 'LOANS TO SMI FOR PURCHASE OF LANDED PROPERTY              '          
+      3 = 'LOANS TO SMI FOR PURCHASE OF RESIDENTIAL PROPERTY         '          
+      4 = 'LOANS TO SMI FOR PURCHASE OF NON RESIDENTIAL PROPERTY     '          
+      5 = 'LOANS TO SMI FOR AGRICULTURE,HUNTING,FORESTRY & FISHING   '          
+      6 = 'LOANS TO SMI FOR MINING & QUARRYING                       '          
+      7 = 'LOANS TO SMI FOR MANUFACTURING                            '          
+      8 = 'LOANS TO SMI FOR ELECTRICITY, GAS & WATER                 '          
+      9 = 'LOANS TO SMI FOR CONSTRUCTION                             '          
+     10 = 'LOANS TO SMI FOR WHOLESALE,RETAIL TRADE,REST. & HOTELS    '          
+     11 = 'LOANS TO SMI FOR WHOLESALE TRADE                          '          
+     12 = 'LOANS TO SMI FOR RETAIL TRADE                             '          
+     13 = 'LOANS TO SMI FOR RESTAURANTS & HOTELS                     '          
+     14 = 'LOANS TO SMI FOR TRANSPORT,STORAGE & COMMUNICATION        '          
+     15 = 'LOANS TO SMI FOR REAL ESTATE & BUSINESS SERVICES          '          
+     16 = 'LOANS TO SMI FOR REAL ESTATE                              '          
+     17 = 'LOANS TO SMI FOR BUS. SERVICES EXCP. MACH. & EQUIP. RENTAL'          
+     18 = 'LOANS TO SMI FOR MACH. & EQUIP RENTAL                     '          
+     19 = 'LOANS TO SMI COMMUNITY,SOCIAL & PERSONAL SERVICES         '          
+     20 = 'LOANS TO SMI FOR SECTOR NEC                               ';         
+*;                                                                              
+   VALUE LNTYP2F                                                                
+      1 = 'HOUSING LOANS            '                                           
+      2 = 'HP RECEIVABLES           '                                           
+      3 = 'OTHER FIXED RATE LOANS   '                                           
+      4 = 'FLOATING RATE LOANS      '                                           
+      5 = 'BLR - PLUS               '                                           
+      6 = 'COST - PLUS              '                                           
+      7 = 'OTHER FLOATING RATE LOANS';                                          
+*;                                                                              
+TITLE1 'REPORT ID: EIBWFI01';                                                   
+TITLE2 &SDESC;                                                                  
+*;                                                                              
+*+--------------------------------------------------------------+               
+ |  RM FD ACCEPTED BY ORIGINAL MATURITY                         |               
+ +--------------------------------------------------------------+;              
+%MACRO FDTBL;                                                                   
+*;                                                                              
+%INC PGM(PBBDPFMT);                                                             
+*;                                                                              
+DATA FDWKLY                                                                     
+     (KEEP=BRANCH ACCTNO CUSTCODE NAME AMTIND                                   
+           OPENIND CURBAL BIC INTPAY STATE TERM);                               
+     LENGTH CUSTCODE $2. BIC $5.;                                               
+     SET FD.FD;                                                                 
+     BIC = PUT(INTPLAN, FDPROD.);                                               
+     AMTIND=PUT(INTPLAN, FDDENOM.);                                             
+     STATE = PUT(BRANCH, STATECD.);                                             
+     IF BIC = '42130' THEN CUSTCODE = PUT(CUSTCD, FDCUSTCD.);                   
+        ELSE CUSTCODE = PUT(CUSTCD, IFDCUSCD.);                                 
+     IF OPENIND = 'O' OR OPENIND = 'D' THEN OUTPUT;                             
+RUN;                                                                            
+*;                                                                              
+PROC SUMMARY DATA = FDWKLY NWAY;                                                
+   CLASS BIC OPENIND TERM CUSTCODE AMTIND;                                      
+   VAR CURBAL;                                                                  
+   OUTPUT OUT = ALW                                                             
+          SUM = AMOUNT;                                                         
+RUN;                                                                            
+*;                                                                              
+DATA ALWDEPT (KEEP=BNMCODE AMTIND AMOUNT FDTYP);                                
+   LENGTH BNMCODE $14.;                                                         
+   SET ALW;                                                                     
+   WHERE BIC = '42130';                                                         
+                                                                                
+   OM=PUT(TERM,FDORGMT.);                                                       
+   BNMCODE=BIC||'00'||OM||'0000Y';                                              
+                                                                                
+   SELECT (OM);                                                                 
+     WHEN('12') FDTYP=1;                                                        
+     WHEN('13') FDTYP=2;                                                        
+     WHEN('14') FDTYP=3;                                                        
+     WHEN('15') FDTYP=4;                                                        
+     WHEN('16') FDTYP=5;                                                        
+     WHEN('17') FDTYP=6;                                                        
+     WHEN('21') FDTYP=7;                                                        
+     WHEN('22') FDTYP=8;                                                        
+     WHEN('23') FDTYP=9;                                                        
+     WHEN('24') FDTYP=10;                                                       
+     WHEN('25') FDTYP=11;                                                       
+     WHEN('26') FDTYP=12;                                                       
+     WHEN('30') FDTYP=13;                                                       
+     OTHERWISE;                                                                 
+   END;                                                                         
+RUN;                                                                            
+*;                                                                              
+PROC SUMMARY DATA=ALWDEPT NWAY;                                                 
+CLASS BNMCODE FDTYP;                                                            
+VAR   AMOUNT;                                                                   
+OUTPUT OUT=ALWDEPT                                                              
+       SUM=;                                                                    
+RUN;                                                                            
+*;                                                                              
+PROC PRINT DATA=ALWDEPT LABEL;                                                  
+VAR BNMCODE FDTYP AMOUNT;                                                       
+SUM AMOUNT;                                                                     
+LABEL BNMCODE = 'ITEM CODE'                                                     
+      AMOUNT  = 'AMOUNT'                                                        
+      FDTYP   = 'DESCRIPTION';                                                  
+FORMAT FDTYP FDTYPF. AMOUNT COMMA20.2;                                          
+TITLE3 'RM FIXED DEPOSIT ACCEPTED BY ORIGINAL MATURITY AS AT ' "&RDATE";        
+RUN;                                                                            
+*;                                                                              
+%MEND FDTBL;                                                                    
+*;                                                                              
+*+--------------------------------------------------------------+               
+ |  LOANS TO SMIS BY SECTOR                                     |               
+ +--------------------------------------------------------------+;              
+%MACRO LNTBL1;                                                                  
+*;                                                                              
+PROC SUMMARY DATA=BNM.LOAN&REPTMON&NOWK;                                        
+VAR BALANCE;                                                                    
+CLASS AMTIND SECTORCD CUSTCD;                                                   
+WHERE SUBSTR(PRODCD, 1, 2) = '34';                                              
+OUTPUT OUT=ALW                                                                  
+       SUM=AMOUNT;                                                              
+RUN;                                                                            
+*;                                                                              
+DATA ALWLOAN (KEEP=BNMCODE AMTIND AMOUNT);                                      
+  LENGTH BNMCODE $14.;                                                          
+  SET ALW;                                                                      
+                                                                                
+  IF _TYPE_=7 THEN DO;                                                          
+     IF SUBSTR(SECTORCD,1,2) IN ('01') THEN DO;                                 
+        SELECT(CUSTCD);                                                         
+           WHEN('66','67','68','69') DO;                                        
+             BNMCODE='3400065000100Y'; OUTPUT;                                  
+           END;                                                                 
+          OTHERWISE;                                                            
+        END;                                                                    
+     END;                                                                       
+                                                                                
+     IF SUBSTR(SECTORCD,1,3) IN ('031','032') THEN DO;                          
+        IF SUBSTR(SECTORCD,1,3) IN ('031') THEN SECTORCD='0310';                
+        ELSE SECTORCD='0320';                                                   
+        SELECT(CUSTCD);                                                         
+           WHEN('66','67','68','69') DO;                                        
+             BNMCODE='340006500'||SECTORCD||'Y'; OUTPUT;                        
+           END;                                                                 
+          OTHERWISE;                                                            
+        END;                                                                    
+     END;                                                                       
+                                                                                
+     IF SUBSTR(SECTORCD,1,1) IN ('1','2','3','4','5','6','7') OR                
+        SUBSTR(SECTORCD,1,2) IN ('61','62','63') OR                             
+        SUBSTR(SECTORCD,1,3) IN ('831','832','833') THEN DO;                    
+        SELECT;                                                                 
+          WHEN(SUBSTR(SECTORCD,1,1)='1') SECTORCD='1000';                       
+          WHEN(SUBSTR(SECTORCD,1,1)='2') SECTORCD='2000';                       
+          WHEN(SUBSTR(SECTORCD,1,1)='3') SECTORCD='3000';                       
+          WHEN(SUBSTR(SECTORCD,1,1)='4') SECTORCD='4000';                       
+          WHEN(SUBSTR(SECTORCD,1,1)='5') SECTORCD='5000';                       
+          WHEN(SUBSTR(SECTORCD,1,1)='7') SECTORCD='7000';                       
+          WHEN(SUBSTR(SECTORCD,1,2)='61') SECTORCD='6100';                      
+          WHEN(SUBSTR(SECTORCD,1,2)='62') SECTORCD='6200';                      
+          WHEN(SUBSTR(SECTORCD,1,2)='63') SECTORCD='6300';                      
+          WHEN(SUBSTR(SECTORCD,1,3)='831') SECTORCD='8310';                     
+          WHEN(SUBSTR(SECTORCD,1,3)='832') SECTORCD='8320';                     
+          WHEN(SUBSTR(SECTORCD,1,3)='833') SECTORCD='8330';                     
+          OTHERWISE;                                                            
+        END;                                                                    
+                                                                                
+        IF CUSTCD IN ('65','66','67','68','69') THEN DO;                        
+            BNMCODE='340006500'||SECTORCD||'Y'; OUTPUT;                         
+        END;                                                                    
+     END;                                                                       
+                                                                                
+     IF SUBSTR(SECTORCD,1,1) IN ('9') THEN DO;                                  
+        IF SECTORCD ^= '9999' THEN SECTORCD='9000';                             
+        IF CUSTCD IN ('66','67','68','69') THEN DO;                             
+           BNMCODE='340006500'||SECTORCD||'Y'; OUTPUT;                          
+        END;                                                                    
+     END;                                                                       
+  END;                                                                          
+RUN;                                                                            
+*;                                                                              
+DATA ALW (KEEP=BNMCODE AMTIND AMOUNT LNTYP1);                                   
+ SET ALWLOAN;                                                                   
+   SELECT;                                                                      
+     WHEN(SUBSTR(BNMCODE,10,4)='0100') LNTYP1=1;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='0300') LNTYP1=2;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='0310') LNTYP1=3;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='0320') LNTYP1=4;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='1000') LNTYP1=5;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='2000') LNTYP1=6;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='3000') LNTYP1=7;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='4000') LNTYP1=8;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='5000') LNTYP1=9;                                
+     WHEN(SUBSTR(BNMCODE,10,4)='6000') LNTYP1=10;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='6100') LNTYP1=11;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='6200') LNTYP1=12;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='6300') LNTYP1=13;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='7000') LNTYP1=14;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='8300') LNTYP1=15;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='8310') LNTYP1=16;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='8320') LNTYP1=17;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='8330') LNTYP1=18;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='9000') LNTYP1=19;                               
+     WHEN(SUBSTR(BNMCODE,10,4)='9999') LNTYP1=20;                               
+     OTHERWISE;                                                                 
+   END;                                                                         
+RUN;                                                                            
+*;                                                                              
+PROC SUMMARY DATA=ALW NWAY;                                                     
+CLASS BNMCODE LNTYP1;                                                           
+VAR   AMOUNT;                                                                   
+OUTPUT OUT=ALWLOAN                                                              
+       SUM=;                                                                    
+RUN;                                                                            
+*;                                                                              
+PROC PRINT DATA=ALWLOAN LABEL;                                                  
+VAR BNMCODE LNTYP1 AMOUNT;                                                      
+SUM AMOUNT;                                                                     
+LABEL BNMCODE='ITEM CODE'                                                       
+      AMOUNT = 'AMOUNT'                                                         
+      LNTYP1='DESCRIPTION';                                                     
+FORMAT LNTYP1 LNTYP1F. AMOUNT COMMA20.2;                                        
+TITLE3 'LOANS TO SMIS BY SECTOR AS AT ' "&RDATE";                               
+RUN;                                                                            
+*;                                                                              
+%MEND LNTBL1;                                                                   
+*;                                                                              
+*+--------------------------------------------------------------+               
+ |  GROSS LOANS BY TYPE OF REPRICING                            |               
+ +--------------------------------------------------------------+;              
+%MACRO LNTBL2;                                                                  
+*;                                                                              
+%INC PGM(PBBLNFMT);                                                             
+*;                                                                              
+PROC SUMMARY DATA=BNM.LOAN&REPTMON&NOWK NWAY MISSING;                           
+CLASS PRODCD PRODUCT USURYIDX AMTIND;                                           
+VAR   BALANCE;                                                                  
+WHERE SUBSTR(PRODCD, 1, 2) = '34' OR SUBSTR(PRODCD,1,2)='54';                   
+OUTPUT OUT=ALW                                                                  
+       SUM=AMOUNT;                                                              
+RUN;                                                                            
+*;                                                                              
+DATA ALWLOAN (KEEP=BNMCODE AMTIND AMOUNT);                                      
+  LENGTH BNMCODE $14.;                                                          
+  SET ALW;                                                                      
+                                                                                
+  IF PRODCD IN ('34180','34240','34380') THEN                                   
+     BIC = PUT(PRODUCT,ODRATE.);                                                
+  ELSE BIC = PUT(PRODUCT,LNRATE.);                                              
+  IF BIC ^= ' ';                                                                
+     BNMCODE=BIC||'00000000Y'; OUTPUT;                                          
+*;                                                                              
+DATA ALW (KEEP=BNMCODE AMTIND AMOUNT LNTYP2);                                   
+ SET ALWLOAN;                                                                   
+   SELECT;                                                                      
+     WHEN(SUBSTR(BNMCODE,5,1)='1') LNTYP2=1;                                    
+     WHEN(SUBSTR(BNMCODE,5,1)='2') LNTYP2=2;                                    
+     WHEN(SUBSTR(BNMCODE,5,1)='3') LNTYP2=3;                                    
+     WHEN(SUBSTR(BNMCODE,5,1)='4') LNTYP2=4;                                    
+     WHEN(SUBSTR(BNMCODE,5,1)='5') LNTYP2=5;                                    
+     WHEN(SUBSTR(BNMCODE,5,1)='6') LNTYP2=6;                                    
+     WHEN(SUBSTR(BNMCODE,5,1)='7') LNTYP2=7;                                    
+     OTHERWISE;                                                                 
+   END;                                                                         
+RUN;                                                                            
+*;                                                                              
+PROC SUMMARY DATA=ALW NWAY;                                                     
+CLASS BNMCODE LNTYP2;                                                           
+VAR   AMOUNT;                                                                   
+OUTPUT OUT=ALWLOAN                                                              
+       SUM=;                                                                    
+RUN;                                                                            
+*;                                                                              
+PROC PRINT DATA=ALWLOAN LABEL;                                                  
+VAR BNMCODE LNTYP2 AMOUNT;                                                      
+SUM AMOUNT;                                                                     
+LABEL BNMCODE='ITEM CODE'                                                       
+      AMOUNT = 'AMOUNT'                                                         
+      LNTYP2='DESCRIPTION';                                                     
+FORMAT LNTYP2 LNTYP2F. AMOUNT COMMA20.2;                                        
+TITLE3 'GROSS LOANS BY TYPE OF REPRICING AS AT ' "&RDATE";                      
+RUN;                                                                            
+*;                                                                              
+%MEND LNTBL2;                                                                   
+*;                                                                              
+*+--------------------------------------------------------------+               
+ |  DETERMINE WEEKLY OR MONTHLY PROCESSING                      |               
+ +--------------------------------------------------------------+;              
+%MACRO GET_TBLS;                                                                
+   %FDTBL;                                                                      
+   %LNTBL1;                                                                     
+   %IF "&NOWK" EQ "4" %THEN %DO;                                                
+        %LNTBL2;                                                                
+   %END;                                                                        
+%MEND GET_TBLS;                                                                 
+                                                                                
+*+--------------------------------------------------------------+               
+ |  MAIN PROCESSING                                             |               
+ +--------------------------------------------------------------+;              
+%GET_TBLS;                                                                      
