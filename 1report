@@ -1,3 +1,14 @@
+data _null_;
+   report_date = &SAS_DT_SAS;
+   prev_month_end = intnx('month', report_date, -1, 'end');
+
+   call symputx('REPTMON2', put(month(report_date), z2.), 'G');
+   call symputx('CMMDD', put(report_date, mmddyy4.), 'G');
+   call symputx('PMMDD', put(prev_month_end, mmddyy4.), 'G');
+   call symputx('REPTDAY', day(report_date), 'G');
+run;
+
+
 %INCLUDE '/dwh/ftp/batch/PBBLNFMT.txt';
 LIBNAME TEMP '/dwh/dwh_m/tempsource/ln';
 
