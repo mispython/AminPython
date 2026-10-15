@@ -665,6 +665,33 @@ def run(c):
         c.reporting_date()
         members = c.cfg.get('seed_members', ['NPLOBAL','WIIS','WAQ','WSP2','IIS','AQ','SP2','IIS11','SP211'])
         sources = [(name, c.original_table('NPLA', name)) for name in members]
+        # Copy originals before preparing or updating any working datasets.
+        # These are the original datasets replaced by corresponding workflow outputs.
+        backup_members = c.cfg.get('backup_members', {
+            'NPLA': ['IIS', 'AQ', 'SP2', 'WIIS', 'WAQ', 'WSP2', 'WOFFTOT'],
+            'HD': ['HPWOFF'],
+        })
+        backup_sources = [c.original_table(lib, name)
+                          for lib, names in backup_members.items() for name in names]
+        input_root = Path(c.cfg['input_root'])
+        input_root = (input_root if input_root.is_absolute() else c.base / input_root).resolve()
+        backup = input_root / 'pas'
+        if backup.resolve() != backup:
+            raise ValueError('Backup pas directory must not redirect through a symlink')
+        if len({source.name.lower() for source in backup_sources}) != len(backup_sources):
+            raise ValueError('Duplicate backup filenames')
+        backup.mkdir(parents=True, exist_ok=True)
+        for source in backup_sources:
+            target = backup / source.name
+            # Atomic replacement: same original name, unchanged contents, no x suffix.
+            stage = backup / ('.' + source.name + '.tmp')
+            if stage.is_symlink():
+                raise ValueError('Backup temporary path must not be a symlink')
+            try:
+                shutil.copy2(source, stage)
+                stage.replace(target)
+            finally:
+                stage.unlink(missing_ok=True)
         c.reset_outputs()
         for name, source in sources:
             target = c.table('NPL', name)
@@ -692,5 +719,58 @@ def run(c):
             shutil.rmtree(target)
         shutil.copytree(source, target)
 
-if __name__ == "__main__":
-    run_cli("EIIWOF01", run)
+
+
+# Input libraries and datasets for THIS job (equivalent to its JCL DD bindings).
+INPUT_DATASETS = [('NPLA', 'NPLOBAL'), ('NPLA', 'WIIS'), ('NPLA', 'WAQ'), ('NPLA', 'WSP2'), ('NPLA', 'IIS'), ('NPLA', 'AQ'), ('NPLA', 'SP2'), ('NPLA', 'IIS11'), ('NPLA', 'SP211'), ('NPLA', 'WOFFTOT'), ('HD', 'HPWOFF')]
+INPUT_FILES = []
+
+
+def initialize(config_path, run_date=None, context_type=Context):
+    """This job owns its paths, reporting date and input preflight."""
+    context = context_type(config_path, run_date=run_date)
+    def local_path(value):
+        path = Path(value)
+        return (path if path.is_absolute() else context.base / path).resolve()
+    try:
+        input_root = local_path(context.cfg.get('input_root', '/stgsrcsys/host/uat'))
+        output_root = local_path(context.cfg.get('output_root', '/stgsrcsys/host/holding'))
+        context.cfg['input_root'] = str(input_root)
+        context.cfg['output_root'] = str(output_root)
+        libraries = context.cfg.setdefault('libraries', {})
+        libraries['NPLA'] = str(local_path(libraries.get('NPLA', str(input_root))))
+        libraries['HD'] = str(local_path(libraries.get('HD', str(input_root))))
+        context.cfg.setdefault('reports', str(output_root / 'reports'))
+        context.cfg.setdefault('output_format', 'parquet')
+        context.cfg.setdefault('output_suffix', 'x')
+        context.reporting_date()  # 27 December run; 26 December data.
+        context.input_paths = {
+            f'{library}.{member}': context.input_table(library, member)
+            for library, member in INPUT_DATASETS
+        }
+        for name in INPUT_FILES:
+            path = context.path('files', name)
+            if not path.is_file():
+                raise FileNotFoundError(path)
+            context.input_paths[name] = path
+        return context
+    except Exception:
+        context.close()
+        raise
+
+
+def main():
+    parser = argparse.ArgumentParser(description='EIIWOF01: initialize inputs and run')
+    parser.add_argument('--config', required=True)
+    parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to today in Singapore')
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    context = initialize(args.config, args.run_date)
+    try:
+        run(context)
+    finally:
+        context.close()
+
+
+if __name__ == '__main__':
+    main()
