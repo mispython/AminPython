@@ -1,24 +1,38 @@
 """EIIWOF02: WOFF text -> selected, sorted ACCTNO dataset. No deduplication."""
 import argparse
-import json
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from pathlib import Path
-import pyarrow as pa
+import pyarrow as pa 
 import pyarrow.parquet as pq
 
 
-def run(config, run_date=None):
-    # Accept the normal config filename or a context from the dummy test harness.
-    config_path = Path(config.config_path if hasattr(config, 'config_path') else config).resolve()
-    cfg = json.loads(config_path.read_text(encoding='utf-8-sig'))
-    scheduled = run_date or getattr(config, 'run_date', None) or datetime.now(timezone(timedelta(hours=8))).date()
+# Job settings: edit paths here; no separate config.json is required.
+INPUT_ROOT = Path('/stgsrcsys/host/uat')
+WOFF_FILE = INPUT_ROOT / 'RBP2.B033.LN.WRI2.OFF.MIS'
+OUTPUT_ROOT = Path('/stgsrcsys/host/holding')
+OUTPUT_SUFFIX = 'x'
+ENCODING = 'utf-8'
+BATCH_ROWS = 65536
+
+
+def run(settings=None, run_date=None):
+    # Optional in-memory settings allow dummy tests without editing server paths.
+    cfg = {
+        'input_root': str(INPUT_ROOT), 'output_root': str(OUTPUT_ROOT),
+        'files': {'WOFF': str(WOFF_FILE)}, 'output_suffix': OUTPUT_SUFFIX,
+        'encoding': ENCODING, 'batch_rows': BATCH_ROWS,
+    }
+    if settings is not None:
+        cfg.update(settings.cfg if hasattr(settings, 'cfg') else settings)
+    base = getattr(settings, 'base', Path(__file__).resolve().parent)
+    scheduled = run_date or getattr(settings, 'run_date', None) or datetime.now(timezone(timedelta(hours=8))).date()
     scheduled = date.fromisoformat(scheduled) if isinstance(scheduled, str) else scheduled
     if (scheduled.month, scheduled.day) != (12, 27):
         raise ValueError('Run date must be 27 December; use --run-date YYYY-12-27 for reruns')
     def path(value):
         p = Path(value)
-        return (p if p.is_absolute() else config_path.parent / p).resolve()
+        return (p if p.is_absolute() else base / p).resolve()
     holding = path(cfg['output_root'])
     source_root = path(cfg['input_root'])
     if holding == source_root or source_root in holding.parents:
@@ -57,28 +71,11 @@ def run(config, run_date=None):
         handle.writelines(('' if value is None else format(value, 'f')) + '\n' for value in accounts)
     text_stage.replace(text_target)
 
-    # Register this output so later original jobs can find it in the current batch.
-    manifest = holding / 'batch_state.json'
-    state = json.loads(manifest.read_text()) if manifest.exists() else {}
-    if state.get('run_date') != scheduled.isoformat():
-        state = {'run_date': scheduled.isoformat(), 'outputs': {}}
-    state['outputs']['WOFFHP'] = target.name
-    state['sas_export_excluded'] = sorted(set(state.get('sas_export_excluded', [])) | {'WOFFHP'})
-    temp = manifest.with_suffix('.json.tmp')
-    temp.write_text(json.dumps(state, indent=2), encoding='utf-8')
-    temp.replace(manifest)
-    # If rerun, remove any prior WOFFHP entry from the existing export driver.
-    driver = holding / 'export_all.sas'
-    if driver.exists():
-        lines = driver.read_text(encoding='utf-8').splitlines(keepends=True)
-        driver_stage = driver.with_suffix('.sas.tmp')
-        driver_stage.write_text(''.join(line for line in lines if member + '.sas' not in line), encoding='utf-8')
-        driver_stage.replace(driver)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='WOFF text to sorted WOFFHP dataset')
-    parser.add_argument('--config', required=True)
     parser.add_argument('--run-date')
     args = parser.parse_args()
-    run(args.config, args.run_date)
+    run(run_date=args.run_date)
+

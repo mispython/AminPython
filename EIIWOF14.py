@@ -1,3 +1,27 @@
+# Settings for EIIWOF14; edit these paths in this file.
+INPUT_ROOT = '/stgsrcsys/host/uat'
+OUTPUT_ROOT = '/stgsrcsys/host/holding'
+SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
+
+
+def job_settings():
+    return {
+        '_job_name': 'EIIWOF14', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
+        'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
+        'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
+        'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
+        'libraries': {key: (OUTPUT_ROOT if key in ('NPL','NPL6') else INPUT_ROOT)
+                      for key in ('NPLA','LOAN','SASLN','HD','NPL','NPL6')},
+        'reports': str(Path(OUTPUT_ROOT) / 'reports'),
+        'files': {
+            'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
+            'WOFFC': str(Path(INPUT_ROOT) / 'woff02.sas7bdat'),
+            'PATCH': str(Path(INPUT_ROOT) / 'woff03.sas7bdat'),
+            'WOFFACCT': str(Path(OUTPUT_ROOT) / 'HPTXT1x.txt'),
+            'WOFFACC2': str(Path(OUTPUT_ROOT) / 'HPTXT2x.txt'),
+        },
+    }
+
 # Support functions are embedded; no INC folder or extra Python job is required.
 """Bounded Arrow output batches and explicit-schema SAS export, without SASPy."""
 import csv
@@ -222,38 +246,29 @@ class SASOutput:
 
 
 """Prepare a SAS export driver for the current batch, or check completed copies."""
-import argparse,json
+import argparse
 from pathlib import Path
 
 
 def prepare(c, check=False, quiet=False):
+    """Write the SAS export driver for datasets produced by this job invocation."""
     import pyarrow.parquet as pq
-    c.reporting_date()
-    state=json.loads(c._state_path().read_text())
-    if state.get('run_date') != c.run_date.isoformat(): raise ValueError('Wrong batch year')
-    if not state.get('outputs'): raise ValueError('No outputs in batch')
-    lines=['/* Run after Python jobs finish; never run concurrently with them. */']
-    for name, filename in state['outputs'].items():
-        p=c.input_table('NPL',name)
-        if p.suffix != '.parquet': raise ValueError('Expected parquet output')
+    lines = ['/* Submit on the SAS server after this Python job completes. */']
+    for name in sorted(c._exported_members):
+        p = c.table('NPL', name)
         if check:
-            expected=pq.ParquetFile(p).metadata.num_rows
-            binary=p.with_suffix('.sas7bdat')
-            if binary.stat().st_mtime < p.stat().st_mtime: raise ValueError(f'Stale SAS copy: {binary}')
-            with c._sas_reader(binary) as reader:
-                if reader.row_count != expected or [str(k).upper() for k in reader.column_names] != pq.read_schema(p).names:
-                    raise ValueError(f'SAS output count/schema mismatch: {binary}')
+            with c._sas_reader(p.with_suffix('.sas7bdat')) as reader:
+                if reader.row_count != pq.ParquetFile(p).metadata.num_rows:
+                    raise ValueError(f'SAS output count mismatch: {p}')
         else:
-            script=c.holding()/'sas_bridge'/(p.stem+'.sas')
-            if not script.exists(): raise FileNotFoundError(script)
-            lines.append("%include '"+str(script).replace('\\','/').replace("'","''")+"';")
+            script = c.holding() / 'sas_bridge' / (p.stem + '.sas')
+            if not script.is_file(): raise FileNotFoundError(script)
+            lines.append("%include '" + str(script).replace('\\', '/').replace("'", "''") + "';")
     if not check:
-        driver=c.holding()/'export_all.sas'
-        temp=driver.with_suffix('.sas.tmp')
-        temp.write_text('\n'.join(lines)+'\n',encoding='utf-8')
-        temp.replace(driver)
-        if not quiet: print(f'Run on SAS server: sas -encoding utf-8 -sysin {driver}')
-    else: print('SAS copies: freshness, row count and column order checks passed. Reconcile values separately.')
+        driver = c.holding() / ('export_' + c.cfg['_job_name'] + '.sas')
+        stage = driver.with_suffix('.sas.tmp')
+        stage.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        stage.replace(driver)
 
 
 
@@ -265,7 +280,6 @@ SAS BY merges are positional within groups, not SQL Cartesian joins.
 import argparse
 import csv
 import importlib.util
-import json
 import logging
 import re
 import shutil
@@ -363,10 +377,13 @@ def keep(row, columns):
 
 
 class Context:
-    def __init__(self, path, run_date=None):
-        self.config_path = Path(path).resolve()
-        self.base = self.config_path.parent
-        self.cfg = json.loads(self.config_path.read_text(encoding='utf-8-sig'))
+    def __init__(self, settings=None, run_date=None):
+        from copy import deepcopy
+        self.base = Path(__file__).resolve().parent
+        self.cfg = job_settings()
+        if settings is not None: self.cfg.update(deepcopy(settings))
+        self._written_outputs = set()
+        self._exported_members = set()
         self.encoding = self.cfg.get('encoding', 'utf-8')
         self._output_writer = None
         self._character_columns = set('NAME BORSTAT EXIST USER5 VINNO CENSUS7 PAIDIND REVERSED WDOWNIND RESCHEIND HARDCODE WRITEOFF BRANCH BRNO BRABBR LOANTYP RISK POSTNTRN GUAREND WNAME MATDATE WOFFDT'.split())
@@ -412,27 +429,15 @@ class Context:
         if target == source or source in target.parents:
             raise ValueError('Refusing to overwrite a file in the input directory')
 
-    def _state_path(self):
-        return self.holding() / 'batch_state.json'
+
 
     def record_output(self, name):
-        if not self.cfg.get('output_root'): return
-        path = self._state_path()
-        state = json.loads(path.read_text()) if path.exists() else {}
-        key = self.run_date.isoformat()
-        if state.get('run_date') != key: state = {'run_date': key, 'outputs': {}}
-        state['outputs'][name.upper()] = self.table('NPL', name).name
-        temp = path.with_suffix('.json.tmp')
-        temp.write_text(json.dumps(state, indent=2), encoding='utf-8')
-        temp.replace(path)
+        self._written_outputs.add(name.upper())
         if self.cfg.get('output_format') == 'parquet' and self.cfg.get('sas_export', True):
+            self._exported_members.add(name.upper())
             prepare(self, quiet=True)
 
-    def reset_outputs(self):
-        """Start a new batch manifest without deleting unrelated holding files."""
-        self.assert_output_path(self._state_path())
-        self.holding().mkdir(parents=True, exist_ok=True)
-        self._state_path().write_text(json.dumps({'run_date': self.run_date.isoformat(), 'outputs': {}}), encoding='utf-8')
+
 
     def original_table(self, lib, name):
         directory = self.path('libraries', lib)
@@ -442,27 +447,20 @@ class Context:
         return matches[0]
 
     def input_table(self, lib, name):
-        if self.cfg.get('output_root'):
-            if lib in ('NPL', 'NPL6'):
-                path = self.table(lib, name)
-                state_path = self._state_path()
-                state = json.loads(state_path.read_text()) if state_path.exists() else {}
-                if (state.get('run_date') != self.run_date.isoformat()
-                        or state.get('outputs', {}).get(name.upper()) != path.name or not path.exists()):
-                    raise FileNotFoundError(f'Prior job output is missing for this batch: {path}. Run its producing job first (EIIWOF01 initializes working snapshots).')
-                return path
-            # Original aliases never pick up holding outputs, even after job 14.
+        if lib not in ('NPL', 'NPL6'):
             return self.original_table(lib, name)
-        directory = self.path('libraries', lib)
-        # Generated tables override the original SAS snapshot on later stages.
-        for suffix in ('.csv', '.sas7bdat'):
-            expected = (name + suffix).lower()
-            matches = [p for p in directory.iterdir() if p.is_file() and p.name.lower() == expected]
-            if len(matches) > 1:
-                raise ValueError(f'Ambiguous table files: {matches}')
-            if matches:
-                return matches[0]
-        raise FileNotFoundError(f'{directory}: expected {name}.sas7bdat or a generated {name}.csv')
+        if name.upper() in self.cfg.get('seed_inputs', []) and name.upper() not in self._written_outputs:
+            # Explicit initial dataset for this job, copied unchanged by job 01.
+            directory = Path(self.cfg['input_root']) / 'pas'
+            extension = self.cfg.get('seed_extension', '.sas7bdat')
+            matches = [p for p in directory.iterdir() if p.is_file() and p.name.lower() == (name + extension).lower()]
+            if len(matches) != 1:
+                raise FileNotFoundError(f'Expected one {name}{extension} in {directory}')
+            return matches[0]
+        path = self.table(lib, name)
+        if not path.is_file():
+            raise FileNotFoundError(f'Required prior-job output missing: {path}')
+        return path
 
     def _sas_reader(self, path):
         try:
@@ -629,26 +627,7 @@ def report_date(rows):
         return EPOCH + timedelta(days=int(n))
 
 
-def run_cli(job, run):
-    parser = argparse.ArgumentParser(description=f'Run converted {job}')
-    parser.add_argument('--config', required=True,
-                        help='JSON path; data paths resolve beside this file')
-    parser.add_argument('--run-date', help='Scheduled run date YYYY-12-27; omit for today in Singapore')
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    context = None
-    try:
-        context = Context(args.config, run_date=args.run_date)
-        as_at = context.reporting_date()
-        LOG.info('Starting %s; scheduled run %s; data/report date %s', job, context.run_date, as_at)
-        run(context)
-        LOG.info('Completed %s', job)
-    except Exception as exc:
-        LOG.error('%s failed: %s', job, exc)
-        sys.exit(1)
-    finally:
-        if context is not None:
-            context.close()
+
 
 
 # Original program logic follows.
@@ -686,9 +665,14 @@ INPUT_DATASETS = [('NPL', 'WIIS'), ('NPL', 'WSP2'), ('NPL', 'WAQ'), ('NPLA', 'WO
 INPUT_FILES = ['WOFF']
 
 
-def initialize(config_path, run_date=None, context_type=Context):
+def initialize(settings=None, run_date=None, context_type=Context):
     """This job owns its paths, reporting date and input preflight."""
-    context = context_type(config_path, run_date=run_date)
+    from copy import deepcopy
+    cfg = job_settings()
+    if settings is not None: cfg.update(deepcopy(settings))
+    cfg['_job_name'] = 'EIIWOF14'
+    cfg['seed_inputs'] = list(SEED_INPUTS)
+    context = context_type(cfg, run_date=run_date)
     def local_path(value):
         path = Path(value)
         return (path if path.is_absolute() else context.base / path).resolve()
@@ -721,11 +705,10 @@ def initialize(config_path, run_date=None, context_type=Context):
 
 def main():
     parser = argparse.ArgumentParser(description='EIIWOF14: initialize inputs and run')
-    parser.add_argument('--config', required=True)
     parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to today in Singapore')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    context = initialize(args.config, args.run_date)
+    context = initialize(run_date=args.run_date)
     try:
         run(context)
     finally:

@@ -1,3 +1,27 @@
+# Settings for EIIWOF12; edit these paths in this file.
+INPUT_ROOT = '/stgsrcsys/host/uat'
+OUTPUT_ROOT = '/stgsrcsys/host/holding'
+SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
+
+
+def job_settings():
+    return {
+        '_job_name': 'EIIWOF12', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
+        'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
+        'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
+        'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
+        'libraries': {key: (OUTPUT_ROOT if key in ('NPL','NPL6') else INPUT_ROOT)
+                      for key in ('NPLA','LOAN','SASLN','HD','NPL','NPL6')},
+        'reports': str(Path(OUTPUT_ROOT) / 'reports'),
+        'files': {
+            'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
+            'WOFFC': str(Path(INPUT_ROOT) / 'woff02.sas7bdat'),
+            'PATCH': str(Path(INPUT_ROOT) / 'woff03.sas7bdat'),
+            'WOFFACCT': str(Path(OUTPUT_ROOT) / 'HPTXT1x.txt'),
+            'WOFFACC2': str(Path(OUTPUT_ROOT) / 'HPTXT2x.txt'),
+        },
+    }
+
 """EIIWOF12: initialize this job, then call the original MNP program sequence."""
 import argparse
 import logging
@@ -15,9 +39,14 @@ INPUT_DATASETS = [('LOAN', 'LNNOTE'), ('NPL6', 'NPLOBAL'), ('NPL6', 'WIIS'), ('N
 INPUT_FILES = []
 
 
-def initialize(config_path, run_date=None, context_type=Context):
+def initialize(settings=None, run_date=None, context_type=Context):
     """This job owns its paths, reporting date and input preflight."""
-    context = context_type(config_path, run_date=run_date)
+    from copy import deepcopy
+    cfg = job_settings()
+    if settings is not None: cfg.update(deepcopy(settings))
+    cfg['_job_name'] = 'EIIWOF12'
+    cfg['seed_inputs'] = list(SEED_INPUTS)
+    context = context_type(cfg, run_date=run_date)
     def local_path(value):
         path = Path(value)
         return (path if path.is_absolute() else context.base / path).resolve()
@@ -50,11 +79,10 @@ def initialize(config_path, run_date=None, context_type=Context):
 
 def main():
     parser = argparse.ArgumentParser(description='EIIWOF12: initialize inputs and run')
-    parser.add_argument('--config', required=True)
     parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to today in Singapore')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    context = initialize(args.config, args.run_date)
+    context = initialize(run_date=args.run_date)
     try:
         run(context)
     finally:
