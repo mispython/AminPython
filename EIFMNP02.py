@@ -1,12 +1,14 @@
 # Settings for EIFMNP02; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
 OUTPUT_ROOT = '/stgsrcsys/host/holding'
+LNNOTE_ROOT = '/sas/ln/dwh/enrichment'
 SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211', 'WIIS', 'WAQ', 'WSP2']
 
 
 def job_settings():
     return {
         '_job_name': 'EIFMNP02', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
+        'lnnote_root': LNNOTE_ROOT,
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
         'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
@@ -447,6 +449,16 @@ class Context:
         return matches[0]
 
     def input_table(self, lib, name):
+        if lib == 'LOAN' and name.upper() == 'LNNOTE':
+            data_date = self.run_date - timedelta(days=1)
+            directory = Path(self.cfg.get('lnnote_root', LNNOTE_ROOT))
+            directory = directory if directory.is_absolute() else self.base / directory
+            # Day-only suffix confirmed by the user; actual snapshot must be supplied.
+            extension = self.cfg.get('lnnote_extension', '.sas7bdat')
+            path = directory / ('enrh_ln_note_d' + data_date.strftime('%d') + extension)
+            if not path.is_file():
+                raise FileNotFoundError(f'Required LNNOTE snapshot for {data_date}: {path}')
+            return path
         if lib not in ('NPL', 'NPL6'):
             return self.original_table(lib, name)
         if name.upper() in self.cfg.get('seed_inputs', []) and name.upper() not in self._written_outputs:
@@ -1026,7 +1038,7 @@ def initialize(settings=None, run_date=None, context_type=Context):
         context.cfg['input_root'] = str(input_root)
         context.cfg['output_root'] = str(output_root)
         libraries = context.cfg.setdefault('libraries', {})
-        libraries['LOAN'] = str(local_path(libraries.get('LOAN', str(input_root))))
+        libraries['LOAN'] = str(local_path(context.cfg['lnnote_root']))
         libraries['NPL6'] = str(output_root)  # Working x datasets
         context.cfg.setdefault('reports', str(output_root / 'reports'))
         context.cfg.setdefault('output_format', 'parquet')

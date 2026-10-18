@@ -1,12 +1,14 @@
 # Settings for EIIWOF12; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
 OUTPUT_ROOT = '/stgsrcsys/host/holding'
+LNNOTE_ROOT = '/sas/ln/dwh/enrichment'
 SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
 
 
 def job_settings():
     return {
         '_job_name': 'EIIWOF12', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
+        'lnnote_root': LNNOTE_ROOT,
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
         'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
@@ -56,7 +58,7 @@ def initialize(settings=None, run_date=None, context_type=Context):
         context.cfg['input_root'] = str(input_root)
         context.cfg['output_root'] = str(output_root)
         libraries = context.cfg.setdefault('libraries', {})
-        libraries['LOAN'] = str(local_path(libraries.get('LOAN', str(input_root))))
+        libraries['LOAN'] = str(local_path(context.cfg['lnnote_root']))
         libraries['NPL6'] = str(output_root)  # Working x datasets
         context.cfg.setdefault('reports', str(output_root / 'reports'))
         context.cfg.setdefault('output_format', 'parquet')
