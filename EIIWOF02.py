@@ -1,6 +1,5 @@
 """EIIWOF02: WOFF text -> selected, sorted ACCTNO dataset. No deduplication."""
 import argparse
-import csv
 import json
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
@@ -25,7 +24,7 @@ def run(config, run_date=None):
     if holding == source_root or source_root in holding.parents:
         raise ValueError('Working output must be outside the input directory')
     if cfg.get('output_format', 'parquet') != 'parquet':
-        raise ValueError('This job uses Parquet plus the separate SAS export')
+        raise ValueError('This job outputs Parquet and TXT')
     def number(field):
         value = field.strip()
         return None if not value or value == '.' or (len(value) == 2 and value[0] == '.' and (value[1].isalpha() or value[1] == '_')) else Decimal(value.replace(',', ''))
@@ -51,61 +50,30 @@ def run(config, run_date=None):
     pq.write_table(table, stage, compression='zstd', row_group_size=int(cfg.get('batch_rows', 65536)))
     stage.replace(target)
 
-    # PROC PRINT equivalent; the dataset still contains ACCTNO only.
-    reports = path(cfg.get('reports', str(holding / 'reports')))
-    if reports != holding and holding not in reports.parents:
-        raise ValueError('Reports must be under holding')
-    reports.mkdir(parents=True, exist_ok=True)
-    with (reports / 'EIIWOF02.csv').open('w', newline='', encoding='utf-8') as handle:
-        writer = csv.writer(handle)
-        writer.writerow(['ACCTNO'])
-        writer.writerows([v] for v in accounts)
+    # Plain text: one ACCTNO per line, no header; missing values use a blank line.
+    text_target = holding / (member + '.txt')
+    text_stage = text_target.with_suffix('.txt.tmp')
+    with text_stage.open('w', encoding='utf-8', newline='') as handle:
+        handle.writelines(('' if value is None else format(value, 'f')) + '\n' for value in accounts)
+    text_stage.replace(text_target)
 
-    # SAS server converts the selected values to a genuine SAS7BDAT file.
-    if cfg.get('sas_export', True):
-        bridge = holding / 'sas_bridge'
-        bridge.mkdir(exist_ok=True)
-        data = bridge / (member + '.csv')
-        with data.open('w', encoding='ascii') as handle:
-            handle.writelines(('' if v is None else format(float(v), '.17g')) + '\n' for v in accounts)
-        quote = lambda p: "'" + p.as_posix().replace("'", "''") + "'"
-        script = f'''options errorabend;
-libname hout {quote(holding)};
-data hout._export_tmp;
-  infile {quote(data)} dsd truncover termstr=lf;
-  input ACCTNO :best32.;
-  if _error_ then abort abend;
-run;
-%macro publish;
-%if &syserr > 4 %then %abort abend;
-%let dsid=%sysfunc(open(hout._export_tmp));
-%let count=%sysfunc(attrn(&dsid,nlobs));
-%let rc=%sysfunc(close(&dsid));
-%if &count ne {len(accounts)} %then %abort abend;
-proc datasets lib=hout nolist;
-  delete {member};
-  change _export_tmp={member};
-quit;
-%if &syserr > 4 %then %abort abend;
-%mend;
-%publish;
-'''
-        (bridge / (member + '.sas')).write_text(script, encoding='utf-8')
     # Register this output so later original jobs can find it in the current batch.
     manifest = holding / 'batch_state.json'
     state = json.loads(manifest.read_text()) if manifest.exists() else {}
     if state.get('run_date') != scheduled.isoformat():
         state = {'run_date': scheduled.isoformat(), 'outputs': {}}
     state['outputs']['WOFFHP'] = target.name
+    state['sas_export_excluded'] = sorted(set(state.get('sas_export_excluded', [])) | {'WOFFHP'})
     temp = manifest.with_suffix('.json.tmp')
     temp.write_text(json.dumps(state, indent=2), encoding='utf-8')
     temp.replace(manifest)
-    if cfg.get('sas_export', True):
-        scripts = [holding / 'sas_bridge' / (Path(v).stem + '.sas') for v in state['outputs'].values()]
-        for script in scripts:
-            if not script.exists():
-                raise FileNotFoundError(script)
-        (holding / 'export_all.sas').write_text('\n'.join('%include ' + quote(p) + ';' for p in scripts) + '\n', encoding='utf-8')
+    # If rerun, remove any prior WOFFHP entry from the existing export driver.
+    driver = holding / 'export_all.sas'
+    if driver.exists():
+        lines = driver.read_text(encoding='utf-8').splitlines(keepends=True)
+        driver_stage = driver.with_suffix('.sas.tmp')
+        driver_stage.write_text(''.join(line for line in lines if member + '.sas' not in line), encoding='utf-8')
+        driver_stage.replace(driver)
 
 
 if __name__ == '__main__':
