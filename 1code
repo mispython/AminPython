@@ -1,4 +1,16 @@
-   Display  Filter  View  Print  Options  Search  Help                          
+
+/* Semak nama table dan column dalam library LOAN */
+TITLE "CHECK LOAN DATASETS";
+
+PROC CONTENTS DATA=LOAN._ALL_;
+RUN;
+
+TITLE;
+
+
+
+
+Display  Filter  View  Print  Options  Search  Help                          
  -------------------------------------------------------------------------------
  SDSF OUTPUT DISPLAY EIBMTH1A J0149255  DSID     4 LINE 80      COLUMNS 02- 81  
  COMMAND INPUT ===>                                            SCROLL ===> CSR  
