@@ -1,3 +1,29 @@
+   Display  Filter  View  Print  Options  Search  Help                          
+ -------------------------------------------------------------------------------
+ SDSF OUTPUT DISPLAY EIBMTH1A J0149255  DSID     4 LINE 80      COLUMNS 02- 81  
+ COMMAND INPUT ===>                                            SCROLL ===> CSR  
+             VIRT- ALLOC:      16M SHRD:       0M                               
+IGD103I SMS ALLOCATED TO DDNAME SYS00001                                        
+IGD104I SYS26292.T164304.RA000.EIBMTH1A.R0122939     RETAINED,  DDNAME=SYS00001 
+IGD105I SYS26292.T164256.RA000.EIBMTH1A.NULLPDS.H01  DELETED,   DDNAME=NULLPDS  
+IGD103I SMS ALLOCATED TO DDNAME SYS00002                                        
+IGD104I SYS26292.T164304.RA000.EIBMTH1A.R0122940     RETAINED,  DDNAME=SYS00002 
+IGD17054I DATA SET NOT FOUND FOR DELETE/RENAME ON VOLUME WK5011                 
+DATA SET IS SYS26292.T164256.RA000.EIBMTH1A.NULLPDS.H01                         
+IGD103I SMS ALLOCATED TO DDNAME SYS00003                                        
+IGD104I SYS26292.T164304.RA000.EIBMTH1A.R0122941     RETAINED,  DDNAME=SYS00003 
+IGD17054I DATA SET NOT FOUND FOR DELETE/RENAME ON VOLUME WK5011                 
+DATA SET IS SYS26292.T164256.RA000.EIBMTH1A.NULLPDS.H01                         
+IGD103I SMS ALLOCATED TO DDNAME SYS00004                                        
+IGD104I SYS26292.T164304.RA000.EIBMTH1A.R0122942     RETAINED,  DDNAME=SYS00004 
+IGD105I SYS26292.T164256.RA000.EIBMTH1A.FTPPUT.H01   DELETED,   DDNAME=SFTP01   
+IEF375I  JOB/EIBMTH1A/START 2026292.1642                                        
+IEF033I  JOB/EIBMTH1A/STOP  2026292.1643                                        
+        CPU:     0 HR  00 MIN  00.00 SEC    SRB:     0 HR  00 MIN  00.00 SEC    
+******************************** BOTTOM OF DATA ********************************
+ .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .  .
+
+
 %INC PGM(DALMPBBD);
 %INC PGM(DALWBP);
 %INC PGM(DALMBP);
