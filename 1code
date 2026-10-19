@@ -1,393 +1,189 @@
-//EIMGLNF1 JOB MISEIS,EIMGLSPA,COND=(0,LT),CLASS=A,MSGCLASS=X,          JOB02888
-//         NOTIFY=&SYSUID USER=OPCC
-/*JOBPARM  S=S1M1
-//* *******************************************************
-//* ESMR 2010-3356
-//* *******************************************************
-//DELETE   EXEC PGM=IEFBR14
-//DD1      DD DSN=SAP.FUND.GLNEF.FIRST,
-//            DISP=(MOD,DELETE,DELETE),
-//            SPACE=(CYL,(1,1))
-//*
-//CREATE   EXEC PGM=IEFBR14
-//CRT01    DD DSN=SAP.FUND.GLNEF.FIRST,
-//            DISP=(NEW,CATLG,DELETE),
-//            DCB=(RECFM=FB,LRECL=324,BLKSIZE=27864),
-//            SPACE=(CYL,(1,1),RLSE),UNIT=SYSDA
-//*
-//EIMGLNF1 EXEC SAS609,WORK='120000,8000'
-//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-//MAST     DD DSN=SAP.PBB.MASTER.NEF,DISP=OLD
-//FUND     DD DSN=SAP.PBB.BNM.NEF,DISP=OLD
-//LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
-//GLFILE   DD DSN=SAP.FUND.GLNEF.FIRST,DISP=OLD
-//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT1)
- /********************************************************************/
- /* PROCESS & CREATE INTERFACE FILE FOR GL WALKER                    */
- /********************************************************************/
+000001 //EIBMTH1A JOB MISEIS,EIBMTH1A,MSGCLASS=A,CLASS=A,NOTIFY=&SYSUID        
+000002 //*                                                                     
+000003 //DELETE   EXEC PGM=IEFBR14                                             
+000004 //DD1      DD DISP=(MOD,DELETE,DELETE),                                 
+000005 //            SPACE=(TRK,(1,10)),                                       
+000006 //            DSN=PROGPAS.PBB.KAPMNI.RDAL                               
+000007 //DD1      DD DISP=(MOD,DELETE,DELETE),                                 
+000008 //            SPACE=(TRK,(1,10)),                                       
+000009 //            DSN=PROGPAS.PBB.NSRS.KAPMNI.RDAL                          
+000010 //*                                                                     
+000011 //EIBMTH1A  EXEC SAS609,REGION=8M,WORK='250000,200000'                  
+000012 //DEPOBACK  DD DSN=PROGPAS.PBB.DEPOSIT,DISP=OLD                         
+000013 //LOAN      DD DSN=SAP.PBB.MNILN(-1),DISP=SHR                           
+000014 //FD        DD DSN=SAP.PBB.MNIFD(-1),DISP=SHR                           
+000015 //LMLOAN    DD DSN=SAP.PBB.MNILN(-4),DISP=SHR                           
+000016 //LMTE      DD DSN=SAP.PBB.MNILIMT(-1),DISP=SHR                         
+000017 //FEE       DD DSN=SAD.PBB.MNIFEE(-1),DISP=SHR                          
+000018 //DEPOSIT   DD DSN=SAD.PBB.MNITB(0),DISP=SHR                            
+000019 //LMDEPT    DD DSN=SAP.PBB.MNITB(-4),DISP=SHR              
 
-OPTIONS YEARCUTOFF=1950 NOCENTER;
-DATA _NULL_;
-   REPTDATE=TODAY();
-   MM1 = MONTH(REPTDATE)-1;
-   IF MM1= 0 THEN MM1 = 12;
-   DT = TODAY();
-   TM = TIME();
-   DATENOW=PUT(YEAR(DT),Z4.)||PUT(MONTH(DT),Z2.)||PUT(DAY(DT),Z2.);
-   TIMENOW=PUT(HOUR(TM),Z2.)||PUT(MINUTE(TM),Z2.)||PUT(SECOND(TM),Z2.);
-   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-   CALL SYMPUT('PREVMON',PUT(MM1,Z2.));
-   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
-   CALL SYMPUT('REPTDAT',REPTDATE);
-   CALL SYMPUT('NOWK',PUT('4',$1.));
-   CALL SYMPUT('RPTDTE',PUT(DATENOW,8.));
-   CALL SYMPUT('RPTTIME',PUT(TIMENOW,6.));
-   CALL SYMPUT('CURDAY',PUT(DAY(DT),Z2.));
-   CALL SYMPUT('CURMTH',PUT(MONTH(DT),Z2.));
-   CALL SYMPUT('CURYR',PUT(YEAR(DT),Z4.));
-   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));
-   CALL SYMPUT('RPTYR',PUT(YEAR(REPTDATE),Z4.));
-   CALL SYMPUT('RPTDY',PUT(DAY(REPTDATE),Z2.));
-RUN;
-DATA DRAW;
-  INFILE FUND;
-  INPUT @009 BNMREF  $20. @;
-     IF BNMREF='' THEN DELETE;
-  INPUT @001 BRHCODE   3.
-        @005 BRHNAME   $3.
-        @009 BNMREF    $20.
-        @030 CUSTNAME  $40.
-        @071 ACCTNO    10.
-        @082 NOTENO    4.
-        @086 MATUREDT  $8.
-        @095 BNMBAL    10.2
-        ;
-RUN;
-PROC SORT DATA=DRAW; BY BRHCODE; RUN;
-PROC SORT DATA=MAST.MASTER OUT=REPAY; BY BRHCODE; RUN;
-*;
-DATA GLFUND(KEEP=BRHCODE ARID JDESC AVALUE REPAY15);
-   SET DRAW REPAY END=EOF; BY BRHCODE;
-    FORMAT   ARID  $8. AVALUE  14.2 REPAY15 14.2 JDESC $60.;
 
-    IF REPAY15 NOT IN (.) THEN DO;
-         ARID = 'PNEF';
-         JDESC = 'BG REPAYMENT OF NEF';
-         AVALUE   = REPAY15;
-    END;
-    ELSE DO;
-         ARID = 'PNEF';
-         JDESC = 'BG DRAWDOWN OF NEF';
-         AVALUE   = BNMBAL;
-    END;
-RUN;
+000019 //LMDEPT    DD DSN=SAP.PBB.MNITB(-4),DISP=SHR                           
+000020 //CISDP     DD DSN=RBP2.B033.CCRIS.CISDEMO.DP.GDG(0),DISP=SHR           
+000021 //BNMTBL1   DD DSN=PROGPAS.PBB.KAPITI1,DISP=SHR                         
+000022 //BNMTBL2   DD DSN=PROGPAS.PBB.KAPITI2,DISP=SHR                         
+000023 //BNMTBL3   DD DSN=PROGPAS.PBB.KAPITI3,DISP=SHR                         
+000024 //BNMTBLX   DD DSN=SAP.PBB.KAPITIX.TXT(0),DISP=SHR                      
+000025 //DCIMTBL   DD DSN=PROGPAS.PBB.DCIMNLY,DISP=SHR                         
+000026 //DCIWH     DD DSN=SAP.PBB.DCIWH,DISP=SHR                               
+000027 //NID       DD DSN=SAD.PBB.RNID.SASDATA,DISP=SHR                        
+000028 //BNMK      DD DSN=PROGPAS.PBB.KAPITI.SASDATA,DISP=OLD                  
+000029 //EQ        DD DSN=SAP.PBB.WEQUT(-9),DISP=SHR                           
+000030 //DISPAY    DD DSN=SAD.PBB.DISPAY,DISP=SHR                              
+000031 //DAILY     DD DSN=SAD.PBB.DISPAY.DAILY.E2550,DISP=SHR                  
+000032 //LNHIST    DD DSN=SAD.PBB.LNHIST,DISP=SHR                              
+000033 //FORATE    DD DSN=SAP.PBB.FCYCA,DISP=SHR                               
+000034 //WOMV      DD DSN=SAD.PBB.WOF.WOMV.M06,DISP=SHR                        
+000035 //SASD      DD DSN=SAD.PBB.STORE.SASDATA,DISP=SHR                       
+000036 //UMA       DD DSN=SAD.PBB.UMA.DAILY,DISP=SHR                           
+000037 //RDALKM    DD DSN=PROGPAS.PBB.KAPMNI.RDAL,DISP=(NEW,CATLG,DELETE),     
+000038 //            DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),                     
+000039 //            SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)                         
+000040 //NSRSKM    DD DSN=PROGPAS.PBB.NSRS.KAPMNI.RDAL,                        
 
-PROC SUMMARY DATA=GLFUND NWAY;
-     CLASS BRHCODE ARID JDESC;
-     VAR AVALUE REPAY15;
-     OUTPUT OUT=GLFUND (DROP=_TYPE_ _FREQ_)
-                    SUM=;
-RUN;
-PROC SORT DATA=GLFUND;
-   BY BRHCODE ARID;
 
-DATA GLFUNDX;
-   FILE GLFILE;
-   IF TRN=0 THEN DO;
-      PUT @1   'INTFBNMF'
-          @9   '0'
-          @18  "&RPTYR"
-          @22  "&REPTMON"
-          @24  "&RPTDY"
-          @26  "&RPTDTE"
-          @34  "&RPTTIME";
-      PUT @1   'INTFBNMF'
-          @9   '9'
-          @18  "&RPTYR"
-          @22  "&REPTMON"
-          @24  "&RPTDY"
-          @26  "&RPTDTE"
-          @34  "&RPTTIME"
-          @40  '+'
-          @41  '0000000000000000'
-          @57  '-'
-          @58  '0000000000000000'
-          @74  '+'
-          @75  '0000000000000000'
-          @91  '-'
-          @92  '0000000000000000'
-          @108 '000000000'     ;
-   END;
-   RETAIN TRN;
 
-   SET GLFUND NOBS=TRN END=EOF;
-   BY BRHCODE ARID;
-   AVALUE = ROUND(AVALUE,.01);
-   REPAY15= ROUND(REPAY15,.01);
-   IF AVALUE = REPAY15 THEN DO;
-      ASIGN = '-';
-   END;
-   ELSE DO;
-      ASIGN = '+';
-   END;
-   FILE GLFILE;
-   FORMAT    BRHAMT    17.2     BRHAMTO   $16. AMTTOTC    17.2
-             AMTTOTD  17.2     AMTTOTCO  $16.     AMTTOTDO   $16.
-             ASIGN  $1.;
-   IF _N_=1 THEN DO;
-      CNT = 0;
-      AMTTOTD = 0;
-      AMTTOTC = 0;
-      PUT @1   'INTFBNMF'
-          @9   '0'
-          @18  "&RPTYR"
-          @22  "&REPTMON"
-          @24  "&RPTDY"
-          @26  "&RPTDTE"
-          @34  "&RPTTIME";
-   END;
-   IF FIRST.ARID THEN DO;
-      BRHAMT = 0;
-   END;
 
-   BRHAMT + AVALUE;
-   IF ASIGN = '-' THEN
-      AMTTOTC + AVALUE;
-   ELSE
-      AMTTOTD + AVALUE;
+ 000040 //NSRSKM    DD DSN=PROGPAS.PBB.NSRS.KAPMNI.RDAL,                      
+ 000041 //             DISP=(NEW,CATLG,DELETE),                               
+ 000042 //             DCB=(RECFM=FB,LRECL=80,BLKSIZE=6320),                  
+ 000043 //             SPACE=(TRK,(10,5)),UNIT=(SYSDA,5)                      
+ 000044 //TEMP      DD DSN=PROGPAS.TEMP,DISP=(NEW,DELETE,DELETE),             
+ 000045 //             DCB=(RECFM=FS,LRECL=27648,BLKSIZE=27648),              
+ 000046 //             SPACE=(CYL,(100,50)),UNIT=(SYSDA,5)                    
+ 000047 //PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR                           
+ 000048 //PGM2      DD DSN=CHGMAN.XMIS.BNM.PROGRAM,DISP=SHR                   
+ 000049 //PGM1      DD DSN=CHGMAN.XMIS.BNM.PROGRAM,DISP=SHR                   
+ 000050 //SFTP01    DD DSN=&&FTPPUT,DISP=(NEW,PASS),                          
+ 000051 //             SPACE=(TRK,(1)),UNIT=SYSDA,RECFM=FB,LRECL=80           
+ 000052 //SASLIST   DD SYSOUT=X                                               
+ 000053 //SYSIN     DD *                                                      
+ 000054                                                                       
+ 000055 OPTIONS SORTDEV=3390 YEARCUTOFF=1950 LS=132 PS=60 NOCENTER;           
+ 000056                                                                       
+ 000057 DATA REPTDATE (KEEP=REPTDATE);                                        
+ 000058   REPTDATE=INPUT('01'||PUT(MONTH(TODAY()), Z2.)||                     
+ 000059                  PUT(YEAR(TODAY()), 4.), DDMMYY8.)-1;                 
+ 000060   SELECT(DAY(REPTDATE));                                              
+ 000061     WHEN (8)  DO; SDD = 1;  WK = '1'; WK1 = '4'; END;                 
 
-   IF LAST.ARID THEN DO;
-      CNT + 1;
-      TEMPAMT1 = PUT(BRHAMT, Z17.2);
-      BRHAMTO  = COMPRESS(TEMPAMT1,'.');
-      PUT @1   'INTFBNMF'
-          @9   '1'
-          @10  ARID       $8.
-          @18  'PBBH'              /* CHANGE WHEN MOVE TO PRODUCTION */
-          @22  BRHCODE     Z4.
-          @71  'MYR'
-          @77  "&RPTYR"
-          @81  "&REPTMON"
-          @83  "&RPTDY"
-          @85  ASIGN      $1.
-          @86  BRHAMTO    $16.
-          @102 JDESC      $60.
-          @162 ARID       $8.
-          @172 'BNMF'
-          @252 '+'
-          @253 '0000000000000000'
-          @273 '+'
-          @274 '000000000000000'
-          @307 '+'
-          @308 '0000000000000000' ;
-   END;
+000062     WHEN(15)  DO; SDD = 9;  WK = '2'; WK1 = '1'; END;              
+000063     WHEN(22)  DO; SDD = 16; WK = '3'; WK1 = '2'; END;              
+000064     OTHERWISE DO; SDD = 23; WK = '4'; WK1 = '3';                   
+000065                             WK2= '2'; WK3 = '1'; END;              
+000066   END;                                                             
+000067   MM = MONTH(REPTDATE);                                            
+000068   IF WK = '1' THEN DO;                                             
+000069      MM1 = MM - 1;                                                 
+000070      IF MM1 = 0 THEN MM1 = 12;                                     
+000071   END;                                                             
+000072   ELSE MM1 = MM;                                                   
+000073   MM2 = MM - 1;                                                    
+000074   IF MM2 = 0 THEN MM2 = 12;                                        
+000075   SDATE = MDY(MM,SDD,YEAR(REPTDATE));                              
+000076   SDESC = 'PUBLIC BANK BERHAD';                                    
+000077   CALL SYMPUT('NOWK',PUT(WK,$1.));                                 
+000078   CALL SYMPUT('NOWK1',PUT('1',$1.));                               
+000079   CALL SYMPUT('NOWK2',PUT('2',$1.));                               
+000080   CALL SYMPUT('NOWK3',PUT('3',$1.));                               
+000081   CALL SYMPUT('REPTMON',PUT(MM,Z2.));                              
+000082   CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));                            
 
-   IF EOF THEN DO;
-      TEMPAMT1  = PUT(AMTTOTC, Z17.2);
-      AMTTOTCO  = COMPRESS(TEMPAMT1,'.');
-      TEMPAMT2  = PUT(AMTTOTD, Z17.2);
-      AMTTOTDO  = COMPRESS(TEMPAMT2,'.');
-      PUT @1   'INTFBNMF'
-          @9   '9'
-          @18  "&RPTYR"
-          @22  "&REPTMON"
-          @24  "&RPTDY"
-          @26  "&RPTDTE"
-          @34  "&RPTTIME"
-          @40  '+'
-          @41  AMTTOTDO    $16.
-          @57  '-'
-          @58  AMTTOTCO    $16.
-          @74  '+'
-          @75  '0000000000000000'
-          @91  '-'
-          @92  '0000000000000000'
-          @108 CNT         Z9. ;
-   END;
-   RETURN;
-RUN;
+
+ Command ===>                                                  Scroll ===> CSR  
+ 000082   CALL SYMPUT('REPTMON1',PUT(MM1,Z2.));                                 
+ 000083   CALL SYMPUT('REPTMON2',PUT(MM2,Z2.));                                 
+ 000084   CALL SYMPUT('REPTYEAR',PUT(REPTDATE,YEAR4.));                         
+ 000085   CALL SYMPUT('REPTYR',PUT(REPTDATE,YEAR2.));                           
+ 000086   CALL SYMPUT('REPTDAY',PUT(DAY(REPTDATE),Z2.));                        
+ 000087   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY8.));                          
+ 000088   CALL SYMPUT('TDATE',REPTDATE);                                        
+ 000089   CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));                             
+ 000090   CALL SYMPUT('SDESC',PUT(SDESC,$26.));                                 
+ 000091 RUN;                                                                    
+ 000092                                                                         
+ 000093 LIBNAME BNM "SAD.PBB.D&REPTYEAR" DISP=OLD;                              
+ 000094 LIBNAME BNM1 "SAD.PBB.SASDATA" DISP=SHR;                                
+ 000095 DATA _NULL_;                                                            
+ 000096   SET LOAN.REPTDATE(OBS=1);                                             
+ 000097   CALL SYMPUT('LOAN', PUT(REPTDATE, DDMMYY8.));                         
+ 000098 RUN;                                                                    
+ 000099                                                                         
+ 000100 DATA _NULL_;                                                            
+ 000101   SET DEPOSIT.REPTDATE(OBS=1);                                          
+ 000102   CALL SYMPUT('DEPOSIT', PUT(REPTDATE, DDMMYY8.));                      
+ 000103 RUN;                                                                    
 
 
 
 
 
+000103 RUN;                                                                
+000104                                                                     
+000105 DATA _NULL_;                                                        
+000106   SET FD.REPTDATE(OBS=1);                                           
+000107   CALL SYMPUT('FD', PUT(REPTDATE, DDMMYY8.));                       
+000108 RUN;                                                                
+000109                                                                     
+000110 DATA _NULL_;                                                        
+000111   INFILE BNMTBL1 OBS=1 DELIMITER = '|' DSD MISSOVER;                
+000112   INPUT REPTDATE : YYMMDD8.;                                        
+000113   CALL SYMPUT('KAPITI1', PUT(REPTDATE, DDMMYY8.));                  
+000114 RUN;                                                                
+000115                                                                     
+000116 DATA _NULL_;                                                        
+000117   INFILE BNMTBL2 OBS=1 DELIMITER = '|' DSD MISSOVER;                
+000118   INPUT REPTDATE : YYMMDD8. ;                                       
+000119   CALL SYMPUT('KAPITI2', PUT(REPTDATE, DDMMYY8.));                  
+000120 RUN;                                                                
+000121                                                                     
+000122 DATA _NULL_;                                                        
+000123   INFILE BNMTBL3 OBS=1 DELIMITER = '|' DSD MISSOVER;                
+000124   INPUT REPTDATE : YYMMDD8.;                                        
+
+ Command ===>                                                  Scroll ===> CS
+ 000124   INPUT REPTDATE : YYMMDD8.;                                         
+ 000125   CALL SYMPUT('KAPITI3', PUT(REPTDATE, DDMMYY8.));                   
+ 000126 RUN;                                                                 
+ 000127                                                                      
+ 000128       /*** REPORT ON DOMESTIC ASSETS AND LIABILITIES ***/            
+ 000129       %INC PGM(DALMPBBD);                                            
+ 000130       %INC PGM(DALWBP);                                              
+ 000131       %INC PGM(DALMBP);                                              
+ 000132       PROC DATASETS LIB=WORK KILL NOLIST; RUN;                       
+ 000133 DATA _NULL_;                                                         
+ 000134    FILE SFTP01;                                                      
+ 000135     PUT @1 "PUT //PROGPAS.PBB.KAPMNI.RDAL   ""RDAL KAPMNI.TXT"""     
+ 000136          / "PUT //PROGPAS.PBB.NSRS.KAPMNI.RDAL ""NSRS KAPMNI.TXT"""  
+ 000137            ;                                                         
+ 000138 RUN;                                                                 
+ 000139 //****************************************************************** 
+ 000140 //* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)         
+ 000141 //****************************************************************** 
+ 000142 //RUNSFTP  EXEC COZBATCH                                             
+ 000143 //CMD.SYSUT1 DD DISP=SHR,DSN=SAD.SAS.PROGRAM(EDW#SFTU)               
+ 000144 //           DD *                                                    
+ 000145 lzopts servercp=$servercp,notrim,overflow=trunc,mode=text            
 
 
 
+Command ===>                                                  Scroll ===> CS
+000144 //           DD *                                                    
+000145 lzopts servercp=$servercp,notrim,overflow=trunc,mode=text            
+000146 lzopts linerule=$lr                                                  
+000147 cd /stgsrcsys/host/uat                                               
+000148 //           DD DISP=SHR,DSN=&&FTPPUT                                
+000149 //           DD *                                                    
+000150 EOB                                                                  
+000151 /*                                                                   
+****** **************************** Bottom of Data *************************
+                                                                            
+                                                                            
+                                                                            
 
 
 
-
-//EIMGLNF2 JOB MISEIS,EIMGLSPA,COND=(0,LT),CLASS=A,MSGCLASS=X,          JOB02888
-//         NOTIFY=&SYSUID USER=OPCC
-/*JOBPARM  S=S1M1
-//* *******************************************************
-//* ESMR 2010-3356
-//* *******************************************************
-//DELETE   EXEC PGM=IEFBR14
-//DD1      DD DSN=SAP.FUND.GLNEF.SEC,
-//            DISP=(MOD,DELETE,DELETE),
-//            SPACE=(CYL,(1,1))
-//*
-//CREATE   EXEC PGM=IEFBR14
-//CRT01    DD DSN=SAP.FUND.GLNEF.SEC,
-//            DISP=(NEW,CATLG,DELETE),
-//            DCB=(RECFM=FB,LRECL=324,BLKSIZE=27864),
-//            SPACE=(CYL,(1,1),RLSE),UNIT=SYSDA
-//*
-//EIMGLNF2 EXEC SAS609
-//PGM      DD DSN=SAP.BNM.PROGRAM,DISP=SHR
-//MAST     DD DSN=SAP.PBB.MASTER.NEF,DISP=OLD
-//LOAN     DD DSN=SAP.PBB.MNILN(0),DISP=SHR
-//GLFILE   DD DSN=SAP.FUND.GLNEF.SEC,DISP=OLD
-//*SASLIST  DD SYSOUT=(,),OUTPUT=(*.PRINT1)
- /********************************************************************/
- /* PROCESS & CREATE INTERFACE FILE FOR GL WALKER                    */
- /********************************************************************/
-
-OPTIONS YEARCUTOFF=1950 NOCENTER;
-DATA _NULL_;
-   REPTDATE=TODAY();
-   MM1 = MONTH(REPTDATE)-1;
-   IF MM1= 0 THEN MM1 = 12;
-   DT = TODAY();
-   TM = TIME();
-   RDAY=25;
-   DATENOW=PUT(YEAR(DT),Z4.)||PUT(MONTH(DT),Z2.)||PUT(DAY(DT),Z2.);
-   TIMENOW=PUT(HOUR(TM),Z2.)||PUT(MINUTE(TM),Z2.)||PUT(SECOND(TM),Z2.);
-   CALL SYMPUT('REPTMON',PUT(MONTH(REPTDATE),Z2.));
-   CALL SYMPUT('PREVMON',PUT(MM1,Z2.));
-   CALL SYMPUT('RDATE',PUT(REPTDATE,WORDDATX18.));
-   CALL SYMPUT('REPTDAT',REPTDATE);
-   CALL SYMPUT('NOWK',PUT('4',$1.));
-   CALL SYMPUT('RPTDTE',PUT(DATENOW,8.));
-   CALL SYMPUT('RPTTIME',PUT(TIMENOW,6.));
-   CALL SYMPUT('CURDAY',PUT(DAY(DT),Z2.));
-   CALL SYMPUT('CURMTH',PUT(MONTH(DT),Z2.));
-   CALL SYMPUT('CURYR',PUT(YEAR(DT),Z4.));
-   CALL SYMPUT('RDATE',PUT(REPTDATE,DDMMYY10.));
-   CALL SYMPUT('RPTYR',PUT(YEAR(REPTDATE),Z4.));
-   CALL SYMPUT('RPTDY',PUT(RDAY, Z2.));
-RUN;
-PROC SORT DATA=MAST.MASTER; BY BRHCODE; RUN;
-DATA GLFUND(KEEP=BRHCODE ARID JDESC REPAY25);
-   SET MAST.MASTER END=EOF; BY BRHCODE;
-   FORMAT   ARID  $8. REPAY25 14.2 JDESC $60.;
-         ARID = 'PNEF';
-         JDESC = 'BG REPAYMENT OF NEF';
-
-PROC SUMMARY DATA=GLFUND NWAY;
-     CLASS BRHCODE ARID JDESC;
-     VAR REPAY25;
-     OUTPUT OUT=GLFUND (DROP=_TYPE_ _FREQ_)
-                    SUM=;
-RUN;
-PROC SORT DATA=GLFUND;
-   BY BRHCODE ARID;
-
-DATA GLFUNDX;
-   FILE GLFILE;
-   IF TRN=0 THEN DO;
-      PUT @1   'INTFBNMF'
-          @9   '0'
-          @18  "&RPTYR"
-          @22  "&REPTMON"
-          @24  "&RPTDY"
-          @26  "&RPTDTE"
-          @34  "&RPTTIME";
-      PUT @1   'INTFBNMF'
-          @9   '9'
-          @18  "&RPTYR"
-          @22  "&REPTMON"
-          @24  "&RPTDY"
-          @26  "&RPTDTE"
-          @34  "&RPTTIME"
-          @40  '+'
-          @41  '0000000000000000'
-          @57  '+'
-          @58  '0000000000000000'
-          @74  '+'
-          @75  '0000000000000000'
-          @91  '+'
-          @92  '0000000000000000'
-          @108 '000000000'     ;
-   END;
-   RETAIN TRN;
-
-   SET GLFUND NOBS=TRN END=EOF;
-   BY BRHCODE ARID;
-   REPAY25 = ROUND(REPAY25,.01);
-   ASIGN = '-';
-   FILE GLFILE;
-   FORMAT    BRHAMT    17.2     BRHAMTO   $16.
-             AMTTOTD   17.2     AMTTOTDO   $16.     ASIGN  $1.;
-   IF _N_=1 THEN DO;
-      CNT = 0;
-      AMTTOTD = 0;
-      PUT @1   'INTFBNMF'
-          @9   '0'
-          @18  "&RPTYR"
-          @22  "&REPTMON"
-          @24  "&RPTDY"
-          @26  "&RPTDTE"
-          @34  "&RPTTIME";
-   END;
-   IF FIRST.ARID THEN DO;
-      BRHAMT = 0;
-   END;
-
-   BRHAMT + REPAY25;
-   IF ASIGN = '-' THEN
-      AMTTOTD + REPAY25;
-
-   IF LAST.ARID THEN DO;
-      CNT + 1;
-      TEMPAMT1 = PUT(BRHAMT, Z17.2);
-      BRHAMTO  = COMPRESS(TEMPAMT1,'.');
-      PUT @1   'INTFBNMF'
-          @9   '1'
-          @10  ARID       $8.
-          @18  'PBBH'              /* CHANGE WHEN MOVE TO PRODUCTION */
-          @22  BRHCODE     Z4.
-          @71  'MYR'
-          @77  "&RPTYR"
-          @81  "&REPTMON"
-          @83  "&RPTDY"
-          @85  ASIGN      $1.
-          @86  BRHAMTO    $16.
-          @102 JDESC      $60.
-          @162 ARID       $8.
-          @172 'BNMF'
-          @252 '+'
-          @253 '0000000000000000'
-          @273 '+'
-          @274 '000000000000000'
-          @307 '+'
-          @308 '0000000000000000' ;
-   END;
-
-   IF EOF THEN DO;
-      TEMPAMT2  = PUT(AMTTOTD, Z17.2);
-      AMTTOTDO  = COMPRESS(TEMPAMT2,'.');
-      PUT @1   'INTFBNMF'
-          @9   '9'
-          @18  "&RPTYR"
-          @22  "&REPTMON"
-          @24  "&RPTDY"
-          @26  "&RPTDTE"
-          @34  "&RPTTIME"
-          @40  '+'
-          @41  '0000000000000000'
-          @57  '-'
-          @58  AMTTOTDO    $16.
-          @74  '+'
-          @75  '0000000000000000'
-          @91  '-'
-          @92  '0000000000000000'
-          @108 CNT         Z9. ;
-   END;
-   RETURN;
-RUN;
 
 
 
