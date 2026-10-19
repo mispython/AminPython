@@ -2,6 +2,106 @@
 %INC PGM(DALWBP);
 %INC PGM(DALMBP);
 
+/* Select accounts and show the new purpose code */
+DATA NEW_PURPOSE_ACCOUNTS;
+    SET LOAN.LNNOTE;
+    WHERE CRISPURP IN ('6300','6400','6500');
+
+    LENGTH NEW_CODE $4;
+
+    SELECT (CRISPURP);
+        WHEN ('6300') NEW_CODE = '6400';
+        WHEN ('6400') NEW_CODE = '6500';
+        WHEN ('6500') NEW_CODE = '6600';
+        OTHERWISE;
+    END;
+RUN;
+
+/* Write both reports into the same TXT file */
+PROC PRINTTO PRINT=DALMTXT NEW;
+RUN;
+
+OPTIONS NODATE NONUMBER NOCENTER LS=132 PS=60;
+TITLE;
+
+/* 1. Original DALM report */
+TITLE1 "DALM REPORT &RDATE";
+
+PROC PRINT DATA=BNM.DALM&REPTMON&NOWK NOOBS;
+    FORMAT AMOUNT COMMA25.2;
+RUN;
+
+/* 2. Account list, amount and purpose codes */
+TITLE1 "ACCOUNTS WITH NEW PURPOSE CODES";
+TITLE2 "REPORT DATE: &RDATE";
+
+PROC PRINT DATA=NEW_PURPOSE_ACCOUNTS NOOBS LABEL;
+    VAR ACCTNO NOTENO CRISPURP NEW_CODE CURBAL;
+    LABEL ACCTNO   = "ACCOUNT NUMBER"
+          NOTENO   = "NOTE NUMBER"
+          CRISPURP = "ORIGINAL CODE"
+          NEW_CODE = "NEW CODE"
+          CURBAL   = "CURRENT BALANCE";
+    FORMAT ACCTNO 20. NOTENO 12. CURBAL COMMA25.2;
+    SUM CURBAL;
+RUN;
+
+PROC PRINTTO;
+RUN;
+
+TITLE;
+
+PROC DATASETS LIB=WORK KILL NOLIST;
+RUN;
+
+/* Send the combined TXT file */
+DATA _NULL_;
+    FILE SFTP01;
+    PUT @1 'PUT //PROGPAS.PBB.DALM.TXT "DALM ACCOUNT LIST.TXT"';
+RUN;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+%INC PGM(DALMPBBD);
+%INC PGM(DALWBP);
+%INC PGM(DALMBP);
+
 /* Simpan kedua-dua report dalam fail text */
 PROC PRINTTO PRINT=DALMTXT NEW;
 RUN;
