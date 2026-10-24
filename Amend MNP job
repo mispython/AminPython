@@ -193,7 +193,6 @@ RUN;
 
 
 
-
 *+--------------------------------------------------------------+
  |  PROGRAM : EIFMNP03                                          |
  |  DATE    : 12.03.98                                          |
@@ -207,8 +206,9 @@ OPTIONS NOCENTER YEARCUTOFF=1950;
 %INC PGM(PBBELF);
 *;
 PROC FORMAT;
-   VALUE LNTYP 128,130,983,131,132     = 'HPD AITAB'
-               700,705,380,381,993,996 = 'HPD CONVENTIONAL'
+   VALUE LNTYP 128,130,983             = 'HPD AITAB'
+               700,705,380,381,993,996,
+               720,725                 = 'HPD CONVENTIONAL'
                200-299                 = 'HOUSING LOANS'
                OTHER   = 'OTHERS';
 *;
@@ -325,6 +325,7 @@ DATA LOAN1;
                IIS + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
             END;
          END;
+       *  OI = FEETOT2;
          OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
          DO REMMTH = REMMTHS TO REMMTH2 BY -1;
             SUSPEND + 2*(REMMTH+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
@@ -344,7 +345,8 @@ DATA LOAN1;
    IF CURBAL = . THEN CURBAL = 0;
    NETBAL = CURBAL - UHC;
    IF NETBAL <= IISP THEN
-      IF DAYS >  89 | BORSTAT IN ('F','R','I') OR USER5 = 'N' THEN
+      IF DAYS >  89 | BORSTAT IN ('F','R','I')
+      OR USER5 = 'N' THEN
          IIS = NETBAL;
    IF BORSTAT = 'W' THEN DO;
       IISPW = IISP; OIW = OIP;
@@ -380,7 +382,7 @@ DATA LOAN1;
          OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);OIRECV = 0;
       END;
    END;
-   IF LOANTYPE IN (131,132) THEN IIS = ACCRUAL;
+   IF LOANTYPE IN (720,725) THEN IIS = ACCRUAL;
    OISUSP = OIRECV + OIRECC + OIW - OIP + OI;
    IF OISUSP LT 0 THEN OIRECV = OIRECV - OISUSP;
    IF OIRECV > OIP THEN DO;
@@ -478,7 +480,7 @@ DATA LOAN2;
          UHC = REMMTH2*(REMMTH2+1)*TERMCHG/(EARNTERM*(EARNTERM+1));
    END;
    OI = SUM(FEETOT2,(-1)*FEEAMTA,FEEAMT5);
-   IF LOANTYPE IN (131,132) THEN IIS = ACCRUAL;
+   IF LOANTYPE IN (720,725) THEN IIS = ACCRUAL;
    SUSPEND = IIS;
    OISUSP = OI;
    NETBAL = CURBAL - UHC;
@@ -608,38 +610,39 @@ DATA LOAN2;
                IF (A AND B) THEN DO;
                   *** CONTINUE PERFORMING ***;
                   IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
-                     IF USER5 = 'N' AND IIS < IISP THEN DO;
-                        SUSPEND = 0;
-                        RECOVER = IISP - IIS;
-                        RECC = 0;
-                     END;
-                     IF USER5 = 'N' AND IIS >= IISP THEN DO;
-                        SUSPEND = IIS - IISP;
-                        RECOVER = 0;
-                        RECC = 0;
-                     END;
-                     IF USER5 = 'N' AND IISP = 0 THEN DO;
-                        SUSPEND = IIS;
-                        RECC = IIS - SUSPEND;
-                     END;
-                     IF USER5 = 'N' AND OI < OIP THEN DO;
-                        OISUSP = 0;
-                        OIRECV = OIP - OI;
-                        OIRECC = 0;
-                     END;
-                     IF USER5 = 'N' AND OI >= OIP THEN DO;
-                        OISUSP = OI - OIP;
-                        OIRECV = 0;
-                        OIRECC = 0;
-                     END;
-                     IF USER5 = 'N' AND OIP = 0 THEN DO;
-                        OISUSP = OI;
-                        OIRECC = OI - OISUSP;
-                     END;
-                     OUTPUT;
+                     SUSPEND=IIS;
+                  IF USER5 = 'N' AND IIS < IISP THEN DO;
+                     SUSPEND = 0;
+                     RECOVER = IISP - IIS;
+                  RECC = 0;
+                  END;
+                  IF USER5 = 'N' AND IIS >= IISP THEN DO;
+                     SUSPEND = IIS - IISP;
+                     RECOVER = 0;
+                     RECC = 0;
+                  END;
+                  IF USER5 = 'N' AND IISP = 0 THEN DO;
+                     SUSPEND = IIS;
+                     RECC = IIS - SUSPEND;
+                  END;
+                  IF USER5 = 'N' AND OI < OIP THEN DO;
+                     OISUSP = 0;
+                     OIRECV = OIP - OI;
+                     OIRECC = 0;
+                  END;
+                  IF USER5 = 'N' AND OI >= OIP THEN DO;
+                     OISUSP = OI - OIP;
+                     OIRECV = 0;
+                     OIRECC = 0;
+                  END;
+                  IF USER5 = 'N' AND OIP = 0 THEN DO;
+                     OISUSP = OI;
+                     OIRECC = OI - OISUSP;
+                  END;
+                  OUTPUT;
                   END;
                   *** TURN PERFORMING ***;
-                  IF DAYS LT 90 AND PDAYS GE 90 THEN DO;
+                  IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
                      IF BORSTAT NOT IN ('F','I','R') THEN DO;
                         SUSPEND = PSUSPEND;
                         RECC    = PSUSPEND;
@@ -759,11 +762,7 @@ DATA LOAN2;
                      END;
                      OUTPUT;
                   END;
-               ***SPECIAL USER5=N***;
-               IF USER5= 'N' AND IIS=0 AND IISP=0 THEN DO;
-                   SUSPEND=IIS;
                END;
-              END;
             END;
          END;
       RUN;
@@ -813,7 +812,7 @@ DATA LOAN2;
          IF BORSTAT IN ('W') OR RESCHEIND='Y' THEN OUTPUT;
          IF (A AND B) AND BORSTAT NOT IN ('W') THEN DO;
             *** CONTINUE PERFORMING ***;
-            IF DAYS LT 90 AND PDAYS LT 90 THEN DO;
+            IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
                IF BORSTAT NOT IN ('F','I','R') THEN DO;
                   SUSPEND = PSUSPEND;
                   RECC    = PSUSPEND;
@@ -853,11 +852,11 @@ DATA LOAN2;
                   SUSPEND = SUM(SUSPEND,RECC);
                   OISUSP = SUM(OISUSP,OIRECC);
                END;
-               OUTPUT;
+              OUTPUT;
             END;
 
             *** TURN PERFORMING FR NPL ***;
-            IF DAYS LT 90 AND PDAYS GE 90 THEN DO;
+            IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
                IF BORSTAT NOT IN ('F','I','R') THEN DO;
                   SUSPEND = PSUSPEND;
                   RECC    = PSUSPEND;
@@ -951,10 +950,6 @@ DATA LOAN2;
                END;
                OUTPUT;
             END;
-            ***SPECIAL USER5=N***;
-            IF USER5= 'N' AND IIS=0 AND IISP=0 THEN DO;
-                SUSPEND=IIS;
-            END;
          END;
       RUN;
    %END;
@@ -972,7 +967,9 @@ DATA LOAN3 NPL.IIS&REPTMON NPL.IIS;
    ELSE IF DAYS > 182 THEN RISK = 'SUBSTANDARD 2';
    ELSE IF DAYS < 90 AND USER5='N' THEN RISK = 'SUBSTANDARD-1';
    ELSE RISK = 'SUBSTANDARD-1';
-   WHERE (3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048);
+   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
+          COSTCTR NOT IN (4043,4048) AND
+          COSTCTR NE .;
 RUN;
 PROC SORT DATA=LOAN3 NODUPKEY;BY ACCTNO NOTENO;RUN;
 PROC SORT DATA=NPL.IIS&REPTMON NODUPKEY;BY ACCTNO NOTENO;RUN;
@@ -1037,8 +1034,8 @@ OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
                 OI='OI CLOSING BAL (J+K-L-M-N=O)')
                SUM=' '*TOTIIS='TOTAL CLOSING BAL AS AT RPT DATE (I+O)'
                / BOX='BRANCH' RTS=9;
-     TITLE1 'PUBLIC ISLAMIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
-     TITLE2 &TTL &RDATE &&TBL&I;
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE2 &TTL &RDATE &&TBL&I;
    %END;
 %MEND TBLS;
 *;
@@ -1080,16 +1077,14 @@ OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
          SUMBY RISK;
          SUM NETPROC CURBAL UHC NETBAL IISP SUSPEND RECOVER
              RECC IISPW IIS OIP OISUSP OIRECV OIRECC OIW OI TOTIIS;
-    TITLE1 'PUBLIC ISLAMIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
-    TITLE2 &TTL &RDATE &&TBL&I;
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE2 &TTL &RDATE &&TBL&I;
    %END;
 %MEND DTLS;
 *;
 %TBLS;
     /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS */
 %DTLS;
-
-
 
 
 
@@ -1114,8 +1109,9 @@ OPTIONS YEARCUTOFF=1950;
 %INC PGM(PBBELF);
 *;
 PROC FORMAT;
-   VALUE LNTYP 128,130,983,131,132     = 'HPD AITAB'
-               700,705,993,996,380,381 = 'HPD CONVENTIONAL'
+   VALUE LNTYP 128,130,983             = 'HPD AITAB'
+               700,705,993,996,380,381,
+               720,725                 = 'HPD CONVENTIONAL'
                200-299                 = 'HOUSING LOANS'
                OTHER   = 'OTHERS';
 *;
@@ -1198,14 +1194,15 @@ DATA LOAN1;
    ELSE OTHERFEE = SUM(FEEAMT8,(-1)*FEETOT2,FEEAMTA,(-1)*FEEAMT5);
    IF OTHERFEE < 0 THEN OTHERFEE = 0;
    IF LOANTYPE IN (983,993) THEN OTHERFEE = 0;
-   IF APPVALUE > 0 & (LOANTYPE IN (705,128,700,130,380,381)
+   IF APPVALUE > 0 & (LOANTYPE IN (705,128,700,130,380,381,720,725)
       | CENSUS7 = '9') &
       (DAYS > 89 OR USER5 = 'N') &
       BORSTAT NOT IN ('F','R','I','Y','W')
       AND LOANTYPE NOT IN (983,993) THEN DO;
       AGE = INT(YEAR(REPTDATE) - YEAR(ISSDTE) +
             (MONTH(REPTDATE) - MONTH(ISSDTE)) / 12);
-      IF CENSUS7 ^='9'  THEN MARKETVL = APPVALUE - APPVALUE * AGE * 0.2;
+      IF CENSUS7 ^='9' THEN
+         MARKETVL = APPVALUE - APPVALUE * AGE * 0.2;
       IF HARDCODE = 'Y' THEN DO;
          MARKETVL = WREALVL;
       END;
@@ -1330,14 +1327,16 @@ DATA LOAN2;
    IF LOANTYPE IN (380,381) THEN OTHERFEE = SUM(FEEAMT,(-1)*FEETOT2);
    ELSE OTHERFEE = SUM(FEEAMT8,(-1)*FEETOT2,FEEAMTA,(-1)*FEEAMT5);
    IF OTHERFEE < 0 THEN OTHERFEE = 0;
-   IF APPVALUE > 0 & (LOANTYPE IN (705,130,700,128,380,381) |
+   IF LOANTYPE IN (983,993) THEN OTHERFEE = 0;
+   IF APPVALUE > 0 & (LOANTYPE IN (705,130,700,128,380,381,720,725) |
       CENSUS7 = '9') &
       (DAYS > 89 OR USER5 = 'N') &
       BORSTAT NOT IN ('F','R','I','Y','W')
       AND LOANTYPE NOT IN (983,993) THEN DO;
       AGE = INT(YEAR(REPTDATE) - YEAR(ISSDTE) +
             (MONTH(REPTDATE) - MONTH(ISSDTE)) / 12);
-      IF CENSUS7 ^= '9' THEN MARKETVL = APPVALUE - APPVALUE * AGE * 0.2;
+      IF CENSUS7 ^= '9' THEN
+         MARKETVL = APPVALUE - APPVALUE * AGE * 0.2;
       IF HARDCODE = 'Y' THEN DO;
          MARKETVL = WREALVL;
       END;
@@ -1470,7 +1469,7 @@ DATA LOAN2;
             ELSE DO;
                IF (A AND B) THEN DO;
                   *** CONTINUE PERFORMING ***;
-                  IF DAYS LT 90 AND PDAYS LT 90 THEN DO;
+                  IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
                      IF BORSTAT NOT IN ('F','I','R') THEN DO;
                         SPPL=PSPPL;
                         RECOVER=SUM(PSPP2,PSPPL);
@@ -1486,7 +1485,7 @@ DATA LOAN2;
                      OUTPUT;
                   END;
                   *** TURN PERFORMING ***;
-                  IF DAYS LT 90 AND PDAYS GE 90 THEN DO;
+                  IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
                      IF BORSTAT NOT IN ('F','I','R') THEN DO;
                         IIS=0;
                         IF USER5 NE 'N' THEN MARKETVL=0;
@@ -1582,7 +1581,7 @@ DATA LOAN2;
             END;
             ELSE DO;
                *** CONTINUE PERFORMING ***;
-               IF DAYS LT 90 AND PDAYS LT 90 THEN DO;
+               IF (DAYS LT 90 AND PDAYS LT 90) THEN DO;
                   IF BORSTAT NOT IN ('F','I','R') THEN DO;
                      SPPL=PSPPL;
                      RECOVER=PRECOVER;
@@ -1603,7 +1602,7 @@ DATA LOAN2;
                END;
 
                *** TURN PERFORMING ***;
-               IF DAYS LT 90 AND PDAYS GE 90 THEN DO;
+               IF (DAYS LT 90 AND PDAYS GE 90) THEN DO;
                   IF BORSTAT NOT IN ('F','I','R') THEN DO;
                      IIS=0;
                      MARKETVL=0;
@@ -1663,7 +1662,10 @@ DATA LOAN3 NPL.SP2&REPTMON NPL.SP2;
    ELSE IF DAYS > 182 THEN RISK = 'SUBSTANDARD 2';
    ELSE IF DAYS < 90 AND USER5 ='N' THEN RISK = 'SUBSTANDARD-1';
    ELSE RISK = 'SUBSTANDARD-1';
-   WHERE (3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048);
+   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
+          COSTCTR NOT IN (4043,4048) AND
+          COSTCTR NE .;
+
 RUN;
 PROC SORT DATA=LOAN3 NODUPKEY;BY ACCTNO NOTENO;RUN;
 *------------------------------------------------*
@@ -1714,7 +1716,7 @@ OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
                         SPPW='WRITTEN OFF AGAINST PROVISION (L)'
                         SP='CLOSING BAL AS AT RPT DATE (I+J-K-L)')
                / BOX='BRANCH' RTS=9;
-     TITLE1 'PUBLIC ISLAMIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
          TITLE2 &TTL &RDATE &&TBL&I;
          ** TITLE3 '(BASED ON DEPRECIATED PP FOR UNSCHEDULED GOODS)';
    %END;
@@ -1754,22 +1756,15 @@ OPTIONS NOCENTER NODATE NONUMBER MISSING=0;
          SUMBY RISK;
          SUM NETPROC CURBAL UHC NETBAL IIS OSPRIN MARKETVL
              NETEXP SPP2 SPPL RECOVER SPPW SP OTHERFEE;
-    TITLE1 'PUBLIC ISLAMIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
+         TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE) - NEW';
          TITLE2 &TTL &RDATE &&TBL&I;
          ** TITLE3 '(BASED ON DEPRECIATED PP FOR UNSCHEDULED GOODS)';
    %END;
 %MEND DTLS;
 *;
 %TBLS;
-  /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS  */
+  /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS */
 %DTLS;
-
-
-
-
-
-
-
 
 
 
@@ -1788,8 +1783,9 @@ OPTIONS YEARCUTOFF=1950;
 %INC PGM(PBBELF);
 *;
 PROC FORMAT;
-   VALUE LNTYP 128,130,983,131,132     = 'HPD AITAB'
-               700,705,993,996,380,381 = 'HPD CONVENTIONAL'
+   VALUE LNTYP 128,130,983             = 'HPD AITAB'
+               700,705,993,996,380,381,
+               720,725                 = 'HPD CONVENTIONAL'
                200-299                 = 'HOUSING LOANS'
                OTHER   = 'OTHERS';
 *;
@@ -1902,7 +1898,7 @@ DATA LOAN1;
    END;
    BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
    LOANTYP = PUT(LOANTYPE,LNTYP.);
-   IF WRITEOFF = 'Y' OR LOANTYPE IN (983,993) THEN DO;
+   IF WRITEOFF = 'Y' OR LOANTYPE IN (983,993)THEN DO;
       ACCRINT = WACCRINT;
       NEWNPL = WNEWNPL;
       ADJUST = 0;
@@ -1918,7 +1914,6 @@ DATA LOAN1;
                    (-1)*NPLW,(-1)*PL);
       END;
    END;
-RUN;
 *;
 *------------------------------------------------*
 *  CAL STATISTICS FOR CURRENT NPL ACCOUNTS       *
@@ -1966,7 +1961,7 @@ DATA LOAN2;
    NPL = NEWNPL;
    BRANCH = PUT(NTBRCH,BRCHCD.)||' '||PUT(NTBRCH,Z3.);
    LOANTYP = PUT(LOANTYPE,LNTYP.);
-   IF WRITEOFF = 'Y' OR LOANTYPE IN (983,993) THEN DO;
+   IF WRITEOFF = 'Y' OR LOANTYPE IN (983,993)THEN DO;
       ACCRINT = WACCRINT;
       NEWNPL = WNEWNPL;
       ADJUST = 0;
@@ -1982,7 +1977,6 @@ DATA LOAN2;
                    (-1)*NPLW,(-1)*PL);
       END;
    END;
-RUN;
 *;
 *------------------------------------------------*
 *  COMBINE EXISTING & CURRENT NPL ACCOUNTS       *
@@ -2001,7 +1995,9 @@ DATA LOAN NPL.AQ;
       IF VBL = . THEN VBL = 0;
    END;
    CHKNPL = NETBALP+NEWNPL+ACCRINT-RECOVER-PL-NPLW;
-   WHERE (3000<=COSTCTR<=3999) OR COSTCTR IN (4043,4048);
+   WHERE (COSTCTR < 3000 OR COSTCTR > 3999) AND
+          COSTCTR NOT IN (4043,4048) AND
+          COSTCTR NE .;
 *;
 *------------------------------------------------*
 *  PRODUCE REPORTS                               *
@@ -2038,10 +2034,10 @@ PROC TABULATE DATA=LOAN FORMAT=COMMA17.2 MISSING NOSEPS;
                   ADJUST='ADJUSTMENT'
                   NPL='NPL AS AT END OF RPT DATE (A+B+C-D-E-F)')
          / BOX='BRANCH' RTS=10;
-   TITLE1 'PUBLIC ISLAMIC BANK - (NPL FROM 3 MONTHS & ABOVE)';
+   TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE)';
    TITLE2 'STATISTICS ON ASSET QUALITY - MOVEMENTS IN NPL' &RDATE;
 *;
-   /* DISCONTINUE AS PER LETTER DATED 26/08/03 FR STATISTICS */
+
 PROC SORT DATA=LOAN;
    BY LOANTYP BRANCH RISK DAYS ACCTNO;
 *;
@@ -2066,7 +2062,6 @@ PROC PRINT LABEL N;
    PAGEBY BRANCH;
    SUMBY RISK;
    SUM CURBALP CURBAL NETBALP NEWNPL ACCRINT RECOVER PL NPLW NPL ADJUST;
-
 *;
 *------------------------------------------------*
 *  PRODUCE DISCREPANCY REPORT                    *
@@ -2091,10 +2086,9 @@ PROC PRINT LABEL N;
        PL NPLW NPL CHKNPL;
    BY LOANTYP BRANCH RISK;
    WHERE ROUND(CHKNPL,0.01) ^= ROUND(NPL,0.01);
-   TITLE1 'PUBLIC ISLAMIC BANK - (NPL FROM 3 MONTHS & ABOVE)';
+   TITLE1 'PUBLIC BANK - (NPL FROM 3 MONTHS & ABOVE)';
    TITLE2 'STATISTICS ON ASSET QUALITY - MOVEMENTS IN NPL' &RDATE;
    TITLE3 '(DISCREPANCY REPORT)';    */
-
 
 
 
