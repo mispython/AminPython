@@ -2,6 +2,12 @@
 //         MSGCLASS=A,MSGLEVEL=(1,1),CLASS=A,
 //         NOTIFY=&SYSUID
 /*JOBPARM S=S1M2
+//*==================================================================
+//* MODIFIED COPY: EXCLUDED INPUTS AND DEPENDENCIES COMMENTED OUT
+//* SEARCH FOR: CHANGE
+//* EXCLUDED DD: BTBNM / DISPAY / ISASD / MFRS
+//* REPORTS RETAIN BALANCE AND ACCOUNT COUNT ONLY
+//*==================================================================
 //* *****************************************************
 //* ESMR : 2009-0744
 //* ESMR : 2013-813 (JKA)
@@ -19,12 +25,28 @@
 //*
 //EIMBNM01 EXEC SAS609
 //BNM       DD DSN=SAP.PIBB.SASDATA,DISP=SHR
+//*==================================================================
+//* CHANGE: DD DISABLED - BTBNM
 //*BTBNM     DD DSN=SAP.IBT.SASDATA,DISP=SHR
+//* END CHANGE
+//*==================================================================
+//*==================================================================
+//* CHANGE: DD DISABLED - DISPAY
 //*DISPAY    DD DSN=SAP.PIBB.DISPAY,DISP=SHR
+//* END CHANGE
+//*==================================================================
 //LOAN      DD DSN=SAP.PIBB.MNILN(0),DISP=SHR
 //PGM       DD DSN=SAP.BNM.PROGRAM,DISP=SHR
+//*==================================================================
+//* CHANGE: DD DISABLED - ISASD
 //*ISASD     DD DSN=SAP.PIBB.STORE.SASDATA,DISP=SHR
+//* END CHANGE
+//*==================================================================
+//*==================================================================
+//* CHANGE: DD DISABLED - MFRS
 //*MFRS      DD DSN=SAP.PIBB.MFRS.DETAILS,DISP=OLD
+//* END CHANGE
+//*==================================================================
 //SASLIST   DD DSN=SAP.PIBB.EIIBNM01.TEXT,
 //             DISP=(NEW,CATLG,DELETE),
 //             DCB=(RECFM=FB,LRECL=133,BLKSIZE=0),
@@ -79,7 +101,9 @@ DATA REPTDATE (KEEP=REPTDATE);
   CALL SYMPUT('SDATE',PUT(SDATE,DDMMYY8.));
 RUN;
 
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 05: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 PROC SORT DATA=ISASD.LOAN&REPTMON OUT=DLOAN;BY ACCTNO NOTENO;RUN;
 PROC SORT DATA=BNM.LOAN&REPTMON&NOWK OUT=MLOAN;BY ACCTNO NOTENO;RUN;
 PROC SORT DATA=BNM.LNWOF&REPTMON&NOWK OUT=LNWOF;BY ACCTNO NOTENO;RUN;
@@ -112,6 +136,8 @@ DATA DISPAY;
    IF A & B;
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 05 */
+/*==================================================================*/
  **********************************************************
  ** ALL LOAN - DISBURSEMENT, REPAYMENT, O/S              **
  **********************************************************;
@@ -181,7 +207,9 @@ DATA ALM;
    SET ALM ALMBT;
 RUN;
 
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 06: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 PROC SORT DATA=DISPAY
      (KEEP=ACCTNO NOTENO FISSPURP PRODUCT DNBFISME
       PRODCD CUSTCD AMTIND SECTORCD DISBURSE REPAID BRANCH ACCTYPE);
@@ -190,12 +218,16 @@ PROC SORT DATA=DISPAY
    PRODUCT IN (698,699,983);
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 06 */
+/*==================================================================*/
 
 PROC SORT DATA=ALM;
    BY ACCTNO NOTENO;
 RUN;
 
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 07: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 DATA ALM;
    MERGE ALM(IN=B) DISPAY(IN=A);
    BY ACCTNO NOTENO;
@@ -204,6 +236,8 @@ DATA ALM;
    FORMAT DISBURSE REPAID BALANCE 16.2;
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 07 */
+/*==================================================================*/
 
 DATA ALM;
    SET ALM;
@@ -239,9 +273,13 @@ RUN;
 
 PROC SUMMARY DATA=ALM NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 08: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 08 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=ALMLOAN (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
@@ -251,7 +289,9 @@ RUN;
  **********************************************************
 
       *** CURRENT MTH ***;
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 09: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 PROC SORT DATA=BTBNM.IBTRAD&REPTMON&NOWK OUT=BTRAD;
    BY ACCTNO DESCENDING APPRLIMT;
    WHERE DIRCTIND = 'D' AND CUSTCD NE ' ';
@@ -356,6 +396,8 @@ DATA ALMBTRD;
    BY PRODESC;
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 09 */
+/*==================================================================*/
    /*
 DATA ALMLOAN;
    SET ALMBTRD ALMLOAN;
@@ -370,9 +412,13 @@ DATA ALMLOAN ALMHFSC;
 RUN;
 PROC PRINT DATA=ALMLOAN;
    WHERE PRODESC NE 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 10: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 10 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "ALL LOANS AS AT &REPTMON/&REPTYEAR";
@@ -380,9 +426,13 @@ PROC PRINT DATA=ALMLOAN;
 RUN;
 PROC PRINT DATA=ALMHFSC;
    WHERE PRODESC = 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 11: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 11 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "ALL LOANS AS AT &REPTMON/&REPTYEAR";
@@ -409,7 +459,9 @@ DATA ALM2;
    END;
 RUN;
 
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 12: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 DATA ALMBTCR;
    SET ALMBTRD;
    WHERE PRODESC = 'BILLS RETAIL';
@@ -418,19 +470,33 @@ DATA ALMBTCR;
    TYPE = 'BANK TRADE';
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 12 */
+/*==================================================================*/
 
-/* Original statement disabled:
+/*==================================================================*/
+/* CHANGE 13: DEPENDENT STATEMENT DISABLED / ADJUSTED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 DATA ALMLOAN2 ALM2CRF MFRS.ALM_CR(KEEP=ACCTNO NOTENO PRODESC NOACCT);
 */
+/* END COMMENTED ORIGINAL - CHANGE 13 */
+/*==================================================================*/
 DATA ALMLOAN2 ALM2CRF;
-/* Original statement disabled:
+/*==================================================================*/
+/* CHANGE 14: DEPENDENT STATEMENT DISABLED / ADJUSTED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SET ALM2 ALMBTCR;
 */
+/* END COMMENTED ORIGINAL - CHANGE 14 */
+/*==================================================================*/
    SET ALM2 /* ALMBTCR */;
    OUTPUT ALMLOAN2;
-/* Original statement disabled:
+/*==================================================================*/
+/* CHANGE 15: DEPENDENT STATEMENT DISABLED / ADJUSTED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    OUTPUT MFRS.ALM_CR;
 */
+/* END COMMENTED ORIGINAL - CHANGE 15 */
+/*==================================================================*/
    IF PRODESC = 'TOTAL COMMERCIAL RETAILS' THEN DO;
       IF CUSTCD IN (77,78,95,96) THEN
          PRODESC = 'COMMERCIAL RETAIL - IND';
@@ -442,17 +508,25 @@ RUN;
 
 PROC SUMMARY DATA=ALMLOAN2 NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 16: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 16 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=ALMLOAN2 (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=ALMLOAN2;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 17: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 17 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "RETAILS LOANS AS AT &REPTMON/&REPTYEAR";
@@ -461,17 +535,25 @@ RUN;
 
 PROC SUMMARY DATA=ALM2CRF NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 18: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 18 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=ALM2CRF (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=ALM2CRF;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 19: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 19 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "COMMERCIAL RETAIL LOANS AS AT &REPTMON/&REPTYEAR";
@@ -494,14 +576,20 @@ RUN;
 
 PROC SUMMARY DATA=ALMSME NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 20: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 20 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=ALMLOAN (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 21: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 DATA ALMSMEBT;
    SET ALMBT;
    IF CUSTCD IN ('41','42','43','44','46','47','48','49','51'
@@ -543,6 +631,8 @@ PROC SUMMARY DATA=ALMSMEBT NWAY MISSING;
    OUTPUT OUT=ALMBTRD2 (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 21 */
+/*==================================================================*/
      /*
 DATA ALMLOAN;
    SET ALMBTRD2 ALMLOAN;
@@ -550,9 +640,13 @@ RUN;
      */
 PROC PRINT DATA=ALMLOAN;
    WHERE PRODESC NE 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 22: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 22 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "SME LOANS AS AT &REPTMON/&REPTYEAR";
@@ -560,9 +654,13 @@ PROC PRINT DATA=ALMLOAN;
 RUN;
 PROC PRINT DATA=ALMLOAN;
    WHERE PRODESC = 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 23: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 23 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "SME LOANS AS AT &REPTMON/&REPTYEAR";
@@ -585,7 +683,9 @@ DATA ALMSME2 DBE2 DNBFI2 FBE2;
 
 RUN;
 
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 24: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 DATA ALMBTCR2 DBEBT2;
    SET ALMSMEBT;
    WHERE PRODESC = 'BILLS RETAIL';
@@ -596,27 +696,41 @@ DATA ALMBTCR2 DBEBT2;
                  '52','53','54') THEN OUTPUT DBEBT2;
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 24 */
+/*==================================================================*/
 
 DATA ALMLOAN2;
-/* Original statement disabled:
+/*==================================================================*/
+/* CHANGE 25: DEPENDENT STATEMENT DISABLED / ADJUSTED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SET ALMSME2 ALMBTCR2;
 */
+/* END COMMENTED ORIGINAL - CHANGE 25 */
+/*==================================================================*/
    SET ALMSME2 /* ALMBTCR2 */;
 RUN;
 
 PROC SUMMARY DATA=ALMLOAN2 NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 26: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 26 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=ALMLOAN2 (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=ALMLOAN2;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 27: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 27 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "RETAILS SME LOANS AS AT &REPTMON/&REPTYEAR";
@@ -625,18 +739,26 @@ RUN;
 
 PROC SUMMARY DATA=DBE NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 28: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 28 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=DBE (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=DBE;
    WHERE PRODESC NE 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 29: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 29 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : SME DBE AS AT &REPTMON/&REPTYEAR";
@@ -644,9 +766,13 @@ PROC PRINT DATA=DBE;
 RUN;
 PROC PRINT DATA=DBE;
    WHERE PRODESC = 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 30: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 30 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : SME DBE AS AT &REPTMON/&REPTYEAR";
@@ -654,25 +780,37 @@ PROC PRINT DATA=DBE;
 RUN;
 
 DATA ALMLOAN3;
-/* Original statement disabled:
+/*==================================================================*/
+/* CHANGE 31: DEPENDENT STATEMENT DISABLED / ADJUSTED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SET DBE2 DBEBT2;
 */
+/* END COMMENTED ORIGINAL - CHANGE 31 */
+/*==================================================================*/
    SET DBE2 /* DBEBT2 */;
 RUN;
 
 PROC SUMMARY DATA=ALMLOAN3 NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 32: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 32 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=ALMLOAN3 (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=ALMLOAN3;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 33: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 33 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : RETAILS SME DBE AS AT &REPTMON/&REPTYEAR";
@@ -681,18 +819,26 @@ RUN;
 
 PROC SUMMARY DATA=DNBFI NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 34: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 34 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=DNBFI (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=DNBFI;
    WHERE PRODESC NE 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 35: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 35 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : SME DNBFI AS AT &REPTMON/&REPTYEAR";
@@ -700,9 +846,13 @@ PROC PRINT DATA=DNBFI;
 RUN;
 PROC PRINT DATA=DNBFI;
    WHERE PRODESC = 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 36: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 36 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : SME DNBFI AS AT &REPTMON/&REPTYEAR";
@@ -711,17 +861,25 @@ RUN;
 
 PROC SUMMARY DATA=DNBFI2 NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 37: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 37 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=DNBFI2 (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=DNBFI2;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 38: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 38 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : RETAILS SME DNBFI AS AT &REPTMON/&REPTYEAR";
@@ -730,18 +888,26 @@ RUN;
 
 PROC SUMMARY DATA=FBE NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 39: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 39 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=FBE (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=FBE;
    WHERE PRODESC NE 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 40: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 40 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : SME FE AS AT &REPTMON/&REPTYEAR";
@@ -749,9 +915,13 @@ PROC PRINT DATA=FBE;
 RUN;
 PROC PRINT DATA=FBE;
    WHERE PRODESC = 'HOUSE FINANCING SOLD TO CAGAMAS';
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 41: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 41 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : SME FE AS AT &REPTMON/&REPTYEAR";
@@ -760,24 +930,34 @@ RUN;
 
 PROC SUMMARY DATA=FBE2 NWAY MISSING;
    CLASS PRODESC;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 42: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    VAR DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 42 */
+/*==================================================================*/
    VAR BALANCE NOACCT;
    OUTPUT OUT=FBE2 (DROP=_TYPE_  _FREQ_) SUM=;
 RUN;
 
 PROC PRINT DATA=FBE2;
-/* Original measures disabled:
+/*==================================================================*/
+/* CHANGE 43: REPORT MEASURES CHANGED TO BALANCE / ACCOUNT COUNT */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
 */
+/* END COMMENTED ORIGINAL - CHANGE 43 */
+/*==================================================================*/
    SUM BALANCE NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
    TITLE2 "OF WHICH : RETAILS SME FE AS AT &REPTMON/&REPTYEAR";
    TITLE3 'REPORT ID : EIIBNM01';
 RUN;
 
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 44: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 PROC PRINT DATA=ALMBTRD;
    SUM DISBURSE REPAID BALANCE DISBNO REPAYNO NOACCT;
    TITLE1 'PUBLIC ISLAMIC BANK BERHAD';
@@ -831,14 +1011,20 @@ PROC PRINT DATA=FBEBT;
    TITLE3 'REPORT ID : EIIBNM01';
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 44 */
+/*==================================================================*/
 
  /*******************************************************/
  /*  RETAIL BILLS BY SECTORS AND SUB-SECTORS BREAKDOWN  */
  /*******************************************************/
 DATA ALMPROD;
-/* Original statement disabled:
+/*==================================================================*/
+/* CHANGE 45: DEPENDENT STATEMENT DISABLED / ADJUSTED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SET ALM2 ALMBTCR;
 */
+/* END COMMENTED ORIGINAL - CHANGE 45 */
+/*==================================================================*/
    SET ALM2 /* ALMBTCR */;
 RUN;
 
@@ -854,7 +1040,9 @@ PROC TABULATE DATA=ALMPROD;
    TITLE2 'TOTAL COMMERCIAL RETAIL FINANCING BY FACILITY AS AT ' &RDATE;
 RUN;
 
-/* Disabled: processing dependent on excluded DD inputs.
+/*==================================================================*/
+/* CHANGE 46: DEPENDENT PROCESSING DISABLED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
 PROC SUMMARY DATA=MAST NWAY;
    CLASS SECTGROUP SECTTYPE;
    VAR NOACCT;
@@ -876,11 +1064,17 @@ DATA ALMBTSEC;
    PRODESC = 'TOTAL COMMERCIAL RETAILS';
 RUN;
 */
+/* END COMMENTED ORIGINAL - CHANGE 46 */
+/*==================================================================*/
 
 DATA ALMSEC;
-/* Original statement disabled:
+/*==================================================================*/
+/* CHANGE 47: DEPENDENT STATEMENT DISABLED / ADJUSTED */
+/* ORIGINAL CODE COMMENTED OUT BELOW:
    SET ALM2 ALMBTSEC;
 */
+/* END COMMENTED ORIGINAL - CHANGE 47 */
+/*==================================================================*/
    SET ALM2 /* ALMBTSEC */;
 RUN;
 
