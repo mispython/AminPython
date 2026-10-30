@@ -1,3 +1,37 @@
+PROC SORT DATA=HAVE;
+    BY ACCTNO SECUST;
+RUN;
+
+DATA WANT;
+    SET HAVE;
+    BY ACCTNO;
+
+    RETAIN SELECTED;
+
+    IF FIRST.ACCTNO THEN SELECTED = 0;
+
+    IF SELECTED = 0 THEN DO;
+
+        IF SECUST = '901' AND
+           7 <= AGE <= 17 THEN DO;
+            OUTPUT;
+            SELECTED = 1;
+        END;
+
+        ELSE IF SECUST = '902' AND
+                7 <= AGE <= 17 THEN DO;
+            OUTPUT;
+            SELECTED = 1;
+        END;
+
+    END;
+
+    DROP SELECTED;
+RUN;
+
+
+
+
 proc sort data=HAVE;
     by ACCTNO;
 run;
