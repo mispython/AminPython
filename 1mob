@@ -1,0 +1,48 @@
+
+proc sort data=HAVE;
+    by ACCTNO;
+run;
+
+data WANT;
+    set HAVE;
+    by ACCTNO;
+
+    retain PRIMARY_AGE PRIMARY_FOUND
+           SECONDARY_AGE SECONDARY_FOUND;
+
+    if first.ACCTNO then do;
+        PRIMARY_AGE = .;
+        SECONDARY_AGE = .;
+        PRIMARY_FOUND = 0;
+        SECONDARY_FOUND = 0;
+    end;
+
+    if SECUST = '901' then do;
+        PRIMARY_AGE = AGE;
+        PRIMARY_FOUND = 1;
+    end;
+    else if SECUST = '902' then do;
+        SECONDARY_AGE = AGE;
+        SECONDARY_FOUND = 1;
+    end;
+
+    if last.ACCTNO then do;
+
+        if PRIMARY_FOUND = 1
+           and 7 <= PRIMARY_AGE <= 17 then do;
+            SECUST = '901';
+            AGE = PRIMARY_AGE;
+            output;
+        end;
+
+        else if SECONDARY_FOUND = 1
+                and 7 <= SECONDARY_AGE <= 17 then do;
+            SECUST = '902';
+            AGE = SECONDARY_AGE;
+            output;
+        end;
+
+    end;
+
+    keep ACCTNO SECUST AGE;
+run;
