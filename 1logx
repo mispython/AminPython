@@ -1,3 +1,9 @@
-The ESMR 2016-1042 job was stopped due to a repetitive hierarchy lookup loop. We found that FTP_MANUAL_PL is maintained as its own parent but does not match the configured Highest_Hierarchy, preventing the loop from completing.
+Subject: FTP_MANUAL_PL Configuration Check
 
-Could you please verify whether the hierarchy maintenance for FTP_MANUAL_PL is correct? Please confirm whether it should be a top-level hierarchy or maintained under another parent, and arrange the necessary update.
+Hi [Name],
+
+The ESMR 2016-1042 job was stopped due to a repetitive loop involving FTP_MANUAL_PL, which does not match the configured Highest_Hierarchy.
+
+Please check and confirm whether HARDCODE.txt needs to be updated for FTP_MANUAL_PL.
+
+Thank you.
