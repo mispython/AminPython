@@ -1,8 +1,3 @@
-GL_ACCOUNT_ID	PARENT_GL_ACCOUNT_ID	CHECK_REASON
-BGT_PBT_CORP	BGT_PBT_CORP	POINTS TO ITSELF
-BGT_PBT_HP	BGT_PBT_HP	POINTS TO ITSELF
-BGT_PBT_RETHP	BGT_PBT_RETHP	POINTS TO ITSELF
-CA_CHARGES_AD	CA_CHARGES_AD	POINTS TO ITSELF
-CA_GROWTH_R	CA_GROWTH_R	POINTS TO ITSELF
-CA_WRIT_OFF_R	CA_WRIT_OFF_R	POINTS TO ITSELF
-FTP_MANUAL_PL	FTP_MANUAL_PL	POINTS TO ITSELF
+The ESMR 2016-1042 job was stopped due to a repetitive hierarchy lookup loop. We found that FTP_MANUAL_PL is maintained as its own parent but does not match the configured Highest_Hierarchy, preventing the loop from completing.
+
+Could you please verify whether the hierarchy maintenance for FTP_MANUAL_PL is correct? Please confirm whether it should be a top-level hierarchy or maintained under another parent, and arrange the necessary update.
