@@ -1,40 +1,8 @@
-/* Read the original input once. */
-data TEST.ASSOC_COPY;
-    set IN.GL_ACCOUNT_ASSOC
-        (keep=GL_ACCOUNT_ID PARENT_GL_ACCOUNT_ID);
-run;
-
-/* Build a unique list of existing IDs. */
-proc sort data=TEST.ASSOC_COPY
-          out=TEST.ACCOUNT_IDS(keep=GL_ACCOUNT_ID)
-          nodupkey;
-    by GL_ACCOUNT_ID;
-run;
-
-/* Check parent relationships against the copied IDs. */
-proc sql;
-    create table TEST.INPUT_CHECK as
-    select a.*,
-           case
-               when missing(a.PARENT_GL_ACCOUNT_ID)
-                   then 'BLANK PARENT'
-               when a.GL_ACCOUNT_ID = a.PARENT_GL_ACCOUNT_ID
-                   then 'POINTS TO ITSELF'
-               else 'PARENT NOT FOUND'
-           end as CHECK_REASON length=30
-    from TEST.ASSOC_COPY a
-    left join TEST.ACCOUNT_IDS b
-        on a.PARENT_GL_ACCOUNT_ID = b.GL_ACCOUNT_ID
-    where a.GL_ACCOUNT_ID ne "&Highest_Hierarchy."
-      and (
-          missing(a.PARENT_GL_ACCOUNT_ID)
-          or a.GL_ACCOUNT_ID = a.PARENT_GL_ACCOUNT_ID
-          or (
-              a.PARENT_GL_ACCOUNT_ID ne "&Highest_Hierarchy."
-              and missing(b.GL_ACCOUNT_ID)
-          )
-      );
-quit;
-
-proc print data=TEST.INPUT_CHECK(obs=100) noobs;
-run;
+GL_ACCOUNT_ID	PARENT_GL_ACCOUNT_ID	CHECK_REASON
+BGT_PBT_CORP	BGT_PBT_CORP	POINTS TO ITSELF
+BGT_PBT_HP	BGT_PBT_HP	POINTS TO ITSELF
+BGT_PBT_RETHP	BGT_PBT_RETHP	POINTS TO ITSELF
+CA_CHARGES_AD	CA_CHARGES_AD	POINTS TO ITSELF
+CA_GROWTH_R	CA_GROWTH_R	POINTS TO ITSELF
+CA_WRIT_OFF_R	CA_WRIT_OFF_R	POINTS TO ITSELF
+FTP_MANUAL_PL	FTP_MANUAL_PL	POINTS TO ITSELF
