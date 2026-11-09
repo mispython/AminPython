@@ -1,0 +1,428 @@
+"""Python port of the EIBMCCAP CAP calculations and reports."""
+
+import argparse
+import csv
+import re
+import subprocess
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from itertools import groupby
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import pandas as pd
+
+from EIIMNP2A import EPOCH, by_key, match_merge, missing, number, read_member
+
+KEYS = ["ACCTNO", "NOTENO"]
+HP_PRODUCTS = {700, 705, 720, 725, 380, 381}
+STAFF_PRODUCTS = {15, 20, 71, 72}
+CATEGORIES = (
+    "CURRENT", "1-2 MTHS", "3-5 MTHS", "6-11 MTHS", ">=12 MTHS",
+    "IRREGULAR", "REPOSSESSED <12 MTHS", "REPOSSESSED >=12 MTHS", "DEFICIT",
+)
+FULL_CAP = {CATEGORIES[i] for i in (4, 5, 7, 8)}
+# SAS RATE values in order: paying, repossessed, not repossessed,
+# and the three components of not repossessed.
+RATES = (
+    (99.63, 0.23, 0.14, 0.06, 0.07, 0.01),
+    (93.09, 4.06, 2.85, 0.91, 1.12, 0.82),
+    (0, 60.22, 39.78, 5.43, 5.92, 28.43),
+    (0, 33.59, 66.41, 1.38, 2.44, 62.59),
+)
+SCENARIOS = (
+    "CONTINUE PAYING", "SUCCESSFUL REPOSSESSION", "NOT REPOSSESSED YET",
+    "- 3-5 MONTHS IN ARREARS", "- >6-11 MONTHS IN ARREARS", "- OTHERS",
+)
+MOVEMENT = ("BALANCE", "OPEN_BALANCE", "SUSPEND", "WRBACK", "WRIOFF_BAL", "CAP", "NET")
+
+
+def amount(value):
+    return 0 if missing(value) else value
+
+
+def text(value):
+    return "" if missing(value) else str(value).rstrip()
+
+
+def days(row):
+    value = row["DAYARR"]
+    return float("-inf") if missing(value) else value
+
+
+def category(row):
+    if text(row["PAIDIND"]) != "M":
+        return ""
+    status = text(row["BORSTAT"])
+    arrears = days(row)
+    if status == "I":
+        return "IRREGULAR"
+    if status == "R":
+        return CATEGORIES[6 if arrears < 365 else 7]
+    if status == "F":
+        return "DEFICIT"
+    if status in {"E", "W", "Z"}:
+        return ""
+    if arrears >= 365:
+        return CATEGORIES[4]
+    if arrears >= 183:
+        return CATEGORIES[3]
+    if arrears >= 90 or text(row["USER5"]) == "N":
+        return CATEGORIES[2]
+    return CATEGORIES[1 if arrears > 30 else 0]
+
+
+def week(day):
+    return 1 if day <= 8 else 2 if day <= 15 else 3 if day <= 22 else 4
+
+
+def branch_rules(path):
+    source = re.sub(r"/\*[\s\S]*?\*/", "", path.read_text(encoding="utf-8-sig"))
+    match = re.search(r"^\s*VALUE\s+BRCHCD\b([\s\S]*?);", source, re.M | re.I)
+    if not match:
+        raise ValueError(f"{path}: missing VALUE BRCHCD")
+    pattern = re.compile(r"([\d.,\s-]+|OTHER)\s*=\s*'((?:''|[^'])*)'", re.I)
+    rules = [(re.sub(r"\s+", "", key).upper(), label.replace("''", "'"))
+             for key, label in pattern.findall(match[1])]
+    if not rules or pattern.sub("", match[1]).strip():
+        raise ValueError(f"{path}: unsupported BRCHCD definition")
+    return rules
+
+
+def branch_label(branch, rules):
+    default = "" if missing(branch) else number(branch, 12).strip()
+    for codes, label in rules:
+        if codes == "OTHER":
+            default = label
+            continue
+        for code in codes.split(","):
+            if code == ".":
+                if missing(branch):
+                    return label
+            elif not missing(branch):
+                low, _, high = code.partition("-")
+                if int(low) <= branch <= int(high or low):
+                    return label
+    return default
+
+
+def classified(rows, credit, rules, staff):
+    products = STAFF_PRODUCTS if staff else HP_PRODUCTS
+    eligible = [row for row in rows if row["PRODUCT"] in products and amount(row["BALANCE"]) > 0
+                and (not staff or days(row) >= 90 or text(row["BORSTAT"]) in {"F", "I", "R"}
+                     or text(row["USER5"]) == "N")]
+    facilities = {"34331", "34332", "34371"} if staff else {"34331", "34332"}
+    arrears = {}
+    for row in credit:
+        if text(row["FACILITY"]) not in facilities:
+            continue
+        item = dict(ACCTNO=row["ACCTNUM"], NOTENO=row["NOTENO"], DAYARR=row["DAYSARR"])
+        key = by_key(item, KEYS)
+        if key not in arrears or days(item) > days(arrears[key]):
+            arrears[key] = item
+    result = []
+    for row in match_merge(eligible, arrears.values(), KEYS, require_left=True):
+        name = category(row)
+        if name:
+            branch = {8044: 902, 8048: 903}.get(row["COSTCTR"], row["BRANCH"])
+            result.append(dict(
+                ACCTNO=row["ACCTNO"], NOTENO=row["NOTENO"], BRANCH=branch,
+                BRANCHABBR=branch_label(branch, rules), PRODUCT=row["PRODUCT"],
+                CATEGORY=name, IND="PBB", BALANCE=row["BALANCE"],
+                AANO=text(row["VINNO"]).lstrip()[:13], PAIDIND=row["PAIDIND"],
+                MARKETVL=row["MARKETVL"],
+            ))
+    return result
+
+
+def ratio(numerator, denominator):
+    return numerator / denominator * 100 if denominator else None
+
+
+def rounded(value):
+    return float(number(value, 20, 2).strip()) if value is not None else None
+
+
+def company(rows, recovery):
+    details = []
+    parameters = {}
+    balances = defaultdict(list)
+    for row in rows:
+        balances[row["CATEGORY"]].append(row["BALANCE"])
+    for index, name in enumerate(CATEGORIES):
+        if name not in balances:
+            continue
+        amounts = balances[name]
+        balance = sum(amounts)
+        if index < 4:
+            scenarios = []
+            recoveries = (100, recovery, 0, 25, 25, 25)
+            for label, rate, rec in zip(SCENARIOS, RATES[index], recoveries):
+                default = sum(value * (rate / 100) for value in amounts)
+                expected = sum(value * (rate / 100) * (rec / 100) for value in amounts)
+                provision = default - expected if label in (SCENARIOS[1], *SCENARIOS[3:]) else 0
+                scenarios.append(dict(CATEGORY=name, SCENARIO=label, BALANCE=balance,
+                                      RATE=rate, RECRATE=rec, OBDEFAULT=default,
+                                      EXPECTEDREC=expected, CAPROVISION=provision))
+            scenarios[2]["EXPECTEDREC"] = sum(row["EXPECTEDREC"] for row in scenarios[3:])
+            selected = scenarios[1:3]
+            pd_value = sum(rounded(ratio(row["OBDEFAULT"], balance)) for row in selected)
+            expected = sum(row["EXPECTEDREC"] for row in selected)
+            default = sum(row["OBDEFAULT"] for row in selected)
+            lgd = rounded(100 - ratio(expected, default)) if default else 100
+            provision = sum(row["CAPROVISION"] for row in scenarios)
+            parameters[name] = dict(CATEGORY=name, CAPROVISION=provision, PD=pd_value, LGD=lgd)
+            details.extend(scenarios)
+        else:
+            rec = recovery if index == 6 else 0
+            expected = sum(value * (rec / 100) for value in amounts)
+            provision = 0 if index in (4, 7) else balance - expected
+            lgd = rounded(100 - ratio(expected, balance))
+            scenario = "NOT REPOSSESSED YET" if index == 4 else "N/A"
+            details.append(dict(CATEGORY=name, SCENARIO=scenario, BALANCE=balance,
+                                RATE=100, RECRATE=rec, OBDEFAULT=balance,
+                                EXPECTEDREC=expected, CAPROVISION=provision))
+            # CAP1's WHERE-equivalent excludes the >=12 month non-repossessed row.
+            if index != 4:
+                parameters[name] = dict(CATEGORY=name, CAPROVISION=provision, PD=100, LGD=lgd)
+    return details, parameters
+
+
+def legacy_category(value):
+    return {">=6 MTHS": "6-11 MTHS",
+            "REPOSSESSED >=12 MTH": "REPOSSESSED >=12 MTHS"}.get(text(value), text(value))
+
+
+def movement(rows, parameters, opening, written_off, staff):
+    balances = defaultdict(float)
+    for row in rows:
+        balances[row["CATEGORY"]] += row["BALANCE"]
+    current = []
+    for row in rows:
+        name = row["CATEGORY"]
+        params = parameters.get(name, {})
+        rate = 100 if name in FULL_CAP else ratio(params.get("CAPROVISION", 0), balances[name])
+        current.append(dict(row, CARATE=rate, CAP=row["BALANCE"] * rate / 100,
+                            PD=params.get("PD"), LGD=params.get("LGD"), HAS_CURRENT=True))
+    prior = [
+        dict(ACCTNO=row["ACCTNO"], NOTENO=row["NOTENO"], BRANCH=row["BRANCH"],
+             BRANCHABBR=row["BRANCHABBR"], PRODUCT=row["PRODUCT"],
+             CATEGORY1=legacy_category(row["CATEGORY"]), OPEN_BALANCE=row["CAP"], HAS_PRIOR=True)
+        for row in opening if text(row["CATEGORY"])
+    ]
+    merged = list(match_merge(prior, current, KEYS))
+    for row in merged:
+        has_current = row.pop("HAS_CURRENT", False)
+        has_prior = row.pop("HAS_PRIOR", False)
+        status = "" if has_current and has_prior else "C" if has_current else "P"
+        if status == "P":
+            row["CATEGORY"] = row["CATEGORY1"]
+        closing = amount(row.get("CAP"))
+        if row.get("PRODUCT") in ({983, 993} if staff else {983, 993, 678, 679, 698, 699}):
+            closing = 0
+        opening_balance = amount(row.get("OPEN_BALANCE"))
+        charge = closing - opening_balance
+        row.update(
+            STATUS=status, CAP=closing, OPEN_BALANCE=opening_balance, CHARCAP=charge,
+            SUSPEND=closing if status == "C" else max(charge, 0) if not status else 0,
+            WRBACK=max(-charge, 0) if status != "C" else 0,
+            WRIOFF_BAL=0, WRITEOFF="N",
+            BRANCH1=text(row.get("BRANCHABBR")).ljust(3) + " " + number(row.get("BRANCH"), 3, zero=True),
+        )
+    woff = [dict(row, CATEGORY=legacy_category(row.get("CATEGORY")), WRITEOFF="Y") for row in written_off]
+    merged = match_merge(merged, woff, ["ACCTNO"] if staff else KEYS, require_left=True)
+    for row in merged:
+        if row["STATUS"] == "P" and row["WRITEOFF"] == "Y":
+            delta = amount(row.get("WRIOFF_BAL")) - row["OPEN_BALANCE"]
+            row.update(SUSPEND=max(delta, 0), WRBACK=max(-delta, 0))
+        row["NET"] = row["SUSPEND"] - row["WRBACK"]
+        yield row
+
+
+def read_writeoffs(path, encoding, prior_hp, sas_date):
+    with path.open("r", encoding=encoding) as stream:
+        rows = []
+        for line in stream:
+            if len(line.rstrip("\r\n")) < 239:
+                raise ValueError(f"{path}: short WMIS record")
+            cost = int(line[235:239].strip() or 0)
+            if 3000 <= cost <= 3999 or cost in {4043, 4048}:
+                continue
+            raw = line[219:235].strip()
+            balance = float(raw) if "." in raw else int(raw or 0) / 100
+            rows.append(dict(ACCTNO=int(line[141:151]), NOTENO=int(line[151:156]),
+                             WRIOFF_BAL=balance, REPTDATE=sas_date))
+    categories = [dict(ACCTNO=row["ACCTNO"], NOTENO=row["NOTENO"], CATEGORY=category(row))
+                  for row in prior_hp]
+    return list(match_merge(rows, categories, KEYS, require_left=True))
+
+
+def write_table(path, rows, columns):
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def write_datasets(folder, datasets, sas_command):
+    """Build SAS datasets in a temporary library, then publish the files."""
+    char_widths = dict(CATEGORY=25, CATEGORY1=25, BRANCHABBR=3, IND=4,
+                       AANO=13, PAIDIND=1, STATUS=1, WRITEOFF=1, BRANCH1=7)
+    with TemporaryDirectory(prefix="cap_export_", dir=folder) as temp:
+        stage = Path(temp)
+        literal = lambda path: "'" + path.as_posix().replace("'", "''") + "'"
+        source = [f"libname capout {literal(stage)};"]
+        for member, frame in datasets:
+            lengths = []
+            inputs = []
+            for column in frame.columns:
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,31}", column):
+                    raise ValueError(f"{member}: invalid SAS variable name {column}")
+                strings = [v for v in frame[column] if isinstance(v, str)]
+                if any("\n" in v or "\r" in v for v in strings):
+                    raise ValueError(f"{member}.{column}: embedded line break")
+                width = max([char_widths.get(column, 0), *(len(v.encode("utf-8")) for v in strings)])
+                lengths.append(f"{column} " + ("$" + str(width) if width else "8"))
+                inputs.append(f"{column} :" + (f"$char{width}." if width else "best32."))
+            source.extend([f"data capout.{member};", "length " + " ".join(lengths) + ";"])
+            if frame.empty:
+                source.append("stop;")
+            else:
+                bridge = stage / f"{member}.csv"
+                frame.to_csv(bridge, index=False, header=False)
+                source.extend([
+                    f"infile {literal(bridge)} dsd dlm=',' truncover lrecl=1048576;",
+                    "input " + " ".join(inputs) + ";",
+                ])
+            source.append("run;")
+        driver = stage / "export.sas"
+        driver.write_text("\n".join(source) + "\n", encoding="utf-8")
+        log = folder / "EIBMCCAP_export.log"
+        subprocess.run(
+            [sas_command, "-encoding", "utf-8", "-sysin", str(driver),
+             "-log", str(log), "-print", str(stage / "export.lst")],
+            check=True,
+        )
+        for member, frame in datasets:
+            rows = read_member(stage, member)
+            if len(rows) != len(frame):
+                raise ValueError(f"{member}: SAS export row count differs from Python output")
+        for member, _ in datasets:
+            filename = f"{member.lower()}.sas7bdat"
+            (stage / filename).replace(folder / filename)
+
+
+def summarize(rows, by_category):
+    columns = ["CATEGORY", "BRANCH1"] if by_category else ["BRANCH1"]
+    groups = defaultdict(list)
+    for row in rows:
+        groups[tuple(text(row.get(column)) for column in columns)].append(row)
+    result = []
+    key = lambda item: (CATEGORIES.index(item[0]) if item[0] in CATEGORIES else -1, item[1]) if by_category else item
+    for values in sorted(groups, key=key):
+        result.append(dict(zip(columns, values), **sums(groups[values])))
+    if by_category:
+        with_subtotals = []
+        for name, group in groupby(result, lambda row: row["CATEGORY"]):
+            with_subtotals.extend(group)
+            with_subtotals.append(dict(CATEGORY=name, BRANCH1="SUB TOTAL",
+                                       **sums([row for row in rows if text(row.get("CATEGORY")) == name])))
+        result = with_subtotals
+    result.append(dict(BRANCH1="GRAND TOTAL" if by_category else "TOTAL", **sums(rows)))
+    return result
+
+
+def sums(rows):
+    return dict(COUNT=len(rows), **{column: sum(amount(row.get(column)) for row in rows) for column in MOVEMENT})
+
+
+def write_interface(path, rows, encoding):
+    with path.open("w", encoding=encoding, newline="\n") as stream:
+        for row in rows:
+            if row["CAP"] > 0:
+                stream.write(
+                    f'{number(row["ACCTNO"], 10)} {number(row["NOTENO"], 5, zero=True)} '
+                    f'{number(row["BRANCH"], 5, zero=True)} {number(row["CAP"], 20, 2)} '
+                    f'{text(row.get("AANO"))[:13]:13} {number(row.get("PD"), 6, 2)} '
+                    f'{number(row.get("LGD"), 6, 2)}\n'
+                )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    root = Path("/host_pq/mis")
+    hp_dir = Path("/dwh/ln_hp")
+    npl_root = Path("/exdwh/host/ln/npl_hp_sasdata")
+    past_dir = npl_root / "pbb" / "past"
+    input_dirs = {
+        "hp": hp_dir,
+        "ln": Path("/dwh/ln_ln"),
+        "ccris": Path("/dwh/cris_t76"),
+        "rate": npl_root / "recrate",
+        "npl": npl_root / "pbb",
+        "wof": past_dir,
+    }
+    for name, folder in input_dirs.items():
+        parser.add_argument(f"--{name}-dir", type=Path, default=folder)
+    parser.add_argument("--output-dir", type=Path, default=root / "output")
+    parser.add_argument("--inc-dir", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument(
+        "--wmis-file", type=Path,
+        default=Path("/stgsrcsys/host/ftpfiles/RBP2.B033.LN.WRI2.OFF.MIS"),
+    )
+    parser.add_argument("--encoding", default="utf-8")
+    parser.add_argument("--sas-command", default="sas", help="SAS batch executable")
+    args = parser.parse_args()
+
+    report = datetime.now(timezone(timedelta(hours=8))).date()
+    sas_date = (report - EPOCH).days
+    period = report.strftime("%m%y")
+    snapshot = f"{report:%m}{week(report.day)}{report:%y}"
+    opening_period = f"12{(report.year - 1) % 100:02d}"
+    rates = read_member(args.rate_dir, "RECRATE", ["RECOVERYRATIO"])
+    if not rates or missing(rates[-1]["RECOVERYRATIO"]):
+        raise ValueError("RECRATE must contain a recovery ratio")
+    recovery = rates[-1]["RECOVERYRATIO"]
+    rules = branch_rules(args.inc_dir / "PBBELF")
+    credit = read_member(args.ccris_dir, f"CREDMSUBAC{period}")
+    history = read_member(args.npl_dir, "WMIS")
+    if report.month in (3, 6, 9, 12):
+        previous = report.replace(day=1) - timedelta(days=1)
+        prior_hp = read_member(args.wof_dir, f"HP{previous:%m}{week(report.day)}{previous:%y}")
+        history = [row for row in history if row["REPTDATE"] != sas_date]
+        history.extend(read_writeoffs(args.wmis_file, args.encoding, prior_hp, sas_date))
+    history = [dict(row, CATEGORY=legacy_category(row.get("CATEGORY"))) for row in history]
+    hpwo = read_member(args.hp_dir, f"HPWO{snapshot}", KEYS + ["PRODUCT"])
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    interface = []
+    datasets = []
+    for staff in (False, True):
+        source = read_member(args.ln_dir if staff else args.hp_dir, ("LN" if staff else "HP") + snapshot)
+        rows = classified(source, credit, rules, staff)
+        details, params = company(rows, recovery)
+        member = "CAP_STAFF" if staff else "CAP"
+        suffix = ".STAFF" if staff else ""
+        opening = read_member(args.npl_dir, member + opening_period)
+        result = list(movement(rows, params, opening, history, staff))
+        result = list(match_merge(result, hpwo, KEYS, require_left=True))
+        interface.extend(result)
+        cap_columns = [*KEYS, "BRANCH", "BRANCHABBR", "PRODUCT", "CATEGORY", "IND",
+                       "AANO", "PAIDIND", "MARKETVL", "CARATE", "PD", "LGD",
+                       "CATEGORY1", "STATUS", "CHARCAP", "WRITEOFF", "BRANCH1", *MOVEMENT]
+        datasets.append((member + period, pd.DataFrame(result or [], columns=None if result else cap_columns)))
+        datasets.append((f"CAP1{'_STAFF' if staff else ''}",
+                         pd.DataFrame(list(params.values()), columns=["CATEGORY", "CAPROVISION", "PD", "LGD"])))
+        write_table(args.output_dir / f"CAPCAMP{suffix}.txt", details,
+                    ["CATEGORY", "SCENARIO", "BALANCE", "RATE", "RECRATE", "OBDEFAULT", "EXPECTEDREC", "CAPROVISION"])
+        write_table(args.output_dir / f"CAPBRCH{suffix}.txt", summarize(result, False),
+                    ["BRANCH1", "COUNT", *MOVEMENT])
+        write_table(args.output_dir / f"CAPCATE{suffix}.txt", summarize(result, True),
+                    ["CATEGORY", "BRANCH1", *MOVEMENT])
+    history_columns = [*KEYS, "WRIOFF_BAL", "CATEGORY", "REPTDATE"]
+    datasets.append(("WMIS", pd.DataFrame(history, columns=None if history else history_columns)))
+    write_datasets(args.output_dir, datasets, args.sas_command)
+    write_interface(args.output_dir / "FSAS5.txt", interface, args.encoding)
+
+
+if __name__ == "__main__":
+    main()
