@@ -1,4 +1,16 @@
 /* Updated: 2026-11-09 */
+
+/*
+   Field metadata for SAS-to-Python conversion.
+   Run these statements separately after assigning the IN library.
+   Share only the column tables from SAS Results.
+
+   proc contents data=IN.GL_ACCOUNT varnum;
+   run;
+
+   proc contents data=IN.GL_ACCOUNT_ASSOC varnum;
+   run;
+*/
 /* ESMR :2016-1042 */
 /* Run after fms2dwh.bat (10PM) */
 
