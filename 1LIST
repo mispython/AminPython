@@ -1,19 +1,753 @@
-//FTPTOP50 JOB (0216,0000,90,OPER),'FTP WAREHOURE',                     JOB15144
-//         CLASS=A,REGION=64M,NOTIFY=&SYSUID,
-//         MSGCLASS=X
-/*JOBPARM S=S1M2
-//****************************************************************
-//**  FTP TO RISK MANAGEMENT, PUBLIC BANK
-//**  THIS JOB WILL RUN AFTER EIMRMHPD
-//****************************************************************
-//*----------------------------------------------
-//* FTP SIBC DATASET TO EDW
-//*----------------------------------------------
-//RUNSFTP  EXEC COZBATCH
-//CMD.SYSUT1 DD DISP=SHR,DSN=SAD.SAS.PROGRAM(EDW#SFTU)
-//           DD *
-lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
-lzopts linerule=$lr
-cd /stgsrcsys/host/ftpfiles
-PUT //HRP2.FLAT.STAFF.INCTIVE.BR       SASLIST.TXT
-EOB
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   1
+ 
+                                                        The CONTENTS Procedure
+ 
+                        Data Set Name        LOAN.REPTDATE                            Observations          1 
+                        Member Type          DATA                                     Variables             2 
+                        Engine               BASE                                     Indexes               0 
+                        Created              Tuesday, October 20, 2026 01:08:04 PM    Observation Length    16
+                        Last Modified        Tuesday, October 20, 2026 01:08:04 PM    Deleted Observations  0 
+                        Protection                                                    Compressed            NO
+                        Data Set Type                                                 Sorted                NO
+                        Label                                                                                 
+                        Data Representation  MVS_32                                                           
+                        Encoding             open_ed-1047  Western (OpenEdition)                              
+ 
+ 
+                                                  Engine/Host Dependent Information
+ 
+                                         Data Set Page Size          27648                  
+                                         Number of Data Set Pages    1                      
+                                         First Data Page             1                      
+                                         Max Obs per Page            1713                   
+                                         Obs in First Data Page      1                      
+                                         Number of Data Set Repairs  0                      
+                                         Physical Name               SAD.PIBB.MNILN.G0156V00
+                                         Release Created             9.0101M3               
+                                         Release Last Modified       9.0101M3               
+                                         Created by                  EIBWLNEW               
+                                         Last Modified by            EIBWLNEW               
+                                         Subextents                  1                      
+                                         Total Blocks Used           1                      
+ 
+ 
+                                                      Variables in Creation Order
+  
+                                                     #    Variable    Type    Len
+ 
+                                                     1    EXTDATE     Num       8
+                                                     2    REPTDATE    Num       8
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   2
+ 
+                                                        The CONTENTS Procedure
+ 
+                       Data Set Name        LOAN.HPCOMP                              Observations          4323
+                       Member Type          DATA                                     Variables             8   
+                       Engine               BASE                                     Indexes               0   
+                       Created              Tuesday, October 20, 2026 01:08:19 PM    Observation Length    96  
+                       Last Modified        Tuesday, October 20, 2026 01:08:19 PM    Deleted Observations  0   
+                       Protection                                                    Compressed            NO  
+                       Data Set Type                                                 Sorted                NO  
+                       Label                                                                                   
+                       Data Representation  MVS_32                                                             
+                       Encoding             open_ed-1047  Western (OpenEdition)                                
+ 
+ 
+                                                  Engine/Host Dependent Information
+ 
+                                         Data Set Page Size          27648                  
+                                         Number of Data Set Pages    16                     
+                                         First Data Page             1                      
+                                         Max Obs per Page            287                    
+                                         Obs in First Data Page      268                    
+                                         Number of Data Set Repairs  0                      
+                                         Physical Name               SAD.PIBB.MNILN.G0156V00
+                                         Release Created             9.0101M3               
+                                         Release Last Modified       9.0101M3               
+                                         Created by                  EIBWLNEW               
+                                         Last Modified by            EIBWLNEW               
+                                         Subextents                  1                      
+                                         Total Blocks Used           16                     
+ 
+ 
+                                                      Variables in Creation Order
+  
+                                               #    Variable                Type    Len
+ 
+                                               1    BANKNO                  Num       8
+                                               2    DEALERNO                Num       8
+                                               3    COMPNAME                Char     24
+                                               4    COMPADD1                Char     40
+                                               5    BRANCH                  Num       8
+                                               6    DATEADDED               Char      6
+                                               7    PANEL_CAR_DEALER_FLG    Char      1
+                                               8    DEALER_TYPE             Char      1
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   3
+ 
+                                                        The CONTENTS Procedure
+ 
+                      Data Set Name        LOAN.LNNOTE                              Observations          14538
+                      Member Type          DATA                                     Variables             492  
+                      Engine               BASE                                     Indexes               0    
+                      Created              Tuesday, October 20, 2026 01:08:35 PM    Observation Length    3296 
+                      Last Modified        Tuesday, October 20, 2026 01:08:35 PM    Deleted Observations  0    
+                      Protection                                                    Compressed            NO   
+                      Data Set Type                                                 Sorted                NO   
+                      Label                                                                                    
+                      Data Representation  MVS_32                                                              
+                      Encoding             open_ed-1047  Western (OpenEdition)                                 
+ 
+ 
+                                                  Engine/Host Dependent Information
+ 
+                                         Data Set Page Size          55296                  
+                                         Number of Data Set Pages    910                    
+                                         First Data Page             1                      
+                                         Max Obs per Page            16                     
+                                         Obs in First Data Page      1                      
+                                         Number of Data Set Repairs  0                      
+                                         Physical Name               SAD.PIBB.MNILN.G0156V00
+                                         Release Created             9.0101M3               
+                                         Release Last Modified       9.0101M3               
+                                         Created by                  EIBWLNEW               
+                                         Last Modified by            EIBWLNEW               
+                                         Subextents                  1                      
+                                         Total Blocks Used           1820                   
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   4
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                       1    ACCTNO                         Num       8          
+                                       2    NAME                           Char     24          
+                                       3    TAXNO                          Char     11          
+                                       4    ORGTYPE                        Char      1          
+                                       5    GUAREND                        Char     20          
+                                       6    BANKNO                         Num       8          
+                                       7    APPCODE                        Char      1          
+                                       8    ACCBRCH                        Num       8          
+                                       9    CUSTCODE                       Num       8          
+                                      10    PURPOSE                        Char      1          
+                                      11    FOREIGN                        Char      6          
+                                      12    BKRPTIND                       Char      1          
+                                      13    NOTENO                         Num       8          
+                                      14    REVERSED                       Char      1          
+                                      15    LOANTYPE                       Num       8          
+                                      16    NTBRCH                         Num       8          
+                                      17    PENDBRH                        Num       8          
+                                      18    ISSUEDT                        Num       8          
+                                      19    NOTEMAT                        Num       8          
+                                      20    ASSMDATE                       Num       8          
+                                      21    LASTTRAN                       Num       8          
+                                      22    LSTTRNCD                       Num       8          
+                                      23    CURBAL                         Num       8          
+                                      24    INTAMT                         Num       8          
+                                      25    PRINBNP                        Num       8          
+                                      26    APPVALUE                       Num       8          
+                                      27    NOTETERM                       Num       8          
+                                      28    COLLDESC                       Char     70          
+                                      29    FLAG3                          Char      1          
+                                      30    SYNDIND                        Char      1          
+                                      31    FLAG5                          Char      1          
+                                      32    DLIVRYDT                       Num       8          
+                                      33    COMMNO                         Num       8          
+                                      34    CORPCODE                       Char      1          
+                                      35    COSTCTR                        Num       8          
+                                      36    PCOSTCTR                       Num       8          
+                                      37    SECTOR                         Char      4          
+                                      38    CENSUS                         Num       8          
+                                      39    BILLTYPE                       Char      1          
+                                      40    GRANTDT                        Num       8          
+                                      41    PAIDIND                        Char      1          
+                                      42    ORGBAL                         Num       8          
+                                      43    NETPROC                        Num       8          
+                                      44    FEEDUE                         Num       8          
+                                      45    INTRATE                        Num       8          
+                                      46    SPREAD                         Num       8          
+                                      47    NTINT                          Char      1          
+                                      48    INTMAINT                       Num       8          
+                                      49    REBATE                         Num       8          
+                                      50    INTEARN                        Num       8          
+                                      51    ACCRUAL                        Num       8          
+                                      52    RISKRATE                       Char      4          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   5
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                      53    SECURE                         Char      1          
+                                      54    LIABCODE                       Char      2          
+                                      55    FLAG1                          Char      1          
+                                      56    MORTGIND                       Char      1          
+                                      57    REFINANC                       Char      1          
+                                      58    SBA                            Char      1          
+                                      59    LOANSTAT                       Num       8          
+                                      60    NONACCR                        Char      1          
+                                      61    DEALERNO                       Num       8          
+                                      62    MATUREDT                       Num       8          
+                                      63    BORSTAT                        Char      1          
+                                      64    MARKETVL                       Num       8          
+                                      65    COLLMAKE                       Char      6          
+                                      66    EARNTERM                       Num       8          
+                                      67    USURYIDX                       Num       8          
+                                      68    STATE                          Char      6          
+                                      69    INTEARN2                       Num       8          
+                                      70    INTEARN3                       Num       8          
+                                      71    INTEARN4                       Num       8          
+                                      72    PAYAMT                         Num       8          
+                                      73    PAYFREQ                        Char      1          
+                                      74    FEETOTAL                       Num       8          
+                                      75    FEETOT2                        Num       8          
+                                      76    FEEAMTO                        Num       8          
+                                      77    FEEAMT2                        Num       8          
+                                      78    FEEAMT3                        Num       8          
+                                      79    NXDUEDT                        Num       8          
+                                      80    BILDUE                         Num       8          
+                                      81    BILTOT                         Num       8          
+                                      82    BILPAY                         Num       8          
+                                      83    BILPRIN                        Num       8          
+                                      84    HSTOTAMT                       Num       8          
+                                      85    PAYTYPE                        Char      1          
+                                      86    HSTOTPAY                       Num       8          
+                                      87    DISPYIND                       Num       8          
+                                      88    FEEAMT4                        Num       8          
+                                      89    REBIND                         Char      1          
+                                      90    APPRDATE                       Num       8          
+                                      91    POSTNTRN                       Char      1          
+                                      92    LSTTRNAM                       Num       8          
+                                      93    INTBNP                         Num       8          
+                                      94    NTAPR                          Num       8          
+                                      95    ORIGRATE                       Num       8          
+                                      96    VINNO                          Char     20          
+                                      97    RESTIND                        Char      1          
+                                      98    TOTPDEOP                       Num       8          
+                                      99    USER2                          Char      1          
+                                     100    USER3                          Char      1          
+                                     101    USER4                          Char      1          
+                                     102    POSTCODE                       Num       8          
+                                     103    INTPDYTD                       Num       8          
+                                     104    ACCRUYTD                       Num       8          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   6
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                     105    ACCRUEOP                       Num       8          
+                                     106    BIRTHDT                        Num       8          
+                                     107    NTINDEX                        Num       8          
+                                     108    MTDINT                         Num       8          
+                                     109    SCORE1                         Char      4          
+                                     110    REBATEI                        Num       8          
+                                     111    NUM_PAY_BIL_INSTL              Num       8          
+                                     112    ACCTYIND                       Num       8          
+                                     113    ACCOSTCT                       Num       8          
+                                     114    INTINYTD                       Num       8          
+                                     115    BILLCNT                        Num       8          
+                                     116    PREVBRNO                       Num       8          
+                                     117    SCORE2                         Char      4          
+                                     118    HSTPRIN                        Num       8          
+                                     119    CRISPURP                       Char      4          
+                                     120    USER1                          Char      1          
+                                     121    ACCTPBRH                       Num       8          
+                                     122    HSTINT                         Num       8          
+                                     123    PAIDOFF                        Char      2          
+                                     124    FEEDUEMS                       Num       8          
+                                     125    NFEEAMT5                       Num       8          
+                                     126    NFEEAMT6                       Num       8          
+                                     127    NFEEAMT7                       Num       8          
+                                     128    NOOFPAY                        Num       8          
+                                     129    NDHISSDT                       Num       8          
+                                     130    NDPAYIND                       Char      1          
+                                     131    NDHEXPDT                       Num       8          
+                                     132    ROPAYIND                       Char      1          
+                                     133    PAIDTODT                       Num       8          
+                                     134    FEEYTD                         Num       8          
+                                     135    FEEPDYTD                       Num       8          
+                                     136    RSRVTERM                       Num       8          
+                                     137    BILPDYTD                       Num       8          
+                                     138    FEEYTDX                        Num       8          
+                                     139    FEPDYTDX                       Num       8          
+                                     140    FEEAMT8                        Num       8          
+                                     141    FEEAMT9                        Num       8          
+                                     142    MINIFEE                        Num       8          
+                                     143    FEEAMT13                       Num       8          
+                                     144    APPLDATE                       Num       8          
+                                     145    PZIPCODE                       Num       8          
+                                     146    FEEAMT10                       Num       8          
+                                     147    FEEAMT11                       Num       8          
+                                     148    FEEAMT12                       Num       8          
+                                     149    FEEAMT14                       Num       8          
+                                     150    FEEAMT15                       Num       8          
+                                     151    FEEAMT16                       Num       8          
+                                     152    FEEEARN1                       Num       8          
+                                     153    FEEEARN2                       Num       8          
+                                     154    COLLYEAR                       Num       8          
+                                     155    DISBIND1                       Char      1          
+                                     156    PRINPAID                       Num       8          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   7
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                     157    INTPAID                        Num       8          
+                                     158    HTOTAMT2                       Num       8          
+                                     159    HTOTPAY2                       Num       8          
+                                     160    PRINYTD                        Num       8          
+                                     161    OSTDAMT                        Num       8          
+                                     162    PAYNUM                         Num       8          
+                                     163    RSRVREBI                       Char      1          
+                                     164    TERMIDAT                       Num       8          
+                                     165    TMLATE15                       Num       8          
+                                     166    TMLATE30                       Num       8          
+                                     167    TMLATE60                       Num       8          
+                                     168    TMLATE90                       Num       8          
+                                     169    BONUSANO                       Num       8          
+                                     170    DELQCD                         Char      2          
+                                     171    FEEPLAN                        Char      2          
+                                     172    FEERATE                        Num       8          
+                                     173    WORDTYP                        Char      1          
+                                     174    HISPTDT                        Num       8          
+                                     175    STAFFNO                        Num       8          
+                                     176    PAYEFFDT                       Num       8          
+                                     177    AANUMBR                        Char     20          
+                                     178    APPORMT                        Num       8          
+                                     179    ECSRRSRV                       Num       8          
+                                     180    COSTFUND                       Num       8          
+                                     181    POFFICER                       Num       8          
+                                     182    NPLCRR                         Char      4          
+                                     183    CUSTCDX                        Num       8          
+                                     184    FORM2                          Num       8          
+                                     185    FORM1                          Num       8          
+                                     186    STATUSDT                       Num       8          
+                                     187    INTBUYPD                       Num       8          
+                                     188    MODELDES                       Char      6          
+                                     189    YTDEARNS                       Num       8          
+                                     190    ESCRACCT                       Num       8          
+                                     191    RESTBALC                       Num       8          
+                                     192    INTRATE2                       Num       8          
+                                     193    RATELMT2                       Num       8          
+                                     194    PRMOFFHP                       Num       8          
+                                     195    POINTAMT                       Num       8          
+                                     196    CEILINGO                       Num       8          
+                                     197    CEILINGU                       Num       8          
+                                     198    BILDUE1                        Num       8          
+                                     199    MAILCODE                       Char      2          
+                                     200    NXBILDT                        Num       8          
+                                     201    PAYIND                         Char      1          
+                                     202    SITYPE                         Char      1          
+                                     203    SIACCTNO                       Num       8          
+                                     204    OLDUNPAID                      Num       8          
+                                     205    VARSTDTE                       Num       8          
+                                     206    USER5                          Char      1          
+                                     207    SENDNBL                        Char      1          
+                                     208    FRELEAS                        Num       8          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   8
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                     209    USMARGIN                       Num       8          
+                                     210    USEDIT                         Char      1          
+                                     211    FEECOMBIND                     Char      1          
+                                     212    CURCODE                        Char      3          
+                                     213    STOPDEBIT                      Char      1          
+                                     214    TAXEQIND                       Char      1          
+                                     215    SM_STATUS                      Char      1          
+                                     216    SPA_AMT                        Num       8          
+                                     217    CASHPRICE                      Num       8          
+                                     218    REACCRUAL                      Char      1          
+                                     219    LATENOTICE                     Char      1          
+                                     220    GUARNOTICE                     Char      1          
+                                     221    INTBASIS                       Num       8          
+                                     222    MEMOACC                        Num       8          
+                                     223    EXCESSPAY                      Num       8          
+                                     224    BILLEADDAY                     Num       8          
+                                     225    DEATHDATE                      Num       8          
+                                     226    INTSTDTE                       Num       8          
+                                     227    AUTNACCR                       Char      1          
+                                     228    CFINDEX                        Num       8          
+                                     229    EXRATIO                        Num       8          
+                                     230    CONTRTYPE                      Char      2          
+                                     231    BILDUEMIG                      Num       8          
+                                     232    NPLCRRBPA                      Char      1          
+                                     233    FDACCTNO_                      Char     17          
+                                     234    FDCERTNO                       Num       8          
+                                     235    FCLOSUREDT                     Num       8          
+                                     236    RRCYCLE                        Char      3          
+                                     237    VB                             Char      1          
+                                     238    CPNSTDTE                       Num       8          
+                                     239    INSOLVENCY_IND                 Char      1          
+                                     240    CURRILDTE                      Num       8          
+                                     241    FIRSILDTE                      Num       8          
+                                     242    NUMCPNS                        Num       8          
+                                     243    RSN                            Char      1          
+                                     244    PTMNATE                        Char     11          
+                                     245    OLDRR                          Char      1          
+                                     246    EARLY_SETTLE_FEE_CHARGE_FLG    Char      1          
+                                     247    ACCTREVDT                      Num       8          
+                                     248    MNIAPLMT                       Num       8          
+                                     249    MNIAPDT                        Num       8          
+                                     250    ABM_HL                         Char      1          
+                                     251    IA_LRU                         Char      1          
+                                     252    COMMNO_OLD                     Num       8          
+                                     253    TIMES_RENEWED                  Num       8          
+                                     254    STAFF_FREE_INT_LOAN_AMT        Num       8          
+                                     255    MARKED_PAYMENT_IND             Char      1          
+                                     256    CCRIS_INSTLAMT                 Num       8          
+                                     257    NUM_PAY_BIL_INT                Num       8          
+                                     258    NURS_TAG                       Char      6          
+                                     259    NUR_STARTDT                    Num       8          
+                                     260    NURS_TAGDT                     Num       8          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026   9
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                     261    NURS_ENDDT                     Num       8          
+                                     262    NURS_COUNTER                   Num       8          
+                                     263    WRIOFF_DT                      Char      8          
+                                     264    WRIOFF_AMT                     Num       8          
+                                     265    CUM_WRIOFF                     Num       8          
+                                     266    RECOVER_COST                   Num       8          
+                                     267    ASCORE_COMM                    Char     12          
+                                     268    REPOSDTE                       Char      8          
+                                     269    VALUEDTE                       Char      8          
+                                     270    DISPOSED_AMT                   Num       8          
+                                     271    DSR                            Num       8          
+                                     272    REPAY_SOURCE                   Num       8          
+                                     273    REPAY_TYPE_CD                  Char      2          
+                                     274    MTD_REPAID_AMT                 Num       8          
+                                     275    MTD_TAWIDH_AMT                 Num       8          
+                                     276    MTD_GHARAMAH_AMT               Num       8          
+                                     277    INDUSTRIAL_SECTOR_CD           Char      8          
+                                     278    PROMPT_PAY_TRACKER             Char      4          
+                                     279    MAN_REV_RATE                   Num       8          
+                                     280    MAN_REV_DATE                   Char      8          
+                                     281    SYS_REV_RATE                   Num       8          
+                                     282    SYS_REV_DATE                   Char      8          
+                                     283    REFINANC_LN                    Num       8          
+                                     284    OLD_FI                         Char      9          
+                                     285    OLD_MACC_NO                    Char     30          
+                                     286    OLD_SUBACC_NO                  Char     30          
+                                     287    TIA_TAG_DATE                   Num       8          
+                                     288    TIA_UTAG_DATE                  Num       8          
+                                     289    REPO_ORDER_ISSUE_DT            Num       8          
+                                     290    NUM_REPO_ORDER_ISSUE           Num       8          
+                                     291    COURT_ORDER_APPLY_DT           Num       8          
+                                     292    COURT_ORDER_OBTAIN_DT          Num       8          
+                                     293    AUTO_REPRICE_DIFF_INSTL_AMT    Num       8          
+                                     294    RISK_GRADE_CLASS               Char      1          
+                                     295    REPAY_PROPOSAL_CD              Char      6          
+                                     296    LTST_MGB_SCORE                 Char     12          
+                                     297    SCH_REPAY_TERM                 Num       8          
+                                     298    PCT_INDEX_INTRATE              Num       8          
+                                     299    REMAIN_TERM_MATURITY           Num       8          
+                                     300    LMO_TAG                        Char      2          
+                                     301    LMO_MAINT_DT                   Char      8          
+                                     302    LMO_START_DT                   Char      8          
+                                     303    LMO_END_DT                     Char      8          
+                                     304    AKPK_STATUS                    Char      9          
+                                     305    DIGITAL_RR_STATUS_CD           Char      2          
+                                     306    DRF_DATE                       Char      8          
+                                     307    MORA_BENCHMARK_AMT             Num       8          
+                                     308    TAKAFUL_AMT                    Num       8          
+                                     309    TAKAFUL_OPERAT                 Num       8          
+                                     310    TAKAFUL_COLLECT_ACCTNO         Num       8          
+                                     311    TFA_NURS_TAG                   Char      2          
+                                     312    TFA_NURS_TAG_DT                Num       8          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026  10
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                     313    TFA_NURS_START_DT              Num       8          
+                                     314    TFA_NURS_END_DT                Num       8          
+                                     315    TFA_NURS_COUNTER               Num       8          
+                                     316    TFA_DIG_STATUS_CD              Char      3          
+                                     317    TFA_DIG_STATUS_DT              Num       8          
+                                     318    REPAY_PROPOSAL_DT              Num       8          
+                                     319    MANUAL_RR_TAG                  Char      3          
+                                     320    MANUAL_RR_DT                   Num       8          
+                                     321    AUTO_EXT_TAG                   Char      1          
+                                     322    AUTO_EXT_TAG_DT                Num       8          
+                                     323    AUTO_REPRICE_INSTL_AMT         Num       8          
+                                     324    BULLET_REPAY_IND               Char      1          
+                                     325    BALLOON_REPAY_IND              Char      1          
+                                     326    PROP_DEVELOP_FIN_IND           Char      1          
+                                     327    DIA_PAST01_MTH                 Char      3          
+                                     328    DIA_PAST02_MTH                 Char      3          
+                                     329    DIA_PAST03_MTH                 Char      3          
+                                     330    DIA_PAST04_MTH                 Char      3          
+                                     331    DIA_PAST05_MTH                 Char      3          
+                                     332    DIA_PAST06_MTH                 Char      3          
+                                     333    DIA_PAST07_MTH                 Char      3          
+                                     334    DIA_PAST08_MTH                 Char      3          
+                                     335    DIA_PAST09_MTH                 Char      3          
+                                     336    DIA_PAST10_MTH                 Char      3          
+                                     337    DIA_PAST11_MTH                 Char      3          
+                                     338    DIA_PAST12_MTH                 Char      3          
+                                     339    DIA_PAST13_MTH                 Char      3          
+                                     340    DIA_PAST14_MTH                 Char      3          
+                                     341    DIA_PAST15_MTH                 Char      3          
+                                     342    DIA_PAST16_MTH                 Char      3          
+                                     343    DIA_PAST17_MTH                 Char      3          
+                                     344    DIA_PAST18_MTH                 Char      3          
+                                     345    DIA_PAST19_MTH                 Char      3          
+                                     346    DIA_PAST20_MTH                 Char      3          
+                                     347    DIA_PAST21_MTH                 Char      3          
+                                     348    DIA_PAST22_MTH                 Char      3          
+                                     349    DIA_PAST23_MTH                 Char      3          
+                                     350    DIA_PAST24_MTH                 Char      3          
+                                     351    ORIG_RESTIND                   Char      2          
+                                     352    RESTIND_END_DT                 Num       8          
+                                     353    COM_FEE_NOTICE_IND             Char      1          
+                                     354    NUM_MORA                       Num       8          
+                                     355    AKPK_RA_TAG                    Char      3          
+                                     356    AKPK_RA_TAG_DT                 Num       8          
+                                     357    AKPK_RA_DIG_STATUS_CD          Char      3          
+                                     358    AKPK_RA_DIG_STATUS_DT          Num       8          
+                                     359    AKPK_RA_START_DT               Num       8          
+                                     360    AKPK_RA_END_DT                 Num       8          
+                                     361    AKPK_RA_ORIG_SPREAD            Num       8          
+                                     362    AKPK_RA_DLY_INT_ACCRUAL        Num       8          
+                                     363    AKPK_RA_MTD_INT_ACCRUAL        Num       8          
+                                     364    AKPK_RA_MTH_INT_WAIVER_AMT     Num       8          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026  11
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                     365    AKPK_RA_CUMM_INT_WAIVER_AMT    Num       8          
+                                     366    AKPK_RA_MTH_INT_CAP_AMT        Num       8          
+                                     367    AKPK_RA_CUMM_INT_CAP_AMT       Num       8          
+                                     368    AKPK_RA_ORIG_CEILING_RT        Num       8          
+                                     369    TRA_RR_IND                     Num       8          
+                                     370    INDEX_PRICING                  Char     15          
+                                     371    NUM_RR                         Num       8          
+                                     372    DAYARR_MORA                    Num       8          
+                                     373    REPAY_MODE                     Char      1          
+                                     374    RR_EREQUEST_NUM                Char     42          
+                                     375    RR_TYPE                        Char     13          
+                                     376    RR_APPR_DATE                   Num       8          
+                                     377    HI_TAG                         Char      3          
+                                     378    HI_TAG_DT                      Num       8          
+                                     379    HI_DIG_STATUS_CD               Char      3          
+                                     380    HI_DIG_STATUS_DT               Num       8          
+                                     381    REPO_ORDER_EXPIRY_DT           Num       8          
+                                     382    FLOOD_MO_TAG                   Char      5          
+                                     383    FLOOD_MO_DT                    Num       8          
+                                     384    IMPAIRED_HP_TAG                Char      1          
+                                     385    ASCORE_PERM                    Char      9          
+                                     386    ASCORE_LTST                    Char      9          
+                                     387    LEGAL_NOTICE_INSTRUCT_DT       Num       8          
+                                     388    LEGAL_NOTICE_ISSUE_DT          Num       8          
+                                     389    PARAS_TAG                      Char      7          
+                                     390    PARAS_TAG_DT                   Num       8          
+                                     391    JUDGE_AMT                      Num       8          
+                                     392    JUDGE_DT                       Num       8          
+                                     393    JUDGE_MAINT_DT                 Num       8          
+                                     394    PRE_BKRUPT_NOTICE_DT           Num       8          
+                                     395    COURT_ORDER_PERPETUAL_IND      Char      1          
+                                     396    HP_STAGE_TRSF_IND              Char      1          
+                                     397    CUMM_PAID_BILL_AMT             Num       8          
+                                     398    CUMM_PAID_BILL_PCT             Num       8          
+                                     399    AKPK_MATRIX_TYPE               Char      9          
+                                     400    AKPK_MATRIX_DATE               Num       8          
+                                     401    DEVIATION_CD                   Char      2          
+                                     402    INT_ADVICE_IND                 Char      1          
+                                     403    FLOOD_MO_PACKAGE_CD            Char      7          
+                                     404    FDB_TAG                        Char      1          
+                                     405    FDB_TAG_DT                     Num       8          
+                                     406    FDB_SCORING_DT                 Num       8          
+                                     407    MARKED_PAYMENT_AMT             Num       8          
+                                     408    E_INVOICE_IND                  Char      1          
+                                     409    LEGAL_MATURITY_DT              Num       8          
+                                     410    CLIMATE_PRIN_TAXONOMY_CLASS    Char      3          
+                                     411    RR_IL_RECLASS_DT               Num       8          
+                                     412    CLIMATE_MITIGATE_GP1_FLG       Char      1          
+                                     413    CLIMATE_ADAPT_GP2_FLG          Char      1          
+                                     414    CLIMATE_ENVIRONMT_GP3_FLG      Char      1          
+                                     415    CLIMATE_TRANSITION_GP4_FLG     Char      1          
+                                     416    CLIMATE_PROHIBIT_GP5_FLG       Char      1          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026  12
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                     417    WOS_RECEIVED_DT                Num       8          
+                                     418    WOS_SETTLED_DT                 Num       8          
+                                     419    WOS_TAG                        Char      1          
+                                     420    COURT_ORDER_UPDATE_DT          Num       8          
+                                     421    FRAUD_TAG                      Char      1          
+                                     422    FRAUD_TAG_DT                   Num       8          
+                                     423    SOURCE_INCOME_CURRENCY_CD      Char      3          
+                                     424    WRIOFF_CLOSE_FILE_TAG          Char      1          
+                                     425    VEHI_MAKE_CATEGORY             Char      2          
+                                     426    INT_JAN_TO_JUN_AMT             Num       8          
+                                     427    INT_JUL_TO_DEC_AMT             Num       8          
+                                     428    RR_UNTAG_REPAY_CNT             Num       8          
+                                     429    RR_UNTAG_DATE                  Num       8          
+                                     430    AGING_FAST_TRACKER             Char      4          
+                                     431    EARMARK_NOTICE_DT              Num       8          
+                                     432    EARMARK_AMT                    Num       8          
+                                     433    MULTI_CURRENCY_TAG             Char      1          
+                                     434    RRSTG1                         Char      1          
+                                     435    TRA_EFF_DT                     Num       8    Z6.   
+                                     436    DIGITAL_RR_STATUS_DT           Num       8          
+                                     437    LMOSTDATE                      Num       8          
+                                     438    LMOENDDATE                     Num       8          
+                                     439    TRA_RR_ACCEPT_DT               Num       8          
+                                     440    RR_APPL_DATE                   Num       8          
+                                     441    WRIOFF_CLOSE_FILE_TAG_DT       Num       8          
+                                     442    BANK_EQUITY_RATIO              Num       8          
+                                     443    FDACCTNO                       Num       8    10.   
+                                     444    NACOSPADT                      Num       8          
+                                     445    LOCK_IN_END_DT                 Num       8          
+                                     446    SCHBIL_INSTL_DT                Num       8          
+                                     447    SCHBIL_INT_DT                  Num       8          
+                                     448    LASTBIL_INSTL_DT               Num       8          
+                                     449    LASTBIL_INT_DT                 Num       8          
+                                     450    FDB                            Char      1          
+                                     451    CP                             Char     11          
+                                     452    SM_DATE                        Num       8          
+                                     453    STAFF_FREE_INT_IND             Char      1          
+                                     454    OMNIBUS_FACILITY_IND           Char      1          
+                                     455    INTPYTD1                       Num       8          
+                                     456    CUSTCDR                        Num       8          
+                                     457    DNBFISME                       Char      1          
+                                     458    SYNRATIO                       Num       8          
+                                     459    RESTRUCT                       Char      6          
+                                     460    FEEAMTA                        Num       8          
+                                     461    FEEAMTB                        Num       8          
+                                     462    FEEAMTC                        Num       8          
+                                     463    CJFEE                          Num       8          
+                                     464    INFEE                          Num       8          
+                                     465    DAYARR_MO                      Num       8          
+                                     466    MO_INSTL_ARR                   Num       8          
+                                     467    FEEAMT                         Num       8          
+                                     468    MNIAPDTE                       Num       8          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026  13
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                     Variables in Creation Order
+  
+                                       #    Variable                       Type    Len    Format
+ 
+                                     469    NXTBIL                         Num       8          
+                                     470    BLDATE                         Num       8          
+                                     471    DLVDATE                        Num       8          
+                                     472    BALANCE                        Num       8          
+                                     473    FEEAMT5                        Num       8          
+                                     474    NFEEAMT8                       Num       8          
+                                     475    NFEEAM10                       Num       8          
+                                     476    NFEEAM11                       Num       8          
+                                     477    NFEEAM12                       Num       8          
+                                     478    CURRATE                        Num       8          
+                                     479    USLIMIT                        Num       8          
+                                     480    OLDNOTEAPPVALUE                Num       8          
+                                     481    OLDNOTELASTTRAN                Num       8          
+                                     482    OLDNOTEBLDATE                  Num       8          
+                                     483    OLDNOTEISSUEDT                 Num       8          
+                                     484    ISSXDTE                        Num       8          
+                                     485    OLDNOTEDAYARR                  Num       8          
+                                     486    MO_TAG                         Char      6          
+                                     487    MOSTDTE                        Num       8          
+                                     488    MOENDDTE                       Num       8          
+                                     489    MO_MAIN_DT                     Num       8          
+                                     490    WRITE_DOWN_BAL                 Num       8          
+                                     491    ORICODE                        Num       8          
+                                     492    SPOTRATE                       Num       8          
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026  14
+ 
+                                                        The CONTENTS Procedure
+ 
+                       Data Set Name        LOAN.LNCOMM                              Observations          2507
+                       Member Type          DATA                                     Variables             25  
+                       Engine               BASE                                     Indexes               0   
+                       Created              Tuesday, October 20, 2026 01:08:32 PM    Observation Length    176 
+                       Last Modified        Tuesday, October 20, 2026 01:08:32 PM    Deleted Observations  0   
+                       Protection                                                    Compressed            NO  
+                       Data Set Type                                                 Sorted                NO  
+                       Label                                                                                   
+                       Data Representation  MVS_32                                                             
+                       Encoding             open_ed-1047  Western (OpenEdition)                                
+ 
+ 
+                                                  Engine/Host Dependent Information
+ 
+                                         Data Set Page Size          27648                  
+                                         Number of Data Set Pages    17                     
+                                         First Data Page             1                      
+                                         Max Obs per Page            156                    
+                                         Obs in First Data Page      137                    
+                                         Number of Data Set Repairs  0                      
+                                         Physical Name               SAD.PIBB.MNILN.G0156V00
+                                         Release Created             9.0101M3               
+                                         Release Last Modified       9.0101M3               
+                                         Created by                  EIBWLNEW               
+                                         Last Modified by            EIBWLNEW               
+                                         Subextents                  1                      
+                                         Total Blocks Used           17                     
+ 
+ 
+1                                                           The SAS System                       00:11 Tuesday, November 10, 2026  15
+ 
+                                                        The CONTENTS Procedure
+ 
+                                                      Variables in Creation Order
+  
+                                              #    Variable                   Type    Len
+ 
+                                              1    BANKNO                     Num       8
+                                              2    ACCTNO                     Num       8
+                                              3    COMMNO                     Num       8
+                                              4    CCOLLTRL                   Char      2
+                                              5    CPRODUCT                   Char      3
+                                              6    CORGAMT                    Num       8
+                                              7    CCURAMT                    Num       8
+                                              8    CAVAIAMT                   Num       8
+                                              9    CUSEDAMT                   Num       8
+                                             10    CAPPDATE                   Num       8
+                                             11    EXPIREDT                   Num       8
+                                             12    REVOVLI                    Char      1
+                                             13    ACTIND                     Char      1
+                                             14    CMBRCH                     Num       8
+                                             15    CORIGMT                    Num       8
+                                             16    CSTATE                     Char      6
+                                             17    HSTNCDOR                   Num       8
+                                             18    HSTCADAD                   Num       8
+                                             19    CSECTOR                    Char      4
+                                             20    CMHSTADJ                   Num       8
+                                             21    UNUSEAMT                   Num       8
+                                             22    CMHSTAD3                   Num       8
+                                             23    RCI_EXPIRY_DT              Num       8
+                                             24    COMMNO_IMMEDIATE_PARENT    Num       8
+                                             25    COMMNO_ULTIMATE_PARENT     Num       8
