@@ -1,3 +1,21 @@
+/dwh/ln_hp/hp11126.sas7bdat
+/dwh/ln_hp/hpwo11126.sas7bdat
+/dwh/ln_ln/ln10426.sas7bdat
+/dwh/cris_t76/credmsubac0926.sas7bdat
+SAP.PBB.NPL.HP.SASDATA	-> /exdwh/host/ln/npl_hp_sasdata/pbb
+SAP.PIBB.NPL.HP.SASDATA	-> /exdwh/host/ln/npl_hp_sasdata/pibb
+/exdwh/host/ln/npl_hp_sasdata/recrate
+
+
+
+
+
+
+
+
+
+
+
 Host 		Data Warehouse		
 SAP.PBB.MNITB.DAILY(0)	CURRENT	/sas/deposit/dwh/integration	"INTG_DP_ACCT_CURRENT
 INTG_DP_ACCT_CURRENT_Ddd
