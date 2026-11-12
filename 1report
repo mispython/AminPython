@@ -1,172 +1,467 @@
-DATA _NULL_;                               
-  REPTDATE = &SAS_DT_LN;   
-  MM2 = MONTH(REPTDATE) - 1;
-  IF MM2= 0 THEN MM2 = 12;
-  CALL SYMPUT('REPTMON2', PUT(MM2, Z2.));
-RUN;
+#!/usr/bin/env python3
+# RUN EVERY 2ND OF THE MONTH, IMPLEMENT BY PAS
 
-DATA CRMCUM(KEEP=ACCTNO NOTENO CURAVMTH CUBALYTD);
-   SET TEMP.CRMCUM_&YYYY_SAS;
-   IF "&REPTMON2" EQ "12" THEN CUBAL    = CUBALYTD_&CMMDD;
-   ELSE CUBAL    = SUM(CUBALYTD_&CMMDD,(-1)*CUBALYTD_&PMMDD);
-   CURAVMTH = CUBAL / &REPTDAY;
-   IF CUBALYTD_&CMMDD > 0 THEN CUBALYTD = CUBALYTD_&CMMDD /  DAYYTD;
-RUN;
-PROC SORT DATA=CRMCUM; BY ACCTNO NOTENO; RUN;
+"""Python replacement for the EIBMTCSM JCL/SAS job."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+
+import pandas as pd
 
 
-data _null_;
-   report_date = &SAS_DT_SAS;
-   prev_month_end = intnx('month', report_date, -1, 'end');
+DEFAULT_INPUT = Path("/host_pq/mis/input/OCM/JNL_MONTHLY")
+DEFAULT_OUTPUT_DIR = Path("/stgsrcsys/host/holding")
+DEFAULT_RECORD_LENGTH = 224
 
-   call symputx('REPTMON2', put(month(report_date), z2.), 'G');
-   call symputx('CMMDD', put(report_date, mmddyy4.), 'G');
-   call symputx('PMMDD', put(prev_month_end, mmddyy4.), 'G');
-   call symputx('REPTDAY', day(report_date), 'G');
+TYPE_FORMAT = {
+    0: "INCOMPLETE TRXN", 1: "CASH WITHDRAWAL",
+    2: "BALANCE INQUIRY", 3: "DEPOSIT", 4: "TRANSFER",
+    5: "PAYMENT ENCLOSED", 6: "SPECIAL", 7: "SECURITY EXPOSURE",
+    8: "PAYMENT FROM", 9: "CASH CHECK (USED SCWDRWL)",
+    10: "1ST DEPOSIT(FOR DEP SLIP)", 11: "LAST 6 TRANSACTIONS",
+    12: "CELCOM PREPAID", 13: "MAXIS  PREPAID",
+    14: "DIGI   PREPAID", 17: "POS PURCHASE W/CASH BACK",
+    21: "PREAUTH FOR DAY2DAY", 31: "2ND FIXED DEPOSIT",
+    32: "2ND DEPOSIT", 33: "1ST FIXED DEPOSIT",
+    34: "1ST TRANSFER", 35: "1ST GIRO", 36: "1ST PISA",
+    50: "CDT 1ST MSG", 51: "CDT: ENCASH", 65: "JARING PREPAID",
+    66: "NEW IC ENTERED", 67: "NEXTEL PREPAID",
+    68: "TMNET PREPAID & PREP ONE", 69: "ESA STATUS INQUIRY",
+    70: "ESA CANCELLATION", 71: "PINLESS TOPUP (1ST PART)",
+    72: "PINLESS TOPUP (2ND PART)",
+    81: "E-RIGHTS APPL (1ST PART)",
+    82: "E-RIGHTS APPL (2ND PART)",
+    97: "JOMPAY - 1ST PART", 98: "JOMPAY - 2ND PART",
+    129: "FAST CASH", 130: "CHECK DEPOSIT (USED SCDEP)",
+    131: "CHECK DEP W C/B (SCDEPCB)",
+    132: "DEPOSIT WITH CASH BACK",
+    133: "ENV DEP WITH CASH BACK", 135: "PAYMENT FROM/TO",
+    136: "BILL PAYMENT / GIRO", 137: "PIN CHANGE",
+    138: "CHEQUE BOOK ORDER", 139: "FIXED DEPOSIT",
+    140: "MINI STATEMENT", 141: "GIRO 1ST",
+    142: "CANCEL PRESSED", 143: "CUST TIMEOUT",
+    144: "HOST TIMEOUT", 145: "RETURN CARD PRESSED",
+    146: "GIRO CREDIT CARD PYMT", 147: "CARD REMOVAL TOUT",
+    148: "POS PURCHASE", 149: "POS VOID",
+    150: "EBNK REGISTRATION", 151: "SMS TOPUP-REGISTRATION",
+    152: "SMS TOPUP-TERMINATION", 153: "REQUEST FOR TAC",
+    154: "REGISTER PHONE FOR TAC", 155: "LATEST PHONE# UPDATE",
+    156: "CONFIRM LATEST PHONE#", 157: "REGIONAL LINK REGN",
+    158: "AIRASIA INQUIRY", 159: "AIRASIA PAYMENT",
+    160: "MP LOADING", 161: "TOUCH N GO (LOADING)",
+    162: "CHG DAILY W/D LIMIT", 163: "CANCEL PRE-AUTH",
+    164: "PMO HP REGISTRATION", 165: "CHG DAILY RETAIL LIMIT",
+    166: "ACTIVATE OVERSEAS W/D",
+    167: "DEACTIVATE OVERSEAS W/D",
+    168: "CONVERT BANKCARD TO D2D",
+    169: "MYMOBILE REGISTRATION", 170: "EBANK RESET PIN",
+    171: "MYMOBILE RESET PIN", 172: "CUSTOMER CONSENT",
+    173: "OPT STATUS INQUIRY", 174: "OPT STATUS UPDATE",
+    175: "NEW DAILY XFER LIMIT",
+    176: "CONTACTLESS PINLESS LIMIT",
+    225: "MINI STATEMENT", 226: "LAST TEN TRANS",
+    227: "DEPOSITORY LISTING",
+}
+
+FULL_COLUMNS = [
+    "CARDNO", "BRANCH", "TERMNO", "TRNXTIME", "TRNXCODE",
+    "ATMTYPE", "TRNXAMT", "SUCCESS_TRAN_AMT", "DENIAL_CD",
+    "CARDTYPE", "ACCTNO", "STATE_CD", "TRNXTYPE", "TRNXDATE",
+    "TRNXSTAT",
+]
+
+
+def packed_decimal(raw: bytes, scale: int = 0) -> Decimal | None:
+    if not raw:
+        return None
+
+    nibbles = [
+        nibble
+        for byte in raw
+        for nibble in (byte >> 4, byte & 0x0F)
+    ]
+    sign_nibble = nibbles.pop()
+
+    if sign_nibble in (0x0B, 0x0D):
+        sign = -1
+    elif sign_nibble in (0x0A, 0x0C, 0x0E, 0x0F):
+        sign = 1
+    else:
+        return None
+
+    if any(nibble > 9 for nibble in nibbles):
+        return None
+
+    value = Decimal("".join(map(str, nibbles))).scaleb(-scale)
+    return value if sign > 0 else -value
+
+
+def binary_integer(raw: bytes) -> int | None:
+    if not raw:
+        return None
+    return int.from_bytes(raw, byteorder="big", signed=True)
+
+
+def decoded(raw: bytes, encoding: str) -> str:
+    return raw.decode(encoding, errors="replace").strip()
+
+
+def numeric_text(raw: bytes, encoding: str) -> int | None:
+    value = decoded(raw, encoding)
+    return int(value) if value else None
+
+
+def sas_transaction_date(value: Decimal | None) -> int | None:
+    if value is None:
+        return None
+
+    digits = str(abs(int(value))).zfill(8)[-8:]
+
+    try:
+        parsed = datetime.strptime(digits, "%Y%m%d").date()
+    except ValueError:
+        return None
+
+    return (parsed - date(1960, 1, 1)).days
+
+
+def parse_record(record: bytes, encoding: str) -> dict[str, object]:
+    if len(record) != DEFAULT_RECORD_LENGTH:
+        raise ValueError(
+            f"Record is {len(record)} bytes; expected "
+            f"{DEFAULT_RECORD_LENGTH}"
+        )
+
+    trnxdt = packed_decimal(record[0:5])
+    trnxtime = packed_decimal(record[5:9])
+    branch = packed_decimal(record[11:14])
+    trnxcode = binary_integer(record[18:20])
+    compind = decoded(record[37:38], encoding)
+    authind = decoded(record[38:39], encoding)
+
+    return {
+        "CARDNO": decoded(record[70:90], encoding),
+        "BRANCH": int(branch) if branch is not None else None,
+        "TERMNO": binary_integer(record[14:18]),
+        "TRNXTIME": int(trnxtime) if trnxtime is not None else None,
+        "TRNXCODE": trnxcode,
+        "ATMTYPE": numeric_text(record[9:11], encoding),
+        "TRNXAMT": float(
+            packed_decimal(record[20:28], 2) or Decimal(0)
+        ),
+        "SUCCESS_TRAN_AMT": float(
+            packed_decimal(record[28:36], 2) or Decimal(0)
+        ),
+        "DENIAL_CD": numeric_text(record[46:49], encoding),
+        "CARDTYPE": decoded(record[54:56], encoding),
+        "ACCTNO": numeric_text(record[90:106], encoding),
+        "STATE_CD": decoded(record[166:168], encoding),
+        "TRNXTYPE": TYPE_FORMAT.get(trnxcode, ""),
+        "TRNXDATE": sas_transaction_date(trnxdt),
+        "TRNXSTAT": (
+            "S" if compind == "S" and authind == "A" else "R"
+        ),
+    }
+
+
+def fixed_records(
+    content: bytes,
+    record_length: int,
+    separator: bytes,
+) -> list[bytes] | None:
+    stride = record_length + len(separator)
+
+    if not content or len(content) % stride:
+        return None
+
+    records = []
+
+    for offset in range(0, len(content), stride):
+        block = content[offset:offset + stride]
+
+        if separator and block[record_length:] != separator:
+            return None
+
+        records.append(block[:record_length])
+
+    return records
+
+
+def read_records(path: Path, record_length: int) -> list[bytes]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing input file: {path}")
+
+    content = path.read_bytes()
+
+    if not content:
+        return []
+
+    for separator in (b"\r\n", b"\n", b""):
+        records = fixed_records(content, record_length, separator)
+
+        if records is not None:
+            return records
+
+    raise ValueError(
+        f"Input size {len(content):,} is incompatible with "
+        f"RECFM=FB,LRECL={record_length}. Ensure the file was "
+        "extracted in binary mode."
+    )
+
+
+def parse_date(value: str) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "date must be YYYY-MM-DD"
+        ) from error
+
+
+def write_sas7bdat(
+    output_dir: Path,
+    tables: dict[str, pd.DataFrame],
+) -> dict[str, Path]:
+    try:
+        import saspy
+    except ImportError as error:
+        raise RuntimeError(
+            "saspy and a configured SAS runtime are required"
+        ) from error
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    sas = saspy.SASsession()
+
+    try:
+        sas_path = str(output_dir.resolve()).replace("'", "''")
+        result = sas.submit(f"libname OUT '{sas_path}';")
+
+        if "ERROR:" in result.get("LOG", ""):
+            raise RuntimeError(result["LOG"])
+
+        for table, frame in tables.items():
+            stage = f"_PY_{table}"
+            sas.df2sd(frame, table=stage, libref="OUT")
+
+            if table.startswith("ATMTRNX"):
+                program = f"""
+data OUT.{table};
+    length CARDNO $20 BRANCH 8 TERMNO 8 TRNXTIME 8
+           TRNXCODE 8 ATMTYPE 8 TRNXAMT 8
+           SUCCESS_TRAN_AMT 8 DENIAL_CD 8 CARDTYPE $2
+           ACCTNO 8 STATE_CD $2 TRNXTYPE $26
+           TRNXDATE 8 TRNXSTAT $1;
+    set OUT.{stage};
+    format TERMNO Z4. TRNXTIME Z6.;
 run;
-
-
-%INCLUDE '/dwh/ftp/batch/PBBLNFMT.txt';
-LIBNAME TEMP '/dwh/dwh_m/tempsource/ln';
-
-DATA CRMCUM(KEEP=ACCTNO NOTENO CURAVMTH CUBALYTD);
-   SET TEMP.CRMCUM_&YYYY_SAS;
-   IF "&REPTMON2" EQ "12" THEN CUBAL    = CUBALYTD_&CMMDD;
-   ELSE CUBAL    = SUM(CUBALYTD_&CMMDD,(-1)*CUBALYTD_&PMMDD);
-   CURAVMTH = CUBAL / &REPTDAY;
-   IF CUBALYTD_&CMMDD > 0 THEN CUBALYTD = CUBALYTD_&CMMDD /  DAYYTD;
-RUN;
-PROC SORT DATA=CRMCUM; BY ACCTNO NOTENO; RUN;
-
-DATA LOAN_FINAL;
-   MERGE &_INPUT1(IN=A) &_INPUT2;
-   BY ACCTNO;
-   IF A;
-RUN;
-
-DATA LOAN_FINALX;
-   SET LOAN_FINAL;
-   NEWBAL  =BALANCE-(FEEAMT+ACCRUAL);
-   * ARREARS;
-   IF DAYARR_MO GT 0      THEN DO;
-      ARREARS=INPUT(DAYARR_MO,NDAYS.);
-      IF  ARREARS=24   THEN ARREARS=INT((DAYARR_MO/365)*12);
-      MTHARR_MO=ARREARS;
-   END;
-   *LNTYPE;
-   IF PRODUCT LT 800 OR PRODUCT GT 899 THEN DO;
-     IF BRANCH NE 998 AND PRODCD IN ('34180','34240') THEN LNTYPE = 'OD';
-     IF BRANCH NE 998 AND PRODUCT NOT IN (500,520,983,993,996)
-        AND PRODCD NOT IN ('34180','34240') THEN DO;
-     	  IF PRODCD = '34120' THEN LNTYPE = 'HL';
-     	  ELSE IF PRODCD = '54120' THEN LNTYPE = 'HL';
-     	  ELSE IF PRODCD = '34111' THEN LNTYPE = 'HP';
-     	  ELSE IF PRODCD IN ('34190') THEN LNTYPE = 'RC';
-     	  ELSE IF PRODCD IN ('34170') THEN LNTYPE = 'ST';
-     	  ELSE IF PRODCD NOT IN ('M','N') THEN LNTYPE = 'FL';
-  	  END;
-  END;
-  ELSE DO;
-     IF PRODCD='34690'          THEN LNTYPE='FR';
-     IF PRODCD='34600' THEN DO;
-        IF PRODUCT IN (800,801,805,807,809,811,813,851,852,853,854,855,815,816) THEN LNTYPE='FT';
-        IF PRODUCT IN (804)     THEN LNTYPE='FS';
-        IF PRODUCT NOT IN (800,801,802,803,804,805,807,809,811,813,851,
-                           852,853,854,855,856,857,858,859,860,815,816)
-                                THEN LNTYPE='FN';
-     END;
-  END;
-  * STAFF HL;
-  IF LNTYPE = 'FL' AND PRODUCT IN (4,5,6,7,70,100,101,102,106) THEN DO;
-     LNTYPE = 'HL';
-  END;
-  * LOAN DAYARRS;
-  THISDATE = &SAS_DT_LN;
-  IF BLDATE > 0 THEN DAYARR = THISDATE - BLDATE;
-  IF OLDNOTEDAYARR > 0 AND 98000<=NOTENO<=98999 THEN DO;
-      IF DAYARR < 0 THEN DAYARR = 0;
-      DAYARR = SUM(DAYARR,OLDNOTEDAYARR);
-  END;
-  IF DAYARR_MO NE . THEN DAYARR = DAYARR_MO;
-  IF COLLYEAR > 0 THEN COLLAGE=ROUND((YEAR(THISDATE)-COLLYEAR)+1,0.1);
-  SELECT;
-      WHEN (DAYARR>729) MTHARR = INT((DAYARR/365)*12);
-      WHEN (DAYARR>698) MTHARR = 23;
-      WHEN (DAYARR>668) MTHARR = 22;
-      WHEN (DAYARR>638) MTHARR = 21;
-      WHEN (DAYARR>608) MTHARR = 20;
-      WHEN (DAYARR>577) MTHARR = 19;
-      WHEN (DAYARR>547) MTHARR = 18;
-      WHEN (DAYARR>516) MTHARR = 17;
-      WHEN (DAYARR>486) MTHARR = 16;
-      WHEN (DAYARR>456) MTHARR = 15;
-      WHEN (DAYARR>424) MTHARR = 14;
-      WHEN (DAYARR>394) MTHARR = 13;
-      WHEN (DAYARR>364) MTHARR = 12;
-      WHEN (DAYARR>333) MTHARR = 11;
-      WHEN (DAYARR>303) MTHARR = 10;
-      WHEN (DAYARR>273) MTHARR = 9;
-      WHEN (DAYARR>243) MTHARR = 8;
-      WHEN (DAYARR>213) MTHARR = 7;
-      WHEN (DAYARR>182) MTHARR = 6;
-      WHEN (DAYARR>151) MTHARR = 5;
-      WHEN (DAYARR>121) MTHARR = 4;
-      WHEN (DAYARR>89)  MTHARR = 3;
-      WHEN (DAYARR>59)  MTHARR = 2;
-      WHEN (DAYARR>30)  MTHARR = 1;
-      OTHERWISE       MTHARR = 0;
-   END;
-   IF DAYARR > 0 THEN MTHARR_CCRIS = FLOOR(DAYARR/30.00050); *23-0616;
-   ELSE               MTHARR_CCRIS = 0;                               
-   * OD;
-   IF BRANCH NE 998 AND LNTYPE NE ' ' THEN DO;
-      IF (3000000000<=ACCTNO<=3999999999) THEN DO;
-         IF PRODUCT IN (31,33,50,51,52,53,54,55,56,57,58,59,60,
-                        61,62,63,64,65,70,71) THEN DO;
-            CORPROD = 'Y';
-            RETAILID = 'C';
-         END;
-         ELSE RETAILID = 'R';
-      END;
-      ELSE IF (PRODUCT IN (800:814,816:899)) OR
-              (630<=PRODUCT<=649) OR
-              (680<=PRODUCT<=699) OR
-            PRODUCT IN (180,181,182,183,184,185,186,187,188,189,
-                        190,191,192,193,195,197,199,900,901,902,903,
-                        904,905,906,907,908,909,910,914,915,916,
-                        917,918,919,920,925,950,951,911,912,638,
-                        639,688,689
-                        ) THEN DO;
-            CORPROD = 'Y';
-            RETAILID = 'C';
-      END;
-      ELSE RETAILID = 'R';
-   END;
-   ELSE RETAILID = ' ';
-RUN;
-
-/* Re-update value from ACCTFILE */
-proc sort data=LOAN_FINALX;by acctno commno;run;
-proc sort data=&_input4 out=lncomm nodupkey;by acctno commno;run;
-
-data LOAN_FINALX1;
-   merge LOAN_FINALX(in=a) lncomm(in=b);by acctno commno;
-   if a;
+"""
+            else:
+                program = f"""
+data OUT.{table};
+    length CARDNO $20 TRNXTIME 8 TRNXAMT 8
+           TRNXTYPE $26 TRNXDATE 8;
+    set OUT.{stage};
+    format TRNXTIME Z6. TRNXDATE DDMMYY10.;
 run;
+"""
 
-proc sort data=LOAN_FINALX1;by acctno noteno;run;
+            result = sas.submit(program)
 
-data lnnote(drop=PAIDIND NTINT BALANCE CURBAL FEEAMT);
-   set &_input3;
-   IF PAIDIND NE 'P' THEN DO;                                           
-    IF NTINT NE 'A' THEN INTERDUE=SUM(BALANCE,(-1)*CURBAL,(-1)*FEEAMT);
-    ELSE INTERDUE = 0;                                                 
-  END; 
-run;
+            if "ERROR:" in result.get("LOG", ""):
+                raise RuntimeError(result["LOG"])
 
-proc sort data=lnnote nodupkey;by acctno noteno;run;
+            result = sas.submit(
+                "proc datasets library=OUT nolist;"
+                f" delete {stage};"
+                " quit;"
+            )
 
-data &_OUTPUT1;
-   merge LOAN_FINALX1(in=a) lnnote(in=b) CRMCUM;by acctno noteno;
-   if a;
-run;
+            if "ERROR:" in result.get("LOG", ""):
+                raise RuntimeError(result["LOG"])
+
+    finally:
+        sas.endsas()
+
+    return {
+        table: output_dir / f"{table}.sas7bdat"
+        for table in tables
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=DEFAULT_INPUT,
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+    )
+    parser.add_argument(
+        "--report-date",
+        type=parse_date,
+        default=date.today().replace(day=1) - timedelta(days=1),
+    )
+    parser.add_argument(
+        "--encoding",
+        default="cp037",
+    )
+    parser.add_argument(
+        "--record-length",
+        type=int,
+        default=DEFAULT_RECORD_LENGTH,
+    )
+
+    args = parser.parse_args()
+
+    records = read_records(args.input, args.record_length)
+    rows = []
+
+    for record_number, record in enumerate(records, start=1):
+        try:
+            rows.append(parse_record(record, args.encoding))
+        except ValueError as error:
+            raise ValueError(
+                f"Failed to parse record {record_number:,}: {error}"
+            ) from error
+
+    transactions = pd.DataFrame(rows, columns=FULL_COLUMNS)
+
+    cash = transactions.loc[
+        (transactions["TRNXSTAT"] == "S")
+        & transactions["CARDTYPE"].isin(["00", "02", "03", "04"])
+        & transactions["TRNXCODE"].isin([1, 2, 129]),
+        ["CARDNO", "TRNXTIME", "TRNXAMT", "TRNXTYPE", "TRNXDATE"],
+    ].copy()
+
+    full_table = f"ATMTRNX{args.report_date:%m%y}"
+    cash_table = f"ATM_CASH{args.report_date:%Y%m}"
+
+    outputs = write_sas7bdat(
+        args.output_dir,
+        {
+            full_table: transactions,
+            cash_table: cash,
+        },
+    )
+
+    print(f"Input      : {args.input}")
+    print(f"Rows input : {len(transactions):,}")
+    print(f"Cash rows  : {len(cash):,}")
+    print(f"ATMTRNX    : {outputs[full_table]}")
+    print(f"ATM_CASH   : {outputs[cash_table]}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1                                                          The SAS System                         11:03 Wednesday, November 11, 2026
+
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='Program 4';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='';
+9          %LET _SASPROGRAMFILEHOST='';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         
+29         data _null_;
+30                 infile "
+31         cd /sas/python/virt_edw;
+32         source bin/activate;
+33         python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py
+34         " pipe;
+35                 input;
+36                 put _infile_;
+37         run;
+
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py"
+
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 214, in <module>
+    raise SystemExit(main())
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 188, in main
+    rows = [
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 189, in <listcomp>
+    parse_record(record, args.encoding)
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 115, in parse_record
+    "ATMTYPE": numeric_text(record[9:11], encoding),
+  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 85, in numeric_text
+    return int(value) if value else None
+ValueError: invalid literal for int() with base 10: '\x90\x91'
+NOTE: 12 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py".
+      The minimum record length was 12.
+      The maximum record length was 77.
+2                                                          The SAS System                         11:03 Wednesday, November 11, 2026
+
+NOTE: DATA statement used (Total process time):
+      real time           1:30.54
+      cpu time            0.00 seconds
+      
+
+38         
+39         %LET _CLIENTTASKLABEL=;
+40         %LET _CLIENTPROCESSFLOWNAME=;
+41         %LET _CLIENTPROJECTPATH=;
+42         %LET _CLIENTPROJECTPATHHOST=;
+43         %LET _CLIENTPROJECTNAME=;
+44         %LET _SASPROGRAMFILE=;
+45         %LET _SASPROGRAMFILEHOST=;
+46         
+47         ;*';*";*/;quit;run;
+48         ODS _ALL_ CLOSE;
+49         
+50         
+51         QUIT; RUN;
+52         
+
+
+
+
