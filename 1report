@@ -313,7 +313,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--encoding",
-        default="cp037",
+        default="ascii",
+        help="Character-field encoding (default: ascii). Use cp037 for EBCDIC input.",
     )
     parser.add_argument(
         "--record-length",
@@ -365,103 +366,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-1                                                          The SAS System                         11:03 Wednesday, November 11, 2026
-
-1          ;*';*";*/;quit;run;
-2          OPTIONS PAGENO=MIN;
-3          %LET _CLIENTTASKLABEL='Program 4';
-4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
-5          %LET _CLIENTPROJECTPATH='';
-6          %LET _CLIENTPROJECTPATHHOST='';
-7          %LET _CLIENTPROJECTNAME='';
-8          %LET _SASPROGRAMFILE='';
-9          %LET _SASPROGRAMFILEHOST='';
-10         
-11         ODS _ALL_ CLOSE;
-12         OPTIONS DEV=SVG;
-13         GOPTIONS XPIXELS=0 YPIXELS=0;
-14         %macro HTML5AccessibleGraphSupported;
-15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
-16         %mend;
-17         FILENAME EGHTML TEMP;
-18         ODS HTML5(ID=EGHTML) FILE=EGHTML
-19             OPTIONS(BITMAP_MODE='INLINE')
-20             %HTML5AccessibleGraphSupported
-21             ENCODING='utf-8'
-22             STYLE=HTMLBlue
-23             NOGTITLE
-24             NOGFOOTNOTE
-25             GPATH=&sasworklocation
-26         ;
-NOTE: Writing HTML5(EGHTML) Body file: EGHTML
-27         
-28         
-29         data _null_;
-30                 infile "
-31         cd /sas/python/virt_edw;
-32         source bin/activate;
-33         python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py
-34         " pipe;
-35                 input;
-36                 put _infile_;
-37         run;
-
-NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py" is:
-      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py"
-
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 214, in <module>
-    raise SystemExit(main())
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 188, in main
-    rows = [
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 189, in <listcomp>
-    parse_record(record, args.encoding)
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 115, in parse_record
-    "ATMTYPE": numeric_text(record[9:11], encoding),
-  File "/stgsrcsys/host/holding/EIBMTCSM_ADHOC.py", line 85, in numeric_text
-    return int(value) if value else None
-ValueError: invalid literal for int() with base 10: '\x90\x91'
-NOTE: 12 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
-      /stgsrcsys/host/holding/EIBMTCSM_ADHOC.py".
-      The minimum record length was 12.
-      The maximum record length was 77.
-2                                                          The SAS System                         11:03 Wednesday, November 11, 2026
-
-NOTE: DATA statement used (Total process time):
-      real time           1:30.54
-      cpu time            0.00 seconds
-      
-
-38         
-39         %LET _CLIENTTASKLABEL=;
-40         %LET _CLIENTPROCESSFLOWNAME=;
-41         %LET _CLIENTPROJECTPATH=;
-42         %LET _CLIENTPROJECTPATHHOST=;
-43         %LET _CLIENTPROJECTNAME=;
-44         %LET _SASPROGRAMFILE=;
-45         %LET _SASPROGRAMFILEHOST=;
-46         
-47         ;*';*";*/;quit;run;
-48         ODS _ALL_ CLOSE;
-49         
-50         
-51         QUIT; RUN;
-52         
-
-
-
-
