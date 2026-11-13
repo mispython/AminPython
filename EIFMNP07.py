@@ -1,6 +1,10 @@
 # Settings for EIFMNP07; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
 OUTPUT_ROOT = '/stgsrcsys/host/holding'
+SASDATA_PATHS = {
+    'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
+    'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
+}
 SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
 
 
@@ -10,8 +14,12 @@ def job_settings():
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
         'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
-        'libraries': {key: (OUTPUT_ROOT if key in ('NPL','NPL6') else INPUT_ROOT)
-                      for key in ('NPLA','LOAN','SASLN','HD','NPL','NPL6')},
+        'libraries': {
+            'NPLA': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
+            'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
+            'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': INPUT_ROOT,
+            'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
+        },
         'reports': str(Path(OUTPUT_ROOT) / 'reports'),
         'files': {
             'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
@@ -748,8 +756,8 @@ def put(value,fmt):
     fmt=str(fmt).upper();v=S(value).value
     if fmt=='BRCHCD.':return S(PBBELF.put(v,'BRCHCD.'))
     if fmt=='LNTYP.':
-        if v in (128,130,983,131,132):return S('HPD AITAB')
-        if v in (700,705,380,381,993,996):return S('HPD CONVENTIONAL')
+        if v in (128,130,983):return S('HPD AITAB')
+        if v in (700,705,380,381,993,996,720,725):return S('HPD CONVENTIONAL')
         if v is not None and 200<=v<=299:return S('HOUSING LOANS')
         return S('OTHERS')
     if fmt.startswith('Z'):
@@ -842,10 +850,10 @@ def risk(row):
     return S('SUBSTANDARD-1')
 
 
-def islamic(rows):
+def conventional(rows):
     result=[]
     for r in rows:
-        if N(3000)<=r['COSTCTR']<=N(3999) or r['COSTCTR'] in (N(4043),N(4048)):
+        if r['COSTCTR'] != S(None) and (r['COSTCTR'] < N(3000) or r['COSTCTR'] > N(3999)) and r['COSTCTR'] not in (N(4043), N(4048)):
             r=r.copy();r['RISK']=risk(r);result.append(r)
     return result
 
@@ -881,7 +889,7 @@ def reports(c,program,rows,measures,dt):
                               **{col:ssum(*(r[col] for r in group)).value for col in sumcols}})
     c.report(program+'_detail_totals',detail_totals,['LOANTYP','BRANCH','RISK',*sumcols])
     # Include the report date separately so it does not alter data-table schemas.
-    c.report(program+'_report_info',[{'PROGRAM':program,'AS_AT':dt.isoformat(),'BANK':'PUBLIC ISLAMIC BANK','ACCOUNTS':len(rows)}])
+    c.report(program+'_report_info',[{'PROGRAM':program,'AS_AT':dt.isoformat(),'BANK':'PUBLIC BANK','ACCOUNTS':len(rows)}])
 
 
 # Original program logic follows.
@@ -1025,7 +1033,7 @@ def run(c):
     # NEWNPL is explicitly retained in the original existing-account DATA step.
     existing=step(stage_2_loan1,merged,c,params=params,keep=AQ_COLUMNS,retain={'NEWNPL':0})
     current=step(stage_3_loan2,merged,c,params=params,keep=AQ_COLUMNS)
-    combined=islamic(existing+current)
+    combined=conventional(existing+current)
     for r in combined:
         for key in 'NETBALP NEWNPL ACCRINT RECOVER PL NPLW NPL'.split():
             if r[key]==S(None):r[key]=N(0)
