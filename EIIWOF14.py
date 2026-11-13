@@ -1,6 +1,10 @@
 # Settings for EIIWOF14; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
 OUTPUT_ROOT = '/stgsrcsys/host/holding'
+SASDATA_PATHS = {
+    'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
+    'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
+}
 SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
 
 
@@ -10,8 +14,12 @@ def job_settings():
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
         'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
-        'libraries': {key: (OUTPUT_ROOT if key in ('NPL','NPL6') else INPUT_ROOT)
-                      for key in ('NPLA','LOAN','SASLN','HD','NPL','NPL6')},
+        'libraries': {
+            'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
+            'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
+            'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': INPUT_ROOT,
+            'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
+        },
         'reports': str(Path(OUTPUT_ROOT) / 'reports'),
         'files': {
             'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
@@ -255,16 +263,17 @@ def prepare(c, check=False, quiet=False):
     import pyarrow.parquet as pq
     lines = ['/* Submit on the SAS server after this Python job completes. */']
     for name in sorted(c._exported_members):
-        p = c.table('NPL', name)
+        p = c.table('NPLA', name)
         if check:
             with c._sas_reader(p.with_suffix('.sas7bdat')) as reader:
                 if reader.row_count != pq.ParquetFile(p).metadata.num_rows:
                     raise ValueError(f'SAS output count mismatch: {p}')
         else:
-            script = c.holding() / 'sas_bridge' / (p.stem + '.sas')
+            script = p.parent / 'sas_bridge' / (p.stem + '.sas')
             if not script.is_file(): raise FileNotFoundError(script)
             lines.append("%include '" + str(script).replace('\\', '/').replace("'", "''") + "';")
     if not check:
+        c.holding().mkdir(parents=True, exist_ok=True)
         driver = c.holding() / ('export_' + c.cfg['_job_name'] + '.sas')
         stage = driver.with_suffix('.sas.tmp')
         stage.write_text('\n'.join(lines) + '\n', encoding='utf-8')
@@ -403,7 +412,14 @@ class Context:
         return p if p.is_absolute() else self.base / p
 
     def table(self, lib, name):
-        """All routed writes go to holding, regardless of source library alias."""
+        """Job 14 final NPLA members return to the original bank directory."""
+        if lib == 'NPLA':
+            if name.upper() not in {'WIIS', 'WSP2', 'WAQ', 'WOFFTOT'}:
+                raise ValueError(f'Unexpected final member: {name}')
+            extension = self.cfg.get('output_format', 'parquet')
+            if extension not in ('parquet', 'sas7bdat'):
+                raise ValueError('Final source updates require Parquet or SAS7BDAT')
+            return self.path('libraries', 'NPLA') / (name.lower() + '.' + extension)
         if self.cfg.get('output_root'):
             suffix = self.cfg.get('output_suffix', 'x')
             extension = self.cfg.get('output_format', 'sas7bdat')
@@ -419,6 +435,12 @@ class Context:
         return p if p.is_absolute() else self.base / p
 
     def assert_output_path(self, path):
+        final_root = self.path('libraries', 'NPLA').resolve()
+        final_target = Path(path).resolve()
+        if (final_target.parent == final_root
+                and final_target.stem.upper() in {'WIIS', 'WSP2', 'WAQ', 'WOFFTOT'}
+                and final_target.suffix in ('.parquet', '.sas7bdat')):
+            return
         if not self.cfg.get('output_root'): return
         root = self.holding().resolve()
         target = Path(path).resolve()
