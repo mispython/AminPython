@@ -1,6 +1,10 @@
 # Settings for EIFMNP02; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
 OUTPUT_ROOT = '/stgsrcsys/host/holding'
+SASDATA_PATHS = {
+    'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
+    'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
+}
 LNNOTE_ROOT = '/sas/ln/dwh/enrichment'
 SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211', 'WIIS', 'WAQ', 'WSP2']
 
@@ -12,8 +16,12 @@ def job_settings():
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
         'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
-        'libraries': {key: (OUTPUT_ROOT if key in ('NPL','NPL6') else INPUT_ROOT)
-                      for key in ('NPLA','LOAN','SASLN','HD','NPL','NPL6')},
+        'libraries': {
+            'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
+            'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
+            'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': INPUT_ROOT,
+            'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
+        },
         'reports': str(Path(OUTPUT_ROOT) / 'reports'),
         'files': {
             'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
@@ -887,7 +895,7 @@ def reports(c,program,rows,measures,dt):
     detail_groups=defaultdict(list)
     for r in rows:detail_groups[tuple(str(r[k]) for k in ('LOANTYP','BRANCH','RISK'))].append(r)
     detail_totals=[]
-    sumcols=list(dict.fromkeys((['NETPROC'] if program!='EIFMNP07' else [])+measures))
+    sumcols=list(dict.fromkeys((['NETPROC'] if program!='EIIMNP07' else [])+measures))
     for key,group in sorted(detail_groups.items()):
         detail_totals.append({**dict(zip(('LOANTYP','BRANCH','RISK'),key)),
                               **{col:ssum(*(r[col] for r in group)).value for col in sumcols}})

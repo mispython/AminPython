@@ -1,6 +1,10 @@
 # Settings for EIFMNP06; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
 OUTPUT_ROOT = '/stgsrcsys/host/holding'
+SASDATA_PATHS = {
+    'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
+    'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
+}
 SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
 
 
@@ -10,8 +14,12 @@ def job_settings():
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
         'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
-        'libraries': {key: (OUTPUT_ROOT if key in ('NPL','NPL6') else INPUT_ROOT)
-                      for key in ('NPLA','LOAN','SASLN','HD','NPL','NPL6')},
+        'libraries': {
+            'NPLA': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
+            'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
+            'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': INPUT_ROOT,
+            'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
+        },
         'reports': str(Path(OUTPUT_ROOT) / 'reports'),
         'files': {
             'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
@@ -748,8 +756,8 @@ def put(value,fmt):
     fmt=str(fmt).upper();v=S(value).value
     if fmt=='BRCHCD.':return S(PBBELF.put(v,'BRCHCD.'))
     if fmt=='LNTYP.':
-        if v in (128,130,983,131,132):return S('HPD AITAB')
-        if v in (700,705,380,381,993,996):return S('HPD CONVENTIONAL')
+        if v in (128,130,983):return S('HPD AITAB')
+        if v in (700,705,380,381,993,996,720,725):return S('HPD CONVENTIONAL')
         if v is not None and 200<=v<=299:return S('HOUSING LOANS')
         return S('OTHERS')
     if fmt.startswith('Z'):
@@ -842,10 +850,10 @@ def risk(row):
     return S('SUBSTANDARD-1')
 
 
-def islamic(rows):
+def conventional(rows):
     result=[]
     for r in rows:
-        if N(3000)<=r['COSTCTR']<=N(3999) or r['COSTCTR'] in (N(4043),N(4048)):
+        if r['COSTCTR'] != S(None) and (r['COSTCTR'] < N(3000) or r['COSTCTR'] > N(3999)) and r['COSTCTR'] not in (N(4043), N(4048)):
             r=r.copy();r['RISK']=risk(r);result.append(r)
     return result
 
@@ -881,7 +889,7 @@ def reports(c,program,rows,measures,dt):
                               **{col:ssum(*(r[col] for r in group)).value for col in sumcols}})
     c.report(program+'_detail_totals',detail_totals,['LOANTYP','BRANCH','RISK',*sumcols])
     # Include the report date separately so it does not alter data-table schemas.
-    c.report(program+'_report_info',[{'PROGRAM':program,'AS_AT':dt.isoformat(),'BANK':'PUBLIC ISLAMIC BANK','ACCOUNTS':len(rows)}])
+    c.report(program+'_report_info',[{'PROGRAM':program,'AS_AT':dt.isoformat(),'BANK':'PUBLIC BANK','ACCOUNTS':len(rows)}])
 
 
 # Original program logic follows.
@@ -937,7 +945,7 @@ def stage_3_loan1(r, c):
         r['OTHERFEE'] = N('0')
     if r['LOANTYPE'] in ( N('983') , N('993') ):
         r['OTHERFEE'] = N('0')
-    if r['APPVALUE'] > N('0') and ( r['LOANTYPE'] in ( N('705') , N('128') , N('700') , N('130') , N('380') , N('381') ) or r['CENSUS7'] == S('9') ) and ( r['DAYS'] > N('89') or r['USER5'] == S('N') ) and r['BORSTAT'] not in ( S('F') , S('R') , S('I') , S('Y') , S('W') ) and r['LOANTYPE'] not in ( N('983') , N('993') ):
+    if r['APPVALUE'] > N('0') and ( r['LOANTYPE'] in ( N('705') , N('128') , N('700') , N('130') , N('380') , N('381') , N('720') , N('725') ) or r['CENSUS7'] == S('9') ) and ( r['DAYS'] > N('89') or r['USER5'] == S('N') ) and r['BORSTAT'] not in ( S('F') , S('R') , S('I') , S('Y') , S('W') ) and r['LOANTYPE'] not in ( N('983') , N('993') ):
         r['AGE'] = sint ( year ( r['REPTDATE'] ) - year ( r['ISSDTE'] ) + ( month ( r['REPTDATE'] ) - month ( r['ISSDTE'] ) ) / N('12') )
         if r['CENSUS7'] != S('9'):
             r['MARKETVL'] = r['APPVALUE'] - r['APPVALUE'] * r['AGE'] * N('0.2')
@@ -1050,7 +1058,9 @@ def stage_4_loan2(r, c):
         r['OTHERFEE'] = ssum ( r['FEEAMT8'] , ( - N('1') ) * r['FEETOT2'] , r['FEEAMTA'] , ( - N('1') ) * r['FEEAMT5'] )
     if r['OTHERFEE'] < N('0'):
         r['OTHERFEE'] = N('0')
-    if r['APPVALUE'] > N('0') and ( r['LOANTYPE'] in ( N('705') , N('130') , N('700') , N('128') , N('380') , N('381') ) or r['CENSUS7'] == S('9') ) and ( r['DAYS'] > N('89') or r['USER5'] == S('N') ) and r['BORSTAT'] not in ( S('F') , S('R') , S('I') , S('Y') , S('W') ) and r['LOANTYPE'] not in ( N('983') , N('993') ):
+    if r['LOANTYPE'] in ( N('983') , N('993') ):
+        r['OTHERFEE'] = N('0')
+    if r['APPVALUE'] > N('0') and ( r['LOANTYPE'] in ( N('705') , N('130') , N('700') , N('128') , N('380') , N('381') , N('720') , N('725') ) or r['CENSUS7'] == S('9') ) and ( r['DAYS'] > N('89') or r['USER5'] == S('N') ) and r['BORSTAT'] not in ( S('F') , S('R') , S('I') , S('Y') , S('W') ) and r['LOANTYPE'] not in ( N('983') , N('993') ):
         r['AGE'] = sint ( year ( r['REPTDATE'] ) - year ( r['ISSDTE'] ) + ( month ( r['REPTDATE'] ) - month ( r['ISSDTE'] ) ) / N('12') )
         if r['CENSUS7'] != S('9'):
             r['MARKETVL'] = r['APPVALUE'] - r['APPVALUE'] * r['AGE'] * N('0.2')
@@ -1172,7 +1182,7 @@ def stage_8_loan1_drop_pdays(r, c):
             out.append(('', r.copy()))
         else:
             if ( r['A'] and r['B'] ):
-                if r['DAYS'] < N('90') and r['PDAYS'] < N('90'):
+                if ( r['DAYS'] < N('90') and r['PDAYS'] < N('90') ):
                     if r['BORSTAT'] not in ( S('F') , S('I') , S('R') ):
                         r['SPPL'] = r['PSPPL']
                         r['RECOVER'] = ssum ( r['PSPP2'] , r['PSPPL'] )
@@ -1183,7 +1193,7 @@ def stage_8_loan1_drop_pdays(r, c):
                         r['SPPL'] = r['SP'] - r['SPP2']
                         r['RECOVER'] = N('0')
                     out.append(('', r.copy()))
-                if r['DAYS'] < N('90') and r['PDAYS'] >= N('90'):
+                if ( r['DAYS'] < N('90') and r['PDAYS'] >= N('90') ):
                     if r['BORSTAT'] not in ( S('F') , S('I') , S('R') ):
                         r['IIS'] = N('0')
                         if r['USER5'] != S('N'):
@@ -1247,7 +1257,7 @@ def stage_10_loan2_drop_pdays(r, c):
         if r['BORSTAT'] in ( S('W') , ) or r['RESCHEIND'] == S('Y'):
             out.append(('', r.copy()))
         else:
-            if r['DAYS'] < N('90') and r['PDAYS'] < N('90'):
+            if ( r['DAYS'] < N('90') and r['PDAYS'] < N('90') ):
                 if r['BORSTAT'] not in ( S('F') , S('I') , S('R') ):
                     r['SPPL'] = r['PSPPL']
                     r['RECOVER'] = r['PRECOVER']
@@ -1261,7 +1271,7 @@ def stage_10_loan2_drop_pdays(r, c):
                     r['SPPL'] = r['SP'] - r['SPP2']
                     r['RECOVER'] = N('0')
                 out.append(('', r.copy()))
-            if r['DAYS'] < N('90') and r['PDAYS'] >= N('90'):
+            if ( r['DAYS'] < N('90') and r['PDAYS'] >= N('90') ):
                 if r['BORSTAT'] not in ( S('F') , S('I') , S('R') ):
                     r['IIS'] = N('0')
                     r['MARKETVL'] = N('0')
@@ -1318,7 +1328,7 @@ def run(c):
         previous=step(stage_9_sp2prev,match([previous,performing],['A','B']),c)
         current=sort(current,('ACCTNO','NOTENO'))
         current=step(stage_10_loan2_drop_pdays,match([previous,current],['B','A']),c,drop=PREVIOUS_DROP)
-    combined=islamic(existing+current)
+    combined=conventional(existing+current)
     columns=list(dict.fromkeys(SP_COLUMNS+['RISK']+[k for r in combined for k in r]))
     # Source deduplicates LOAN3 for reports, but does not deduplicate NPL.SP2.
     for name in ('SP2'+mm,'SP2'):save(c,'NPL',name,combined,columns)
