@@ -1,119 +1,1033 @@
-PROC SORT DATA=HAVE;
-    BY ACCTNO SECUST;
-RUN;
+"""EIBMLIQ3 native Python job. Includes all five ratios."""
+import argparse
+from calendar import monthrange
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
-DATA WANT;
-    SET HAVE;
-    BY ACCTNO;
-
-    RETAIN SELECTED;
-
-    IF FIRST.ACCTNO THEN SELECTED = 0;
-
-    IF SELECTED = 0 THEN DO;
-
-        IF SECUST = '901' AND
-           7 <= AGE <= 17 THEN DO;
-            OUTPUT;
-            SELECTED = 1;
-        END;
-
-        ELSE IF SECUST = '902' AND
-                7 <= AGE <= 17 THEN DO;
-            OUTPUT;
-            SELECTED = 1;
-        END;
-
-    END;
-
-    DROP SELECTED;
-RUN;
+def month_end(run_date=None):
+    if run_date is None:
+        run_date = datetime.now(timezone(timedelta(hours=8))).date()
+    return run_date.replace(day=1) - timedelta(days=1)
 
 
+def input_paths(report_date):
+    month = report_date.strftime("%m") + "4"
+    period = month + report_date.strftime("%y")
+    return {
+        f"BNMK.K1TBL{month}": f"/exdwh/host/kapiti/k1tbl{month}.sas7bdat",
+        f"BNMK.K3TBL{month}": f"/exdwh/host/kapiti/k3tbl{month}.sas7bdat",
+        f"BNM1.ALW{month}": f"/dwh/dwh_m/tempsource/ALW{month}.sas7bdat",
+        f"BNM1.W1AL{month}": f"/dwh/dwh_m/tempsource/W1AL{month}.sas7bdat",
+        **{
+            f"EQ1.{member.upper()}{period}": f"/dwh/eq_d/{member}{period}.sas7bdat"
+            for member in ("utms", "utfx", "utrp")
+        },
+        f"SIP.SIPCERT{period}": f"/dwh/rs_cis/sipcust{period}.sas7bdat",
+        f"DCI.DCI{month}": f"/dwh/dci/dci{month}.sas7bdat",
+        f"FD.FD{period}": f"/dwh/dp_fd/fd{period}.sas7bdat",
+        f"FCY.FCY{period}": f"/dwh/dp_fcy/fcy{period}.sas7bdat",
+        f"CA.CA{period}": f"/dwh/dp_ca/ca{period}.sas7bdat",
+        f"CIS.CISR1FD{period}": f"/dwh/rs_cis/cisr1fd{period}.sas7bdat",
+        f"CIS.CISR1CA{period}": f"/dwh/rs_cis/cisr1ca{period}.sas7bdat",
+        "FORATE.FORATEBKP": "/host_pq/dwh/sas/lkp_spotrate.sas7bdat",
+    }
 
 
-proc sort data=HAVE;
-    by ACCTNO;
-run;
 
-data WANT;
-    set HAVE;
-    by ACCTNO;
+def load_inputs(run_date=None, members=None):
+    """Return the reporting date and frames indexed by original SAS member."""
+    report_date = month_end(run_date)
+    paths = input_paths(report_date)
+    if members is not None:
+        paths = {member: path for member, path in paths.items() if member.rstrip("0123456789") in members}
+    missing = [path for path in paths.values() if not Path(path).is_file()]
+    if missing:
+        raise FileNotFoundError("Missing month-end inputs:\n" + "\n".join(missing))
 
-    retain PRIMARY_AGE SECONDARY_AGE;
+    import pyreadstat
 
-    if first.ACCTNO then do;
-        PRIMARY_AGE = .;
-        SECONDARY_AGE = .;
-    end;
+    frames = {}
+    for member, path in paths.items():
+        frame, _ = pyreadstat.read_sas7bdat(path, disable_datetime_conversion=True)
+        frame.columns = frame.columns.str.upper()
+        frames[member] = frame
+    return report_date, frames
 
-    if SECUST = '901' then
-        PRIMARY_AGE = AGE;
-    else if SECUST = '902' then
-        SECONDARY_AGE = AGE;
+# SAS dates are retained as numeric day counts by the input reader.
+REPO_CODES = {
+    "4216017000000Y", "4216020000000Y", "4216060000000Y",
+    "4216071000000Y", "4216072000000Y", "4216073000000Y",
+    "4216074000000Y", "4216076000000Y", "4216079000000Y",
+    "4216085000000Y",
+}
+EXCLUDED_DEPOSITS = {"C1.03E", "C1.03F", "C1.03K"}
 
-    if last.ACCTNO then do;
 
-        if 7 <= PRIMARY_AGE <= 17 then do;
-            SECUST = '901';
-            AGE = PRIMARY_AGE;
-            output;
-        end;
+def text_column(frame, name):
+    return frame[name].fillna("").str.rstrip(" ")
 
-        else if 7 <= SECONDARY_AGE <= 17 then do;
-            SECUST = '902';
-            AGE = SECONDARY_AGE;
-            output;
-        end;
 
-    end;
+def macro_amount(value):
+    """Match an eight-decimal SAS macro amount, preserving missing values."""
+    return None if value is None else float(f"{value:.8f}")
 
-    keep ACCTNO SECUST AGE;
-run;
-proc sort data=HAVE;
-    by ACCTNO;
-run;
 
-data WANT;
-    set HAVE;
-    by ACCTNO;
+def difference(left, right):
+    return None if left is None or right is None else left - right
 
-    retain PRIMARY_AGE PRIMARY_FOUND
-           SECONDARY_AGE SECONDARY_FOUND;
 
-    if first.ACCTNO then do;
-        PRIMARY_AGE = .;
-        SECONDARY_AGE = .;
-        PRIMARY_FOUND = 0;
-        SECONDARY_FOUND = 0;
-    end;
+def pbl_deposits(fd, fcy, cis):
+    """Apply the account lookup and retain the PB(L) customer balances."""
+    lookup = cis.loc[cis["SECCUST"].eq(901), ["ACCTNO", "CUSTNO"]].copy()
+    lookup = lookup.drop_duplicates("ACCTNO").rename(columns={"CUSTNO": "_CIS_CUSTNO"})
+    lookup["_IN_CIS"] = True
 
-    if SECUST = '901' then do;
-        PRIMARY_AGE = AGE;
-        PRIMARY_FOUND = 1;
-    end;
-    else if SECUST = '902' then do;
-        SECONDARY_AGE = AGE;
-        SECONDARY_FOUND = 1;
-    end;
+    def select(frame):
+        merged = frame.merge(lookup, how="left", on="ACCTNO", validate="many_to_one")
+        customer = merged["_CIS_CUSTNO"]
+        if "CUSTNO" in merged:
+            customer = customer.where(merged["_IN_CIS"].eq(True), merged["CUSTNO"])
+        return merged.loc[customer.eq(3721354)]
 
-    if last.ACCTNO then do;
+    fd = select(fd)
+    fcy = select(fcy.loc[fcy["PRODUCT"].between(300, 399)])
+    return sum(
+        frame[column].sum()
+        for frame in (fd, fcy)
+        for column in ("CURBAL", "CURBALRM")
+        if column in frame
+    )
 
-        if PRIMARY_FOUND = 1
-           and 7 <= PRIMARY_AGE <= 17 then do;
-            SECUST = '901';
-            AGE = PRIMARY_AGE;
-            output;
-        end;
 
-        else if SECONDARY_FOUND = 1
-                and 7 <= SECONDARY_AGE <= 17 then do;
-            SECUST = '902';
-            AGE = SECONDARY_AGE;
-            output;
-        end;
+def ratio1(report_date, frames):
+    """Return Ratio 1 rows in report order."""
+    month = report_date.strftime("%m") + "4"
+    period = month + report_date.strftime("%y")
+    alw = frames[f"BNM1.ALW{month}"]
+    w1al = frames[f"BNM1.W1AL{month}"]
+    utms = frames[f"EQ1.UTMS{period}"]
 
-    end;
+    mapped = text_column(w1al, "SET_ID").map(W1AL_ITEMS)
+    amounts = w1al["AMOUNT"].groupby(mapped).sum().to_dict()
 
-    keep ACCTNO SECUST AGE;
-run;
+    repo = text_column(alw, "AMTIND").ne("") & text_column(alw, "ITCODE").isin(REPO_CODES)
+    if repo.any():
+        amounts["C1.04"] = alw.loc[repo, "AMOUNT"].sum()
+
+    # SAS orders numeric missing values below ordinary dates.
+    value_date, business_date = utms["VALUDATE"], utms["BUSDATE"]
+    eligible = (
+        ~text_column(utms, "DEALTYPE").isin({"MOP", "MSP", "IUP"})
+        & text_column(utms, "SECTYPE").ne("DIM")
+        & text_column(utms, "PORTREF").ne("SIPPFD")
+        & (value_date.isna() | value_date.le(business_date))
+        & (
+            text_column(utms, "CUSTFISS").isin({"01", "02", "03", "07", "12", "81", "82", "83", "84"})
+            | text_column(utms, "CUSTEQTP").isin({"BC", "BB", "BI", "BJ", "BM", "BA", "BE"})
+        )
+    )
+    if eligible.any():
+        amounts["C1.05B"] = utms.loc[eligible, "CAMTOWNE"].sum()
+
+    amounts["C1.03M"] = pbl_deposits(
+        frames[f"FD.FD{period}"],
+        frames[f"FCY.FCY{period}"],
+        frames[f"CIS.CISR1FD{period}"],
+    )
+    loan = difference(macro_amount(amounts.get("C1.01")), amounts.get("C1.02"))
+    nids = difference(macro_amount(amounts.get("C1.05A")), macro_amount(amounts.get("C1.05B")))
+    for item in EXCLUDED_DEPOSITS:
+        amounts[item] = 0.0
+    amounts["C1.03"] = (
+        sum(value for item, value in amounts.items() if item.startswith("C1.03"))
+        - 2 * macro_amount(amounts["C1.03M"])
+    )
+    amounts["C1.05"] = nids
+    additions = ("C1.03", "C1.04", "C1.05", "C1.07", "C1.08", "C1.09", "C1.10")
+    components = [macro_amount(amounts.get(item)) for item in additions]
+    deposit = difference(sum(value for value in components if value is not None),
+                         macro_amount(amounts.get("C1.06")))
+    ratio = None if loan is None or not deposit else macro_amount(loan) / deposit * 100
+
+    rows = []
+    for number, (item, label) in enumerate(RATIO1_LAYOUT, 1):
+        group = "ADJUSTED LOAN" if number <= 2 else "ADJUSTED DEPOSIT"
+        rows.append((group, item, label, amounts.get(item)))
+        if number == 2:
+            rows.append((group, "SUB-TOTAL", "", macro_amount(loan)))
+    rows.append(("ADJUSTED DEPOSIT", "SUB-TOTAL", "", macro_amount(deposit)))
+    rows.append(("RATIO", "." if ratio is None else f"{ratio:.8f}", "", None))
+    return rows
+
+
+def rate_percentage(numerator, denominator):
+    if numerator is None or denominator is None or denominator == 0:
+        return "."
+    return f"{numerator / denominator * 100:.8f}"
+
+
+def sas_sum(values):
+    present = [value for value in values if value is not None]
+    return sum(present) if present else None
+
+
+def ca_pbl_amounts(ca, cis):
+    """Reproduce a SAS BY merge, pairing duplicates by input order."""
+    lookup = cis.loc[cis["SECCUST"].eq(901), ["ACCTNO", "CUSTNO"]]
+    left = ca.assign(_CA=True)
+    right = lookup.rename(columns={"CUSTNO": "_CIS_CUSTNO"}).assign(_CIS=True)
+    left = left.assign(_SEQ=left.groupby("ACCTNO", dropna=False).cumcount())
+    right = right.assign(_SEQ=right.groupby("ACCTNO", dropna=False).cumcount())
+    merged = left.merge(right, how="outer", on=["ACCTNO", "_SEQ"]).sort_values("_SEQ")
+    # Retain the last CA row for lookup-only iterations within a BY group.
+    merged["_CA_SEQ"] = merged["_SEQ"].where(merged["_CA"].eq(True))
+    merged["_CA_SEQ"] = merged.groupby("ACCTNO", dropna=False)["_CA_SEQ"].ffill()
+    retained = merged[["ACCTNO", "_CA_SEQ"]].merge(
+        left[["ACCTNO", "_SEQ", "PRODUCT", "CURBAL"]],
+        how="left", left_on=["ACCTNO", "_CA_SEQ"], right_on=["ACCTNO", "_SEQ"],
+    )
+    customer = merged["_CIS_CUSTNO"]
+    if "CUSTNO" in merged:
+        customer = customer.where(merged["_CIS"].eq(True), merged["CUSTNO"])
+    valid = customer.eq(3721354).to_numpy() & retained["PRODUCT"].isin({104, 105, 147}).to_numpy()
+    return retained.loc[valid, "CURBAL"]
+
+
+def ratio2(report_date, frames, ratio1_rows):
+    month = report_date.strftime("%m") + "4"
+    period = month + report_date.strftime("%y")
+    ratio1_amounts = {item: amount for _, item, _, amount in ratio1_rows}
+    pbl_fd = macro_amount(ratio1_amounts["C1.03M"])
+    alw = frames[f"BNM1.ALW{month}"]
+    w1al = frames[f"BNM1.W1AL{month}"]
+    sip = frames[f"SIP.SIPCERT{period}"]
+    utfx = frames[f"EQ1.UTFX{period}"]
+    utms = frames[f"EQ1.UTMS{period}"]
+    rates = frames["FORATE.FORATEBKP"].copy()
+
+    walker = w1al["AMOUNT"].groupby(text_column(w1al, "SET_ID")).sum().to_dict()
+    valid_alw = alw.loc[text_column(alw, "AMTIND").ne("")]
+    alw_codes = valid_alw["AMOUNT"].groupby(text_column(valid_alw, "ITCODE")).sum()
+    alw_items = {}
+    for code, amount in alw_codes.items():
+        item = RATIO2_ALW_ITEMS.get(code)
+        if item is None:
+            continue
+        if item == "C2.04E":
+            amount = difference(amount, macro_amount(walker.get("F143620LKR")))
+        elif item == "C2.08D":
+            amount = difference(amount, macro_amount(walker.get("F133620LKR")))
+        alw_items[item] = (alw_items.get(item) or 0.0) + (amount or 0.0)
+
+    start = utfx["STRTDATE"]
+    started = start.isna() | start.le(utfx["BUSDATE"])
+    deal_type = text_column(utfx, "DEALTYPE")
+    cust_fiss = text_column(utfx, "CUSTFISS")
+    cust_eqtp = text_column(utfx, "CUSTEQTP")
+    pbl = text_column(utfx, "CUSTID").eq("BR 900002A")
+    basic_type = text_column(utfx, "BASICTYP")
+    nfe_fx = started & deal_type.isin({"BCD", "BCI", "BCQ"}) & (
+        cust_fiss.between("80", "99") | cust_eqtp.isin({"EB", "BA", "CE", "BE", "GA"})
+    )
+    fx_borrow = started & pbl & basic_type.eq("D") & ~deal_type.isin({"BCC", "BCD", "BCQ"})
+    fx_place = started & pbl & basic_type.eq("L") & ~deal_type.isin({"BCD", "BCQ", "LCC"})
+
+    sas_date = (report_date - date(1960, 1, 1)).days
+    rates["CURCODE"] = text_column(rates, "CURCODE")
+    rates = rates.loc[rates["REPTDATE"].isna() | rates["REPTDATE"].le(sas_date)]
+    rates = rates.sort_values("REPTDATE", ascending=False, kind="stable", na_position="last")
+    spot = rates.drop_duplicates("CURCODE").set_index("CURCODE")["SPOTRATE"]
+    borrow_fx = utfx.loc[fx_borrow, "AMTPAY"] * text_column(utfx.loc[fx_borrow], "PURCHCUR").map(spot)
+    place_fx = utfx.loc[fx_place, "AMTPAY"] * text_column(utfx.loc[fx_place], "SALESCUR").map(spot)
+
+    nids = (
+        ~text_column(utms, "DEALTYPE").isin({"MOP", "MSP", "IUP"})
+        & text_column(utms, "SECTYPE").ne("DIM")
+        & text_column(utms, "PORTREF").ne("SIPPFD")
+        & (utms["VALUDATE"].isna() | utms["VALUDATE"].le(utms["BUSDATE"]))
+        & text_column(utms, "CUSTNO").eq("PBLNID")
+    )
+    sip_eligible = sip["INVSTAT"].ne(601) & sip["CUSTCODE"].between(80, 99)
+    ca_balances = ca_pbl_amounts(frames[f"CA.CA{period}"], frames[f"CIS.CISR1CA{period}"])
+    amounts = dict(alw_items)
+    amounts["C2.01L"] = pbl_fd
+    if nfe_fx.any():
+        amounts["C2.01F"] = utfx.loc[nfe_fx, "AMTPAY"].sum()
+    if nids.any():
+        amounts["C2.02C"] = utms.loc[nids, "CAMTOWNE"].sum()
+    if not ca_balances.empty:
+        amounts["C2.04G"] = ca_balances.sum()
+    if not borrow_fx.empty:
+        amounts["C2.04I"] = borrow_fx.sum()
+    if not place_fx.empty:
+        amounts["C2.08F"] = place_fx.sum()
+    for item, set_id in (("C2.04H", "F242699PBL"), ("C2.08E", "F133690VFBI")):
+        if set_id in walker:
+            amounts[item] = walker[set_id]
+
+    def section_sum(prefix, values, has_rows=False):
+        section = [amount for item, amount in values.items() if item.startswith(prefix)]
+        return sum(value or 0.0 for value in section) if section or has_rows else None
+
+    exclusions = {"C2.01D", "C2.01E", "C2.01J"}
+    section201 = {item: amount for item, amount in alw_items.items() if item not in exclusions}
+    for item in exclusions.intersection(alw_items):
+        section201[item] = 0.0
+    if "C2.01F" in amounts:
+        section201["C2.01F"] = amounts["C2.01F"]
+
+    borrow_adjustment = macro_amount(sas_sum([amounts.get(item) for item in ("C2.04G", "C2.04H", "C2.04I")]))
+    placement_inputs = dict(alw_items)
+    if "C2.08E" in amounts:
+        placement_inputs["C2.08E"] = amounts["C2.08E"]
+    totals = {
+        "C2.01": difference(section_sum("C2.01", section201, sip_eligible.any()), pbl_fd),
+        "C2.02": difference(section_sum("C2.02", alw_items), macro_amount(amounts.get("C2.02C", 0))),
+        "C2.03": section_sum("C2.03", alw_items),
+        "C2.04": difference(section_sum("C2.04", alw_items), borrow_adjustment),
+        "C2.08": difference(section_sum("C2.08", placement_inputs), macro_amount(amounts.get("C2.08F"))),
+    }
+    borrow = sas_sum([totals[item] for item in ("C2.01", "C2.02", "C2.03", "C2.04")])
+    placements = totals["C2.08"]
+    offshore = difference(macro_amount(borrow), placements)
+    totals.update({
+        "C2.09": difference(macro_amount(ratio1_amounts["C1.03"]), macro_amount(totals["C2.01"])),
+        "C2.10": difference(macro_amount(ratio1_amounts["C1.04"]), macro_amount(amounts.get("C2.03B"))),
+        "C2.11": difference(macro_amount(ratio1_amounts["C1.05"]), macro_amount(amounts.get("C2.02B"))),
+    })
+    domestic = sas_sum([macro_amount(totals[item]) for item in ("C2.09", "C2.10", "C2.11")])
+    amounts.update(totals)
+    amounts.update(dict.fromkeys(exclusions, 0.0))
+
+    borrowing = "NET OFFSHORE BORROWING(ACCEPTANCE)"
+    less = "LESS"
+    liabilities = "TOTAL DOMESTIC DEPOSIT LIABILITIES"
+    rows = []
+    for item, label in RATIO2_LAYOUT:
+        group = borrowing if item[:5] <= "C2.04" else less if item[:5] <= "C2.08" else liabilities
+        rows.append((group, item, label, amounts.get(item)))
+        if item == "C2.04I":
+            rows.append((group, "SUB-TOTAL", "", macro_amount(borrow)))
+        elif item == "C2.08F":
+            rows.extend([(group, "SUB-TOTAL", "", macro_amount(placements)),
+                         (group, "TOTAL", "", macro_amount(offshore))])
+    rows.append((liabilities, "SUB-TOTAL", "", macro_amount(domestic)))
+    rows.append(("RATIO", rate_percentage(macro_amount(offshore), domestic), "", None))
+    return rows
+
+
+
+
+def domestic_interbank_utms(utms):
+    value_date, business_date = utms["VALUDATE"], utms["BUSDATE"]
+    return (
+        ~text_column(utms, "DEALTYPE").isin({"MOP", "MSP", "IUP"})
+        & text_column(utms, "SECTYPE").ne("DIM")
+        & text_column(utms, "PORTREF").ne("SIPPFD")
+        & (value_date.isna() | value_date.le(business_date))
+        & (text_column(utms, "CUSTFISS").isin({"01", "02", "03", "07", "12"})
+           | text_column(utms, "CUSTEQTP").isin({"BC", "BB", "BI", "BJ", "BM"}))
+    )
+
+
+def ratio3(report_date, frames, ratio2_rows):
+    """Calculate net domestic interbank borrowing against Ratio 2 liabilities."""
+    month = report_date.strftime("%m") + "4"
+    period = month + report_date.strftime("%y")
+    alw = frames[f"BNM1.ALW{month}"]
+    alw = alw.loc[text_column(alw, "AMTIND").ne("")]
+    itcode = text_column(alw, "ITCODE")
+    mapped = itcode.map(RATIO3_ALW_ITEMS)
+    amounts = alw["AMOUNT"].groupby(mapped).sum().to_dict()
+
+    reverse_repo = itcode.eq("3250001000000Y")
+    reverse_repo_deductions = itcode.isin({"3250020000000Y", "3250081000000Y"})
+    if (reverse_repo | reverse_repo_deductions).any():
+        amounts["C3.05"] = (
+            alw.loc[reverse_repo, "AMOUNT"].sum()
+            - alw.loc[reverse_repo_deductions, "AMOUNT"].sum()
+        )
+
+    w1al = frames[f"BNM1.W1AL{month}"]
+    held = text_column(w1al, "SET_ID").eq("F137030NIDH")
+    if held.any():
+        amounts["C3.06A"] = w1al.loc[held, "AMOUNT"].sum()
+
+    utms = frames[f"EQ1.UTMS{period}"]
+    security = text_column(utms, "SECTYPE")
+    fiss = text_column(utms, "CUSTFISS")
+    customer = text_column(utms, "CUSTNO")
+    interbank = domestic_interbank_utms(utms)
+    net_amount = utms["CAMTOWNE"] + utms["INTACR"] - utms["UNDISCPR"]
+    # Later SAS IF statements can replace the item while retaining the amount.
+    utms_items = security.mask(security.notna(), "")
+    utms_items.loc[interbank] = "C3.03"
+    securities = security.isin({"SDC", "SLD", "SSD", "SZD", "LDC"})
+    utms_items.loc[securities & fiss.eq("17")] = "C3.06B"
+    for item, customers in (
+        ("C3.06C", {"BKPKSM", "ISME"}),
+        ("C3.06D", {"BKRAK"}),
+        ("C3.06E", {"IBSN", "BSN"}),
+        ("C3.06F", {"BPMB", "IBPMB"}),
+    ):
+        utms_items.loc[securities & fiss.eq("33") & customer.isin(customers)] = item
+    net_amount = net_amount.mask(interbank & net_amount.notna(), utms["CAMTOWNE"])
+    amounts.update(net_amount.groupby(utms_items.where(utms_items.ne(""))).sum().to_dict())
+
+    for prefix in ("C3.01", "C3.04"):
+        amounts[prefix] = sas_sum([value for item, value in amounts.items() if item.startswith(prefix)])
+    nids_deductions = sas_sum([amounts.get(f"C3.06{suffix}") for suffix in "BCDEF"])
+    gross_nids = amounts.get("C3.06A")
+    amounts["C3.06"] = (
+        None if gross_nids is None and nids_deductions is None
+        else (gross_nids or 0) - (nids_deductions or 0)
+    )
+
+    borrowing = sas_sum([macro_amount(amounts.get(f"C3.0{index}")) for index in range(1, 4)])
+    placement = sas_sum([macro_amount(amounts.get(f"C3.0{index}")) for index in range(4, 7)])
+    net_borrowing = difference(borrowing, placement)
+    ratio2_amounts = {item: amount for _, item, _, amount in ratio2_rows}
+    for index in range(7, 10):
+        amounts[f"C3.0{index}"] = macro_amount(ratio2_amounts[f"C2.{index + 2:02}"])
+    liabilities = sas_sum([amounts[f"C3.0{index}"] for index in range(7, 10)])
+
+    rows = []
+    for item, label in RATIO3_LAYOUT:
+        prefix = item[:5]
+        if prefix <= "C3.03":
+            group = "NET DOMESTIC INTERBANK BORROWING(ACCEPTANCE)"
+        elif prefix <= "C3.06":
+            group = "LESS"
+        else:
+            group = "TOTAL DOMESTIC DEPOSIT LIABILITIES"
+        rows.append((group, item, label, amounts.get(item)))
+        if item == "C3.03":
+            rows.append((group, "SUB-TOTAL", "", macro_amount(borrowing)))
+        elif item == "C3.06F":
+            rows.extend([
+                (group, "SUB-TOTAL", "", macro_amount(placement)),
+                (group, "TOTAL", "", macro_amount(net_borrowing)),
+            ])
+        elif item == "C3.09":
+            rows.append((group, "SUB-TOTAL", "", macro_amount(liabilities)))
+    rows.append(("RATIO", rate_percentage(net_borrowing, liabilities), "", None))
+    return rows
+
+
+
+
+def ratio4(report_date, frames):
+    """Calculate net overnight acceptance over adjusted gross acceptance."""
+    month = report_date.strftime("%m") + "4"
+    period = month + report_date.strftime("%y")
+    kapiti = frames[f"BNMK.K1TBL{month}"]
+    currency = text_column(kapiti, "GWCCY")
+    customer_type = text_column(kapiti, "GWCTP")
+    eligible = (
+        (currency.eq("MYR") | text_column(kapiti, "GWCNAL").eq("MY"))
+        & customer_type.isin({"BB", "BC", "BI", "BJ", "BM"})
+        & text_column(kapiti, "GWMVT").eq("P")
+        & text_column(kapiti, "GWMVTS").eq("M")
+    )
+    deal = text_column(kapiti, "GWDLP")
+    borrow = eligible & deal.eq("BO") & ~text_column(kapiti, "GWSHN").str.startswith("FCY-FD")
+    place = eligible & deal.eq("LO")
+
+    alw = frames[f"BNM1.ALW{month}"]
+    alw = alw.loc[text_column(alw, "AMTIND").ne("")]
+    by_code = alw["AMOUNT"].groupby(text_column(alw, "ITCODE")).sum().to_dict()
+    amounts = {}
+    # One ALW code can contribute to both overnight and gross borrowing.
+    for item, codes in RATIO4_ALW_ITEMS:
+        amounts[item] = sas_sum([by_code.get(code) for code in codes])
+    if borrow.any():
+        amounts["C4.01A"] = kapiti.loc[borrow, "GWBALC"].sum()
+    if place.any():
+        amounts["C4.02A"] = kapiti.loc[place, "GWBALC"].abs().sum()
+
+    utms = frames[f"EQ1.UTMS{period}"]
+    nids = domestic_interbank_utms(utms)
+    if nids.any():
+        amounts["C4.05"] = utms.loc[nids, "CAMTOWNE"].sum()
+    for prefix in ("C4.01", "C4.02", "C4.03"):
+        amounts[prefix] = sas_sum([value for item, value in amounts.items() if item.startswith(prefix)])
+
+    overnight_placement = macro_amount(amounts["C4.02"])
+    amounts["C4.06"] = overnight_placement
+    net_overnight = difference(macro_amount(amounts["C4.01"]), overnight_placement)
+    gross = sas_sum([macro_amount(amounts.get(item)) for item in ("C4.03", "C4.04", "C4.05")])
+    adjusted_gross = difference(gross, overnight_placement)
+
+    overnight_group = "TOTAL NET OVERNIGHT ACCEPTANCE"
+    gross_group = (
+        "TOTAL GROSS DOMESTIC INTERBANK BORROWING (ACCEPTANCE) "
+        "LESS OVERNIGHT DOMESTIC INTERBANK PLACEMENT"
+    )
+    rows = []
+    for item, label in RATIO4_LAYOUT:
+        if item[:5] <= "C4.02":
+            group = overnight_group
+        elif item[:5] <= "C4.05":
+            group = gross_group
+        else:
+            group = "LESS"
+        rows.append((group, item, label, amounts.get(item)))
+        if item == "C4.02F":
+            rows.append((group, "SUB-TOTAL", "", macro_amount(net_overnight)))
+        elif item == "C4.05":
+            rows.append((group, "SUB-TOTAL", "", macro_amount(gross)))
+        elif item == "C4.06":
+            rows.append((group, "TOTAL", "", macro_amount(adjusted_gross)))
+    rows.append(("RATIO", rate_percentage(net_overnight, adjusted_gross), "", None))
+    return rows
+
+
+def ratio5(report_date, frames, ratio1_rows, ratio2_rows):
+    """Calculate short-term domestic borrowing over short-term domestic funding."""
+    month = report_date.strftime("%m") + "4"
+    period = month + report_date.strftime("%y")
+    epoch = date(1960, 1, 1)
+    report_day = (report_date - epoch).days
+    next_month = report_date + timedelta(days=1)
+    cutoff = (date(next_month.year, next_month.month,
+                   monthrange(next_month.year, next_month.month)[1]) - epoch).days
+
+    alw = frames[f"BNM1.ALW{month}"]
+    alw = alw.loc[text_column(alw, "AMTIND").ne("")]
+    by_code = alw["AMOUNT"].groupby(text_column(alw, "ITCODE")).sum().to_dict()
+    amounts = {item: sas_sum([by_code.get(code) for code in codes])
+               for item, codes in RATIO5_ALW_ITEMS}
+
+    def add(item, values):
+        if not values.empty:
+            amounts[item] = (amounts.get(item) or 0) + values.sum()
+
+    bank_types = {"BB", "BC", "BI", "BJ", "BM"}
+    repo_banks = bank_types | {"BP"}
+    repo_types = repo_banks | set(
+        "AD BF BH BR BS BT BU BV BZ AC CA CB CC CD CF CG DD DA DB DC EC EJ FA".split()
+    )
+
+    k1 = frames[f"BNMK.K1TBL{month}"]
+    deal = text_column(k1, "GWDLP")
+    ctp = text_column(k1, "GWCTP")
+    currency = text_column(k1, "GWCCY")
+    malaysian = text_column(k1, "GWCNAL").eq("MY")
+    short = k1["GWMDT"].le(cutoff)
+    movement = text_column(k1, "GWMVT").eq("P") & text_column(k1, "GWMVTS").eq("M")
+    borrowing = (
+        short & movement & deal.isin({"BO", "BF"}) & ctp.isin(bank_types)
+        & ~text_column(k1, "GWSHN").str.startswith("FCY-FD")
+    )
+    add("C5.01A", k1.loc[borrowing & (currency.eq("MYR") | malaysian), "GWBALC"])
+    add("C5.07A", k1.loc[borrowing & malaysian, "GWBALC"])
+    nids = (
+        short & deal.isin({"BCD", "BCI", "BCQ"})
+        & ~text_column(k1, "GWC2R").between("82", "99")
+        & ~ctp.isin({"EB", "BA", "CE", "BE", "GA", "BW"})
+    )
+    add("C5.04Z", k1.loc[nids, "GWBALC"])
+    repo = short & movement & currency.eq("MYR") & deal.str.slice(1, 3).isin({"MI", "MT"})
+    add("C5.02", k1.loc[repo & ctp.isin(repo_banks), "GWBALC"])
+    add("C5.05", k1.loc[repo & ctp.isin(repo_types), "GWBALC"])
+
+    k3 = frames[f"BNMK.K3TBL{month}"]
+    eligible = (
+        k3["MATDT"].le(cutoff)
+        & text_column(k3, "UTREF").isin({"PFD", "PLD", "PSD", "PZD"})
+        & text_column(k3, "UTSTY").isin({"IFD", "ILD", "ISD", "IZD", "IZP"})
+    )
+    k3_type = text_column(k3, "UTCTP")
+    k3_amount = k3["UTAMOC"] - k3["UTDPF"]
+    add("C5.03", k3_amount.loc[eligible & k3_type.isin(bank_types)])
+    add("C5.06", k3_amount.loc[eligible & ~k3_type.isin({"BA", "BE", "BW", "CE", "EB", "GA"})])
+
+    utrp = frames[f"EQ1.UTRP{period}"]
+    repo = (
+        utrp["REPOMATD"].le(cutoff)
+        & text_column(utrp, "DEALTYPE").str.slice(1, 3).isin({"RA", "RB", "RQ"})
+        & text_column(utrp, "CURRENCY").eq("MYR")
+    )
+    ctp = text_column(utrp, "CUSTEQTP")
+    add("C5.02", utrp.loc[repo & ctp.isin(repo_banks), "TSALPROC"])
+    add("C5.05", utrp.loc[repo & ctp.isin(repo_types), "TSALPROC"])
+
+    sip = frames[f"SIP.SIPCERT{period}"]
+    maturity = sip["MATDT"].mask(text_column(sip, "PRODKEY").eq("FD20401"),
+                               (date(2014, 7, 31) - epoch).days)
+    eligible = ~sip["INVSTAT"].isin({601, "601"}) & (maturity.isna() | maturity.le(cutoff))
+    sip_amount = sip["PRINAMT"] - sip["REDAMT"]
+    add("C5.04J", sip_amount.loc[eligible])
+    add("C5.04K", sip_amount.loc[eligible & sip["CUSTCODE"].between(80, 99)])
+
+    dci = frames[f"DCI.DCI{month}"]
+    maturity, start = dci["MATDT"], dci["STARTDT"]
+    eligible = (maturity.isna() | maturity.le(cutoff)) & (start.isna() | start.le(report_day))
+    currency = text_column(dci, "INVCURR")
+    nonresident = dci["CUSTCODE"].between(80, 99)
+    local = eligible & currency.eq("MYR")
+    foreign = eligible & currency.ne("MYR")
+    add("C5.04L", dci.loc[local, "INVAMT"])
+    add("C5.04M", dci.loc[local & nonresident, "INVAMT"])
+    rates = frames["FORATE.FORATEBKP"]
+    rates = rates.loc[rates["REPTDATE"].isna() | rates["REPTDATE"].le(report_day)]
+    rates = rates.sort_values("REPTDATE", ascending=False, kind="stable", na_position="last")
+    rates = rates.assign(CURCODE=text_column(rates, "CURCODE"))
+    spot = rates.drop_duplicates("CURCODE").set_index("CURCODE")["SPOTRATE"]
+    converted = dci["INVAMT"] * currency.map(spot)
+    add("C5.04V", converted.loc[foreign])
+    add("C5.04W", converted.loc[foreign & nonresident])
+
+    previous = {item: amount for _, item, _, amount in [*ratio1_rows, *ratio2_rows]}
+    for suffix, item in RATIO5_DEPOSIT_ITEMS.items():
+        amounts[f"C5.04{suffix}"] = macro_amount(previous[item])
+
+    for suffix in "JKLMVW":
+        amounts[f"C5.04{suffix}"] = 0.0
+    deposits = sum(amounts.get(f"C5.04{suffix}") or 0 for suffix in "ACEFHJLNPRTVXZ")
+    deductions = sum(amounts.get(f"C5.04{suffix}") or 0 for suffix in "BDGIKMOQSUWY")
+    amounts["C5.04"] = deposits - deductions
+    for prefix in ("C5.01", "C5.07"):
+        amounts[prefix] = sas_sum([value for item, value in amounts.items() if item.startswith(prefix)])
+    borrowing = sas_sum([macro_amount(amounts.get(item)) for item in ("C5.01", "C5.02", "C5.03")])
+    funding = sas_sum([macro_amount(amounts.get(item)) for item in ("C5.04", "C5.05", "C5.06", "C5.07")])
+
+    rows = []
+    for item, label in RATIO5_LAYOUT:
+        group = ("SHORT TERM GROSS DOMESTIC INTERBANK BORROWING (ACCEPTANCE)"
+                 if item[:5] <= "C5.03" else "SHORT TERM DOMESTIC TOTAL FUNDING")
+        rows.append((group, item, label, amounts.get(item)))
+        if item == "C5.03":
+            rows.append((group, "SUB-TOTAL", "", macro_amount(borrowing)))
+    rows.append(("SHORT TERM DOMESTIC TOTAL FUNDING", "SUB-TOTAL", "", macro_amount(funding)))
+    rows.append(("RATIO", rate_percentage(borrowing, funding), "", None))
+    return rows
+
+
+def report_lines(report_date, title, rows):
+    lines = [
+        "REPORT ID : EIBMLIQ3",
+        f"DATE : {report_date:%d/%m/%y}",
+        "PART 3",
+        "CONCENTRATION OF FUNDING SOURCES (PBB)",
+        title,
+        "",
+        f"{'ITEM':<18} {'DESCRIPTION':<60} {'MONTH END':>19}",
+    ]
+    previous_group = None
+    for group, item, label, amount in rows:
+        if group != previous_group:
+            lines.append(f"{group}:")
+            previous_group = group
+        formatted = "" if group == "RATIO" else f"{0 if amount is None else amount:,.2f}"
+        lines.append(f"{item:<18} {label:<60} {formatted:>19}".rstrip())
+    return lines
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--run-date", type=date.fromisoformat)
+    parser.add_argument("--output-dir", type=Path, default=Path("/stgsrcsys/host/holding"), help="Report directory (default: /stgsrcsys/host/holding)")
+    args = parser.parse_args()
+    members = {
+        "BNMK.K1TBL", "BNMK.K3TBL", "EQ1.UTRP", "DCI.DCI", "BNM1.ALW", "BNM1.W1AL", "EQ1.UTMS", "EQ1.UTFX", "FD.FD", "FCY.FCY",
+        "CIS.CISR1FD", "CIS.CISR1CA", "CA.CA", "SIP.SIPCERT", "FORATE.FORATEBKP",
+    }
+    report_date, frames = load_inputs(args.run_date, members=members)
+    first_rows = ratio1(report_date, frames)
+    second_rows = ratio2(report_date, frames, first_rows)
+    sections = (
+        ("RATIO 1: ADJUSTED LOAN / DEPOSIT RATIO", first_rows),
+        ("RATIO 2: NET OFFSHORE BORROWING (ACCEPTANCE) / TOTAL DOMESTIC DEPOSIT LIABILITIES",
+         second_rows),
+        ("RATIO 3: NET DOMESTIC INTERBANK BORROWING (ACCEPTANCE) / TOTAL DOMESTIC DEPOSIT LIABILITIES",
+         ratio3(report_date, frames, second_rows)),
+        ("RATIO 4: TOTAL NET DOMESTIC OVERNIGHT INTERBANK BORROWING (ACCEPTANCE) / "
+         "TOTAL GROSS DOMESTIC INTERBANK ACCEPTANCE LESS OVERNIGHT DOMESTIC INTERBANK LENDING",
+         ratio4(report_date, frames)),
+        ("RATIO 5: SHORT TERM GROSS DOMESTIC INTERBANK BORROWING (ACCEPTANCE) / "
+         "SHORT TERM DOMESTIC TOTAL FUNDING", ratio5(report_date, frames, first_rows, second_rows)),
+    )
+    report = "\n\n".join("\n".join(report_lines(report_date, title, rows)) for title, rows in sections)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "EIBMLIQ3.txt").write_text(report + "\n", encoding="utf-8")
+
+
+W1AL_ITEMS = {
+    'F134000LN': 'C1.01',
+    'F249130AP': 'C1.02',
+    'F142110DDEP': 'C1.03A',
+    'F142120SA': 'C1.03B',
+    'F142130FD': 'C1.03C',
+    'F142180HDAD': 'C1.03D',
+    'F142191ILD': 'C1.03E',
+    'F142191DCI': 'C1.03F',
+    'F142190STD': 'C1.03G',
+    'F142199ODA': 'C1.03H',
+    'F142600A': 'C1.03I',
+    'F142630FXFD': 'C1.03J',
+    'F142691FXDCI': 'C1.03K',
+    'F142699ALL': 'C1.03L',
+    'F142150NIDI': 'C1.05A',
+    'F132110SDBNM': 'C1.06',
+    'F241101OSC': 'C1.07',
+    'F241102SP': 'C1.07',
+    'F241103SRF': 'C1.07',
+    'F241104GRF': 'C1.07',
+    'F241111CRR': 'C1.07',
+    'F241105RPAL': 'C1.07',
+    'F241107CUPL': 'C1.07',
+    'F241109PRR': 'C1.07',
+    'F241400': 'C1.07',
+    'F240510RR': 'C1.07',
+    'F144111TIER2': 'C1.08',
+    'F144111TIER1': 'C1.09',
+    'F144140CAGA': 'C1.10',
+}
+RATIO1_LAYOUT = (
+    ('C1.01', 'GROSS LOANS'),
+    ('C1.02', 'BA PAYABLE'),
+    ('C1.03', 'TOTAL ALL DEPOSITS'),
+    ('C1.03A', 'RM DEMAND DEPOSITS ACCEPTED'),
+    ('C1.03B', 'RM SAVINGS DEPOSITS ACCEPTED'),
+    ('C1.03C', 'RM FIXED DEPOSITS ACCEPTED'),
+    ('C1.03D', 'RM HOUSING DEVELOPMENT ACCOUNT DEPOSITS'),
+    ('C1.03E', 'RM INVESTMENT LINK TO DERIVATIVES - SIP (NOT REPORTABLE)'),
+    ('C1.03F', 'RM INVESTMENT LINK TO DERIVATIVES - DCI (NOT REPORTABLE)'),
+    ('C1.03G', 'RM SHORT-TERM DEPOSITS ACCEPTED - PMM'),
+    ('C1.03H', 'RM OTHER DEPOSITS ACCEPTED'),
+    ('C1.03I', 'FX DEMAND DEPOSITS ACCEPTED'),
+    ('C1.03J', 'FX FIXED DEPOSITS ACCEPTED'),
+    ('C1.03K', 'FX INVESTMENT LINK TO DERIVATIVES - DCI (NOT REPORTABLE)'),
+    ('C1.03L', 'FX OTHER DEPOSITS ACCEPTED'),
+    ('C1.03M', 'FIXED DEPOSITS ACCEPTED-PB(L)'),
+    ('C1.04', 'NON-INTERBANK REPOS'),
+    ('C1.05', 'NON-INTERBANK NIDS'),
+    ('C1.05A', 'NIDS ISSUED'),
+    ('C1.05B', 'INTERBANK NIDS'),
+    ('C1.06', 'STATUTORY DEPOSITS'),
+    ('C1.07', 'CAPITAL'),
+    ('C1.08', 'OTHER HYBRID TIER-2 CAPITAL INSTRUMENTS'),
+    ('C1.09', 'RM SUBORDINATED BORROWING'),
+    ('C1.10', 'LOANS SOLD TO CAGAMAS'),
+)
+
+RATIO2_ALW_ITEMS = {
+    '4211085000000Y': 'C2.01A',
+    '4212085000000Y': 'C2.01B',
+    '4213081000000Y': 'C2.01C',
+    '4213085000000Y': 'C2.01C',
+    '4219181000000Y': 'C2.01E',
+    '4219185000000Y': 'C2.01E',
+    '4219981000000Y': 'C2.01G',
+    '4219985000000Y': 'C2.01G',
+    '4261085000000Y': 'C2.01H',
+    '4263081000000Y': 'C2.01I',
+    '4263085000000Y': 'C2.01I',
+    '4269181000000Y': 'C2.01J',
+    '4269185000000Y': 'C2.01J',
+    '4269981000000Y': 'C2.01K',
+    '4269985000000Y': 'C2.01K',
+    '4215081000000Y': 'C2.02A',
+    '4215085000000Y': 'C2.02B',
+    '4216081000000Y': 'C2.03A',
+    '4216085000000Y': 'C2.03B',
+    '4314081100000Y': 'C2.04A',
+    '4314081200000Y': 'C2.04A',
+    '4311081000000Y': 'C2.04B',
+    '4319981000000Y': 'C2.04C',
+    '4364081100000Y': 'C2.04D',
+    '4364081200000Y': 'C2.04D',
+    '4362081000000Y': 'C2.04E',
+    '4369981000000Y': 'C2.04F',
+    '3314081100000Y': 'C2.08A',
+    '3314081200000Y': 'C2.08A',
+    '3311081000000Y': 'C2.08B',
+    '3364081100000Y': 'C2.08C',
+    '3364081200000Y': 'C2.08C',
+    '3362081000000Y': 'C2.08D',
+}
+RATIO2_LAYOUT = (
+    ('C2.01', 'TOTAL ALL DEPOSITS'),
+    ('C2.01A', 'RM DEMAND DEPOSITS ACCEPTED FROM FE'),
+    ('C2.01B', 'RM SAVINGS DEPOSITS ACCEPTED FROM FE'),
+    ('C2.01C', 'RM FIXED DEPOSITS ACCEPTED FROM FE'),
+    ('C2.01D', 'RM INVESTMENT LINK TO DERIVATIVES - SIP (NOT REPORTABLE)'),
+    ('C2.01E', 'RM INVESTMENT LINK TO DERIVATIVES - DCI (NOT REPORTABLE)'),
+    ('C2.01F', 'RM SHORT-TERM DEPOSITS ACCEPTED FROM FE'),
+    ('C2.01G', 'RM OTHER DEPOSITS ACCEPTED FROM FE'),
+    ('C2.01H', 'FX DEMAND DEPOSITS ACCEPTED FROM FE'),
+    ('C2.01I', 'FX FIXED DEPOSITS ACCEPTED FROM FE'),
+    ('C2.01J', 'FX INVESTMENT LINK TO DERIVATIVES - DCI (NOT REPORTABLE)'),
+    ('C2.01K', 'FX OTHER DEPOSITS ACCEPTED FROM FE'),
+    ('C2.01L', 'FIXED DEPOSITS ACCEPTED-PB(L)'),
+    ('C2.02', 'TOTAL RM NIDS ISSUED TO FE'),
+    ('C2.02A', 'RM NIDS ISSUED TO FBI'),
+    ('C2.02B', 'RM NIDS ISSUED TO FNBE'),
+    ('C2.02C', 'RM NIDS ISSUED TO PB(L)'),
+    ('C2.03', 'TOTAL REPURCHASE AGREEMENT WITH FE'),
+    ('C2.03A', 'REPURCHASE AGREEMENT WITH FBI'),
+    ('C2.03B', 'REPURCHASE AGREEMENT WITH FNBE'),
+    ('C2.04', 'TOTAL INTERBANK BORROWING FROM FBI'),
+    ('C2.04A', 'RM INTERBANK  BORROWING FROM FBI'),
+    ('C2.04B', 'RM VOSTRO A/C BALANCES OF FBI'),
+    ('C2.04C', 'RM OTHER AMOUNT DUE TO FBI'),
+    ('C2.04D', 'FX INTERBANK BORROWING FROM FBI'),
+    ('C2.04E', 'FX OVERDRAWN NOSTRO A/C WITH FBI'),
+    ('C2.04F', 'FX OTHER AMOUNT DUE TO FBI'),
+    ('C2.04G', 'RM VOSTRO A/C BALANCES OF FBI-PB(L)'),
+    ('C2.04H', 'FX VOSTRO A/C BALANCES OF FBI-PB(L)'),
+    ('C2.04I', 'RM & FX INTERBANK BORROWING FROM FBI-PB(L)'),
+    ('C2.05', 'DEPOSITS PLACED WITH FE'),
+    ('C2.06', 'NIDS HELD WITH FE'),
+    ('C2.07', 'REVERSE REPO WITH FE'),
+    ('C2.08', 'TOTAL INTERBANK PLACEMENTS WITH FBI'),
+    ('C2.08A', 'RM INTERBANK  PLACEMENT WITH FBI'),
+    ('C2.08B', 'RM OVERDRAWN VOSTRO A/C OF FBI'),
+    ('C2.08C', 'FX INTERBANK PLACEMENT WITH FBI'),
+    ('C2.08D', 'FX NOSTRO A/C WITH FBI'),
+    ('C2.08E', 'FX OTHER AMOUNT DUE FROM FBI'),
+    ('C2.08F', 'RM & FX INTERBANK PLACEMENT WITH FBI-PB(L)'),
+    ('C2.09', 'ALL DEPOSITS (RATIO 1) LESS ALL DEPOSITS (RATIO 2)'),
+    ('C2.10', 'NON-INTERBANK REPOS'),
+    ('C2.11', 'NON-INTERBANK NIDS'),
+)
+
+
+RATIO3_ALW_ITEMS = {
+    '4314001000000Y': 'C3.01A',
+    '4314002000000Y': 'C3.01B',
+    '4314003000000Y': 'C3.01C',
+    '4314012000000Y': 'C3.01D',
+    '4311002000000Y': 'C3.01E',
+    '4311003000000Y': 'C3.01F',
+    '4312002000000Y': 'C3.01G',
+    '4312003000000Y': 'C3.01H',
+    '4364001000000Y': 'C3.01I',
+    '4364002000000Y': 'C3.01J',
+    '4364003000000Y': 'C3.01K',
+    '4364012000000Y': 'C3.01L',
+    '4364007100000Y': 'C3.01M',
+    '4364007200000Y': 'C3.01M',
+    '4216001000000Y': 'C3.02',
+    '4216002000000Y': 'C3.02',
+    '4216003000000Y': 'C3.02',
+    '4216007000000Y': 'C3.02',
+    '4216012000000Y': 'C3.02',
+    '3314001000000Y': 'C3.04A',
+    '3314002000000Y': 'C3.04B',
+    '3314003000000Y': 'C3.04C',
+    '3314012000000Y': 'C3.04D',
+    '3311002000000Y': 'C3.04E',
+    '3311003000000Y': 'C3.04F',
+    '3312002000000Y': 'C3.04G',
+    '3312003000000Y': 'C3.04H',
+    '3364001000000Y': 'C3.04I',
+    '3364002000000Y': 'C3.04J',
+    '3364003000000Y': 'C3.04K',
+    '3364012000000Y': 'C3.04L',
+    '3364007100000F': 'C3.04M',
+    '3364007200000F': 'C3.04M',
+    '4369903000000Y': 'C3.01N',
+    '3369003000000F': 'C3.04N',
+}
+RATIO3_LAYOUT = (
+    ('C3.01', 'TOTAL INTERBANK BORROWING'),
+    ('C3.01A', 'RM INTERBANK BORROWING FROM BNM'),
+    ('C3.01B', 'RM INTERBANK BORROWING FROM CB'),
+    ('C3.01C', 'RM INTERBANK BORROWING FROM IB'),
+    ('C3.01D', 'RM INTERBANK BORROWING FROM MB'),
+    ('C3.01E', 'RM VOSTRO A/C BALANCES OF CB'),
+    ('C3.01F', 'RM VOSTRO A/C BALANCES OF IB'),
+    ('C3.01G', 'RM OVERDRAWN NOSTRO A/C WITH CB'),
+    ('C3.01H', 'RM OVERDRAWN NOSTRO A/C WITH IB'),
+    ('C3.01I', 'FX INTERBANK BORROWING FROM BNM'),
+    ('C3.01J', 'FX INTERBANK BORROWING FROM CB'),
+    ('C3.01K', 'FX INTERBANK BORROWING FROM IB'),
+    ('C3.01L', 'FX INTERBANK BORROWING FROM MB'),
+    ('C3.01M', 'FX INTERBANK BORROWING FROM IIB'),
+    ('C3.01N', 'FX OTHER AMOUNT DUE TO IB'),
+    ('C3.02', 'INTERBANK REPOS'),
+    ('C3.03', 'INTERBANK NIDS'),
+    ('C3.04', 'TOTAL INTERBANK PLACEMENT'),
+    ('C3.04A', 'RM INTERBANK PLACEMENTS WITH BNM'),
+    ('C3.04B', 'RM INTERBANK PLACEMENTS WITH CB'),
+    ('C3.04C', 'RM INTERBANK PLACEMENTS WITH IB'),
+    ('C3.04D', 'RM INTERBANK PLACEMENTS WITH MB'),
+    ('C3.04E', 'RM OVERDRAWN VOSTRO A/C OF CB'),
+    ('C3.04F', 'RM OVERDRAWN VOSTRO A/C OF IB'),
+    ('C3.04G', 'RM NOSTRO A/C WITH CB'),
+    ('C3.04H', 'RM NOSTRO A/C WITH IB'),
+    ('C3.04I', 'FX INTERBANK PLACEMENTS WITH BNM'),
+    ('C3.04J', 'FX INTERBANK PLACEMENTS WITH CB'),
+    ('C3.04K', 'FX INTERBANK PLACEMENTS WITH IB'),
+    ('C3.04L', 'FX INTERBANK PLACEMENTS WITH MB'),
+    ('C3.04M', 'FX INTERBANK PLACEMENTS WITH IIB'),
+    ('C3.04N', 'FX OTHER AMOUNT DUE FROM IB'),
+    ('C3.05', 'INTERBANK REVERSE REPOS'),
+    ('C3.06', 'TOTAL NIDS HELD WITH RESIDENT BANK'),
+    ('C3.06A', 'TOTAL NIDS HELD'),
+    ('C3.06B', 'NIDS HELD WITH CAGAMAS'),
+    ('C3.06C', 'NIDS HELD WITH SME BANK'),
+    ('C3.06D', 'NIDS HELD WITH BANK KERJASAMA RAKYAT'),
+    ('C3.06E', 'NIDS HELD WITH BANK SIMPANAN NASIONAL'),
+    ('C3.06F', 'NIDS HELD WITH BANK PEMBANGUNAN MALAYSIA BHD'),
+    ('C3.07', 'ALL DEPOSITS (RATIO 1) LESS ALL DEPOSITS (RATIO 2)'),
+    ('C3.08', 'NON-INTERBANK REPOS'),
+    ('C3.09', 'NON-INTERBANK NIDS'),
+)
+
+
+RATIO4_ALW_ITEMS = (
+    ('C4.01B', ('4311002000000Y',)),
+    ('C4.01C', ('4311003000000Y',)),
+    ('C4.01D', ('4312002000000Y',)),
+    ('C4.01E', ('4312003000000Y',)),
+    ('C4.02B', ('3311002000000Y',)),
+    ('C4.02C', ('3311003000000Y',)),
+    ('C4.02D', ('3312002000000Y',)),
+    ('C4.02E', ('3312003000000Y',)),
+    ('C4.03A', ('4314001000000Y',)),
+    ('C4.03B', ('4314002000000Y',)),
+    ('C4.03C', ('4314003000000Y',)),
+    ('C4.03D', ('4314012000000Y',)),
+    ('C4.03E', ('4311002000000Y',)),
+    ('C4.03F', ('4311003000000Y',)),
+    ('C4.03G', ('4312002000000Y',)),
+    ('C4.03H', ('4312003000000Y',)),
+    ('C4.03I', ('4364001000000Y',)),
+    ('C4.03J', ('4364002000000Y',)),
+    ('C4.03K', ('4364003000000Y',)),
+    ('C4.03L', ('4364012000000Y',)),
+    ('C4.01F', ('4369903000000Y',)),
+    ('C4.03N', ('4369903000000Y',)),
+    ('C4.02F', ('3369003000000F',)),
+    ('C4.03M', ('4364007100000Y', '4364007200000Y')),
+    ('C4.04', ('4216001000000Y', '4216002000000Y', '4216003000000Y', '4216007000000Y', '4216012000000Y')),
+)
+
+
+RATIO4_LAYOUT = (
+    ('C4.01', 'TOTAL OVERNIGHT INTERBANK BORROWING FROM RESIDENTS'),
+    ('C4.01A', 'OVERNIGHT INTERBANK BORROWING FROM RESIDENTS'),
+    ('C4.01B', 'RM VOSTRO A/C BALANCES OF CB'),
+    ('C4.01C', 'RM VOSTRO A/C BALANCES OF IB'),
+    ('C4.01D', 'RM OVERDRAWN NOSTRO A/C WITH CB'),
+    ('C4.01E', 'RM OVERDRAWN NOSTRO A/C WITH IB'),
+    ('C4.01F', 'FX OTHER AMOUNT DUE TO IB'),
+    ('C4.02', 'TOTAL OVERNIGHT INTERBANK PLACEMENT TO RESIDENTS'),
+    ('C4.02A', 'OVERNIGHT INTERBANK PLACEMENT TO RESIDENTS'),
+    ('C4.02B', 'RM OVERDRAWN VOSTRO A/C OF CB'),
+    ('C4.02C', 'RM OVERDRAWN VOSTRO A/C OF IB'),
+    ('C4.02D', 'RM NOSTRO A/C WITH CB'),
+    ('C4.02E', 'RM NOSTRO A/C WITH IB'),
+    ('C4.02F', 'FX OTHER AMOUNT DUE FROM IB'),
+    ('C4.03', 'TOTAL INTERBANK BORROWING FROM RESIDENTS'),
+    ('C4.03A', 'RM INTERBANK BORROWING FROM BNM'),
+    ('C4.03B', 'RM INTERBANK BORROWING FROM CB'),
+    ('C4.03C', 'RM INTERBANK BORROWING FROM IB'),
+    ('C4.03D', 'RM INTERBANK BORROWING FROM MB'),
+    ('C4.03E', 'RM VOSTRO A/C BALANCES OF CB'),
+    ('C4.03F', 'RM VOSTRO A/C BALANCES OF IB'),
+    ('C4.03G', 'RM OVERDRAWN NOSTRO A/C WITH CB'),
+    ('C4.03H', 'RM OVERDRAWN NOSTRO A/C WITH IB'),
+    ('C4.03I', 'FX INTERBANK BORROWING FROM BNM'),
+    ('C4.03J', 'FX INTERBANK BORROWING FROM CB'),
+    ('C4.03K', 'FX INTERBANK BORROWING FROM IB'),
+    ('C4.03L', 'FX INTERBANK BORROWING FROM MB'),
+    ('C4.03M', 'FX INTERBANK BORROWING FROM IIB'),
+    ('C4.03N', 'FX OTHER AMOUNT DUE TO IB'),
+    ('C4.04', 'INTERBANK REPOS'),
+    ('C4.05', 'INTERBANK NIDS'),
+    ('C4.06', 'OVERNIGHT INTERBANK PLACEMENT TO RESIDENTS'),
+)
+
+
+RATIO5_ALW_ITEMS = (
+    ('C5.01B', ('4311002000000Y',)),
+    ('C5.01C', ('4311003000000Y',)),
+    ('C5.01D', ('4312002000000Y',)),
+    ('C5.01E', ('4312003000000Y',)),
+    ('C5.01F', ('4369903000000Y',)),
+    ('C5.04F', ('4213001520000Y', '4213002520000Y', '4213012520000Y', '4213020520000Y', '4213060520000Y', '4213070520000Y', '4213076520000Y', '4213079520000Y', '4213080520000Y', '4213017520000Y', '4213075520000Y', '4213057520000Y')),
+    ('C5.04G', ('4213080520000Y',)),
+    ('C5.04H', ('4213001510000Y', '4213002510000Y', '4213012510000Y', '4213020510000Y', '4213060510000Y', '4213070510000Y', '4213076510000Y', '4213079510000Y', '4213080510000Y', '4213017510000Y', '4213075510000Y', '4213057510000Y')),
+    ('C5.04I', ('4213080510000Y',)),
+    ('C5.04R', ('4263002520000Y', '4263012520000Y', '4263020520000Y', '4263060520000Y', '4263070520000Y', '4263076520000Y', '4263079520000Y', '4263080520000Y', '4263017520000Y', '4263075520000Y', '4263057520000Y')),
+    ('C5.04S', ('4263080520000Y',)),
+    ('C5.04T', ('4263002510000Y', '4263012510000Y', '4263020510000Y', '4263060510000Y', '4263070510000Y', '4263076510000Y', '4263079510000Y', '4263080510000Y', '4263017510000Y', '4263075510000Y', '4263057510000Y')),
+    ('C5.04U', ('4263080510000Y',)),
+    ('C5.07B', ('4311002000000Y',)),
+    ('C5.07C', ('4311003000000Y',)),
+    ('C5.07D', ('4312002000000Y',)),
+    ('C5.07E', ('4312003000000Y',)),
+    ('C5.07F', ('4369903000000Y',)),
+)
+
+
+RATIO5_LAYOUT = (
+    ('C5.01', 'TOTAL INTERBANK BORROWING FROM RESIDENTS'),
+    ('C5.01A', 'INTERBANK BORROWING FROM RESIDENTS'),
+    ('C5.01B', 'RM VOSTRO A/C BALANCES OF CB'),
+    ('C5.01C', 'RM VOSTRO A/C BALANCES OF IB'),
+    ('C5.01D', 'RM OVERDRAWN NOSTRO A/C WITH CB'),
+    ('C5.01E', 'RM OVERDRAWN NOSTRO A/C WITH IB'),
+    ('C5.01F', 'FX OTHER AMOUNT DUE TO IB'),
+    ('C5.02', 'INTERBANK REPOS'),
+    ('C5.03', 'INTERBANK NIDS'),
+    ('C5.04', 'TOTAL ALL DEPOSITS'),
+    ('C5.04A', 'RM DEMAND DEPOSITS ACCEPTED'),
+    ('C5.04B', '(-)RM DEMAND DEPOSITS ACCEPTED FROM FE'),
+    ('C5.04C', 'RM SAVINGS DEPOSITS ACCEPTED'),
+    ('C5.04D', '(-)RM SAVINGS DEPOSITS ACCEPTED FROM FE'),
+    ('C5.04E', 'RM HOUSING DEVELOPMENT ACCOUNT DEPOSITS'),
+    ('C5.04F', 'RM FIXED DEPOSITS ACCEPTED WITH REM.MAT. <=1 MTH'),
+    ('C5.04G', '(-)RM FIXED DEPOSITS ACCEPTED FROM FE WITH REM.MAT.<= 1 MTH'),
+    ('C5.04H', 'RM FIXED DEPOSITS ACCEPTED OVERDUE'),
+    ('C5.04I', '(-)RM FIXED DEPOSITS ACCEPTED FROM FE OVERDUE'),
+    ('C5.04J', 'RM INVESTMENT LINK TO DERIVATIVES - SIP (NOT REPORTABLE)'),
+    ('C5.04K', '(-)RM INVESTMENT LINK TO DERIVATIVES - SIP FROM FE (NOT REPORTABLE)'),
+    ('C5.04L', 'RM INVESTMENT LINK TO DERIVATIVES - DCI (NOT REPORTABLE)'),
+    ('C5.04M', '(-)RM INVESTMENT LINK TO DERIVATIVES - DCI FROM FE (NOT REPORTABLE)'),
+    ('C5.04N', 'RM OTHER DEPOSITS ACCEPTED'),
+    ('C5.04O', '(-)RM OTHER DEPOSITS ACCEPTED FROM FE'),
+    ('C5.04P', 'FX DEMAND DEPOSITS ACCEPTED'),
+    ('C5.04Q', '(-)FX DEMAND DEPOSITS ACCEPTED FROM FE'),
+    ('C5.04R', 'FX FIXED DEPOSITS ACCEPTED WITH REM.MAT. <=1 MTH'),
+    ('C5.04S', '(-)FX FIXED DEPOSITS ACCEPTED FROM FE WITH REM.MAT. <=1 MTH'),
+    ('C5.04T', 'FX FIXED DEPOSITS ACCEPTED OVERDUE'),
+    ('C5.04U', '(-)FX FIXED DEPOSITS ACCEPTED FROM FE OVERDUE'),
+    ('C5.04V', 'FX INVESTMENT LINK TO DERIVATIVES - DCI (NOT REPORTABLE)'),
+    ('C5.04W', '(-)FX INVESTMENT LINK TO DERIVATIVES - DCI FROM FE (NOT REPORTABLE)'),
+    ('C5.04X', 'FX OTHER DEPOSITS ACCEPTED'),
+    ('C5.04Y', '(-)FX OTHER DEPOSITS ACCEPTED FROM FE'),
+    ('C5.04Z', 'SHORT-TERM DEPOSITS ACCEPTED (EXCLUDED FE)'),
+    ('C5.05', 'REPOS'),
+    ('C5.06', 'NIDS'),
+    ('C5.07', 'INTERBANK BORROWING FROM RESIDENTS'),
+    ('C5.07A', 'INTERBANK BORROWING FROM RESIDENTS'),
+    ('C5.07B', 'RM VOSTRO A/C BALANCES OF CB'),
+    ('C5.07C', 'RM VOSTRO A/C BALANCES OF IB'),
+    ('C5.07D', 'RM OVERDRAWN NOSTRO A/C WITH CB'),
+    ('C5.07E', 'RM OVERDRAWN NOSTRO A/C WITH IB'),
+    ('C5.07F', 'FX OTHER AMOUNT DUE TO IB'),
+)
+
+
+RATIO5_DEPOSIT_ITEMS = {
+    'A': 'C1.03A',
+    'B': 'C2.01A',
+    'C': 'C1.03B',
+    'D': 'C2.01B',
+    'E': 'C1.03D',
+    'N': 'C1.03H',
+    'O': 'C2.01G',
+    'P': 'C1.03I',
+    'Q': 'C2.01H',
+    'X': 'C1.03L',
+    'Y': 'C2.01K',
+}
+
+
+if __name__ == "__main__":
+    main()
