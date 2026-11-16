@@ -50,6 +50,10 @@ Traceback (most recent call last):
     raise FileNotFoundError("Missing month-end inputs:\n" + "\n".join(missing))
 FileNotFoundError: Missing month-end inputs:
 /exdwh/host/kapiti/k3tbl104.sas7bdat
+
+update t0 /exdwh/host/kapiti/sasdata_dly/k3tbl104.sas7bdat
+
+
 /dwh/dwh_m/tempsource/ALW104.sas7bdat
 /dwh/dwh_m/tempsource/W1AL104.sas7bdat
 /dwh/eq_d/utms10426.sas7bdat
