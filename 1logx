@@ -42,31 +42,27 @@ NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/
       Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMLIQ3.py"
 
 Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/EIBMLIQ3.py", line 1035, in <module>
+  File "/stgsrcsys/host/holding/EIBMLIQ3.py", line 1033, in <module>
     main()
-  File "/stgsrcsys/host/holding/EIBMLIQ3.py", line 632, in main
-    parser.add_argument("--output-dir", type=Path, default=Path("/stgsrcsys/host/holding"), help="Report directory (default: /stgsrc
-sys/host/holding)")
-  File "/usr/lib64/python3.9/argparse.py", line 1441, in add_argument
-    return self._add_action(action)
-  File "/usr/lib64/python3.9/argparse.py", line 1806, in _add_action
-    self._optionals._add_action(action)
-  File "/usr/lib64/python3.9/argparse.py", line 1643, in _add_action
-    action = super(_ArgumentGroup, self)._add_action(action)
-  File "/usr/lib64/python3.9/argparse.py", line 1455, in _add_action
-    self._check_conflict(action)
-  File "/usr/lib64/python3.9/argparse.py", line 1592, in _check_conflict
-    conflict_handler(action, confl_optionals)
-  File "/usr/lib64/python3.9/argparse.py", line 1601, in _handle_conflict_error
+  File "/stgsrcsys/host/holding/EIBMLIQ3.py", line 636, in main
+    report_date, frames = load_inputs(args.run_date, members=members)
+  File "/stgsrcsys/host/holding/EIBMLIQ3.py", line 45, in load_inputs
+    raise FileNotFoundError("Missing month-end inputs:\n" + "\n".join(missing))
+FileNotFoundError: Missing month-end inputs:
+/exdwh/host/kapiti/k3tbl104.sas7bdat
+/dwh/dwh_m/tempsource/ALW104.sas7bdat
+/dwh/dwh_m/tempsource/W1AL104.sas7bdat
+/dwh/eq_d/utms10426.sas7bdat
+/dwh/eq_d/utfx10426.sas7bdat
+/dwh/eq_d/utrp10426.sas7bdat
+/dwh/dci/dci104.sas7bdat
+NOTE: 15 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMLIQ3.py".
+      The minimum record length was 10.
 2                                                          The SAS System                            00:41 Monday, November 16, 2026
 
-    raise ArgumentError(action, message % conflict_string)
-argparse.ArgumentError: argument --output-dir: conflicting option string: --output-dir
-NOTE: 18 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMLIQ3.py".
-      The minimum record length was 10.
-      The maximum record length was 151.
+      The maximum record length was 79.
 NOTE: DATA statement used (Total process time):
-      real time           1.38 seconds
+      real time           1.62 seconds
       cpu time            0.00 seconds
       
 
