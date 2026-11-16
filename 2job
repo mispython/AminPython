@@ -12,7 +12,6 @@ CA	SAP.PBB.CADATAWH	CA&REPTMON&NOWK&REPTYEAR
 CIS	SAP.PBB.CIDATAWH	CISR1FD&REPTMON&NOWK&REPTYEAR, CISR1CA&REPTMON&NOWK&REPTYEAR
 FORATE	SAP.PBB.FCYCA	FORATEBKP
 
-
 """EIBMLIQ3 native Python job. Includes all five ratios."""
 import argparse
 from calendar import monthrange
@@ -643,6 +642,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-date", type=date.fromisoformat)
     parser.add_argument("--output-dir", type=Path, default=Path("."))
+    parser.add_argument("--output-dir", type=Path, default=Path("/stgsrcsys/host/holding"), help="Report directory (default: /stgsrcsys/host/holding)")
     args = parser.parse_args()
     members = {
         "BNMK.K1TBL", "BNMK.K3TBL", "EQ1.UTRP", "DCI.DCI", "BNM1.ALW", "BNM1.W1AL", "EQ1.UTMS", "EQ1.UTFX", "FD.FD", "FCY.FCY",
