@@ -1,9 +1,88 @@
-Subject: FTP_MANUAL_PL Configuration Check
+1                                                          The SAS System                            00:41 Monday, November 16, 2026
 
-Hi [Name],
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='Program 1';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='';
+9          %LET _SASPROGRAMFILEHOST='';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         data _null_;
+29                 infile "
+30         cd /sas/python/virt_edw;
+31         source bin/activate;
+32         python /stgsrcsys/host/holding/EIBMLIQ3.py
+33         " pipe;
+34                 input;
+35                 put _infile_;
+36         run;
 
-The ESMR 2016-1042 job was stopped due to a repetitive loop involving FTP_MANUAL_PL, which does not match the configured Highest_Hierarchy.
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMLIQ3.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMLIQ3.py"
 
-Please check and confirm whether HARDCODE.txt needs to be updated for FTP_MANUAL_PL.
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/EIBMLIQ3.py", line 1035, in <module>
+    main()
+  File "/stgsrcsys/host/holding/EIBMLIQ3.py", line 632, in main
+    parser.add_argument("--output-dir", type=Path, default=Path("/stgsrcsys/host/holding"), help="Report directory (default: /stgsrc
+sys/host/holding)")
+  File "/usr/lib64/python3.9/argparse.py", line 1441, in add_argument
+    return self._add_action(action)
+  File "/usr/lib64/python3.9/argparse.py", line 1806, in _add_action
+    self._optionals._add_action(action)
+  File "/usr/lib64/python3.9/argparse.py", line 1643, in _add_action
+    action = super(_ArgumentGroup, self)._add_action(action)
+  File "/usr/lib64/python3.9/argparse.py", line 1455, in _add_action
+    self._check_conflict(action)
+  File "/usr/lib64/python3.9/argparse.py", line 1592, in _check_conflict
+    conflict_handler(action, confl_optionals)
+  File "/usr/lib64/python3.9/argparse.py", line 1601, in _handle_conflict_error
+2                                                          The SAS System                            00:41 Monday, November 16, 2026
 
-Thank you.
+    raise ArgumentError(action, message % conflict_string)
+argparse.ArgumentError: argument --output-dir: conflicting option string: --output-dir
+NOTE: 18 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/EIBMLIQ3.py".
+      The minimum record length was 10.
+      The maximum record length was 151.
+NOTE: DATA statement used (Total process time):
+      real time           1.38 seconds
+      cpu time            0.00 seconds
+      
+
+37         
+38         
+39         %LET _CLIENTTASKLABEL=;
+40         %LET _CLIENTPROCESSFLOWNAME=;
+41         %LET _CLIENTPROJECTPATH=;
+42         %LET _CLIENTPROJECTPATHHOST=;
+43         %LET _CLIENTPROJECTNAME=;
+44         %LET _SASPROGRAMFILE=;
+45         %LET _SASPROGRAMFILEHOST=;
+46         
+47         ;*';*";*/;quit;run;
+48         ODS _ALL_ CLOSE;
+49         
+50         
+51         QUIT; RUN;
+52         
