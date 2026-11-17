@@ -64,3 +64,23 @@ ENRH_EXDWH_LN_COLLATER_Mmm"	-
 SAP.PIBB.MNICOL.DAILY(0)	COLLATER	/sas/ln/mart/enrichment	"ENRH_EXDWH_LN_ICOLLATER
 ENRH_EXDWH_LN_ICOLLATER_Ddd
 ENRH_EXDWH_LN_ICOLLATER_Mmm"	-
+
+
+
+
+
+
+2. Input lain
+Input	Full path	Digunakan oleh
+Text MIS write-off	/stgsrcsys/host/uat/RBP2.B033.LN.WRI2.OFF.MIS	Job 02, 14, HD
+LNNOTE enrichment	/sas/ln/dwh/enrichment/enrh_ln_note_d26.sas7bdat	Job 03, 12 → EIFMNP02
+LNNOTE untuk extract	/stgsrcsys/host/uat/lnnote.sas7bdat	Job 07
+Baki loan November minggu 4	/stgsrcsys/host/uat/loan114.sas7bdat	Job 07
+Senarai akaun dikecualikan	/stgsrcsys/host/uat/woff02.sas7bdat	Job 08
+Dataset patch	/stgsrcsys/host/uat/woff03.sas7bdat	Job 11
+History HPWOFF	/stgsrcsys/host/uat/hpwoff.sas7bdat	Job HD; juga backup EIIWOF01
+Text keputusan write-off	/stgsrcsys/host/uat/RBP2.B033.LN.WRI2.OFF.LNOTES	SFTPSUCC
+Control sambungan DRR	/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat	FTPBWOFF, SFTPSUCC
+
+
+d26 ialah tarikh data untuk run pada 27 Disember.
