@@ -72,14 +72,14 @@ ENRH_EXDWH_LN_ICOLLATER_Mmm"	-
 
 2. Input lain
 Input	Full path	Digunakan oleh
-Text MIS write-off	/stgsrcsys/host/uat/RBP2.B033.LN.WRI2.OFF.MIS	Job 02, 14, HD
-LNNOTE enrichment	/sas/ln/dwh/enrichment/enrh_ln_note_d26.sas7bdat	Job 03, 12 → EIFMNP02
-LNNOTE untuk extract	/stgsrcsys/host/uat/lnnote.sas7bdat	Job 07
-Baki loan November minggu 4	/stgsrcsys/host/uat/loan114.sas7bdat	Job 07
-Senarai akaun dikecualikan	/stgsrcsys/host/uat/woff02.sas7bdat	Job 08
-Dataset patch	/stgsrcsys/host/uat/woff03.sas7bdat	Job 11
-History HPWOFF	/stgsrcsys/host/uat/hpwoff.sas7bdat	Job HD; juga backup EIIWOF01
-Text keputusan write-off	/stgsrcsys/host/uat/RBP2.B033.LN.WRI2.OFF.LNOTES	SFTPSUCC
+Text MIS write-off	/stgsrcsys/host/uat/RBP2.B033.LN.WRI2.OFF.MIS	Job 02, 14, HD /host_pq/loan/input/WRI2OFF_MIS.txt
+LNNOTE enrichment	/sas/ln/dwh/enrichment/enrh_ln_note_d26.sas7bdat	Job 03, 12 → EIFMNP02 /sas/ln/dwh/enrichment/enrh_ln_note_d26.sas7bdat
+LNNOTE untuk extract	/stgsrcsys/host/uat/lnnote.sas7bdat	Job 07 /sas/ln/dwh/enrichment/enrh_ln_note_d26.sas7bdat
+Baki loan November minggu 4	/stgsrcsys/host/uat/loan114.sas7bdat	Job 07 /dwh/ln_ln/ln11426.sas7bdat
+Senarai akaun dikecualikan	/stgsrcsys/host/uat/woff02.sas7bdat	Job 08 /host_pq/loan/input/woff02.txt
+Dataset patch	/stgsrcsys/host/uat/woff03.sas7bdat	Job 11 /host_pq/loan/input/woff03.txt
+History HPWOFF	/stgsrcsys/host/uat/hpwoff.sas7bdat	Job HD; juga backup EIIWOF01 /host_pq/loan/input/WRI2OFF_MIS.txt
+Text keputusan write-off	/stgsrcsys/host/uat/RBP2.B033.LN.WRI2.OFF.LNOTES	SFTPSUCC /host_pq/loan/input/WRI2OFF_LNOTES.txt
 Control sambungan DRR	/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat	FTPBWOFF, SFTPSUCC
 
 
