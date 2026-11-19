@@ -1,6 +1,6 @@
 # Settings for EIAWOF01; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
-OUTPUT_ROOT = '/stgsrcsys/host/holding'
+OUTPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pbb/woff'
 SASDATA_PATHS = {
     'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
     'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
@@ -11,22 +11,23 @@ SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
 def job_settings():
     return {
         '_job_name': 'EIAWOF01', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
+        'backup_root': '/exdwh/host/ln/npl_hp_sasdata/pbb/backup',
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
         'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
         'libraries': {
             'NPLA': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
             'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
-            'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': INPUT_ROOT,
+            'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
             'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
         },
-        'reports': str(Path(OUTPUT_ROOT) / 'reports'),
+        'reports': '/dwh/ftp/drr',
         'files': {
-            'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
-            'WOFFC': str(Path(INPUT_ROOT) / 'woff02.sas7bdat'),
-            'PATCH': str(Path(INPUT_ROOT) / 'woff03.sas7bdat'),
-            'WOFFACCT': str(Path(OUTPUT_ROOT) / 'HPTXT1x.txt'),
-            'WOFFACC2': str(Path(OUTPUT_ROOT) / 'HPTXT2x.txt'),
+            'WOFF': '/host_pq/loan/input/WRI2OFF_MIS.txt',
+            'WOFFC': '/host_pq/loan/input/woff02.txt',
+            'PATCH': '/host_pq/loan/input/woff03.txt',
+            'WOFFACCT': '/dwh/ftp/drr/HPTXT1x.txt',
+            'WOFFACC2': '/dwh/ftp/drr/HPTXT2x.txt',
         },
     }
 
@@ -38,7 +39,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 SEED_MEMBERS = ['NPLOBAL', 'WIIS', 'WAQ', 'WSP2', 'IIS', 'AQ', 'SP2', 'IIS11', 'SP211']
-INPUT_DATASETS = [('NPLA', name) for name in SEED_MEMBERS + ['WOFFTOT']]
+INPUT_DATASETS = [('NPLA', name) for name in SEED_MEMBERS + ['WOFFTOT']] + [('HD', 'HPWOFF')]
 
 
 def initialize(settings=None, run_date=None, context_type=None):
@@ -54,7 +55,7 @@ def initialize(settings=None, run_date=None, context_type=None):
         p = Path(value)
         return (p if p.is_absolute() else base / p).resolve()
     input_root = path(cfg.get('input_root', '/stgsrcsys/host/uat'))
-    output_root = path(cfg.get('output_root', '/stgsrcsys/host/holding'))
+    output_root = path(cfg.get('output_root', '/exdwh/host/ln/npl_hp_sasdata/pbb/woff'))
     if output_root == input_root or input_root in output_root.parents:
         raise ValueError('Holding must be outside the input directory')
     if context_type is not None:  # Test-only input adapter; production uses SAS files.
@@ -77,7 +78,7 @@ def initialize(settings=None, run_date=None, context_type=None):
 
 def run(context):
     source_root = Path(context.cfg['input_root']).resolve()
-    destination = source_root / 'pas'
+    destination = Path(context.cfg['backup_root']).resolve()
     if destination.resolve() != destination:
         raise ValueError('pas must not redirect through a symlink')
     sources = [(name, context.original_table(lib, name)) for lib, name in INPUT_DATASETS]

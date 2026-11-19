@@ -5,8 +5,8 @@ from pathlib import Path
 import subprocess
 
 INPUT_ROOT = Path('/stgsrcsys/host/uat')
-SOURCE_FILE = INPUT_ROOT / 'RBP2.B033.LN.WRI2.OFF.LNOTES'
-HOLDING = Path('/stgsrcsys/host/holding')
+SOURCE_FILE = Path('/host_pq/loan/input/WRI2OFF_LNOTES.txt')
+HOLDING = Path('/dwh/ftp/drr')
 OUTPUT_FILE = HOLDING / 'LNOTES_SUCCESSx.txt'
 # None = newline-delimited ASCII-compatible records, preserving bytes and spaces.
 # For fixed records without separators, set the source record length from its DCB.

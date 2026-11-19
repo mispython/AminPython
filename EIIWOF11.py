@@ -1,6 +1,6 @@
 # Settings for EIIWOF11; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
-OUTPUT_ROOT = '/stgsrcsys/host/holding'
+OUTPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'
 SASDATA_PATHS = {
     'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
     'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
@@ -11,6 +11,7 @@ SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
 def job_settings():
     return {
         '_job_name': 'EIIWOF11', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
+        'backup_root': '/exdwh/host/ln/npl_hp_sasdata/pibb/backup',
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
         'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
@@ -20,13 +21,13 @@ def job_settings():
             'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': INPUT_ROOT,
             'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
         },
-        'reports': str(Path(OUTPUT_ROOT) / 'reports'),
+        'reports': '/dwh/ftp/drr',
         'files': {
-            'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
-            'WOFFC': str(Path(INPUT_ROOT) / 'woff02.sas7bdat'),
-            'PATCH': str(Path(INPUT_ROOT) / 'woff03.sas7bdat'),
-            'WOFFACCT': str(Path(OUTPUT_ROOT) / 'HPTXT1x.txt'),
-            'WOFFACC2': str(Path(OUTPUT_ROOT) / 'HPTXT2x.txt'),
+            'WOFF': '/host_pq/loan/input/WRI2OFF_MIS.txt',
+            'WOFFC': '/host_pq/loan/input/woff02.txt',
+            'PATCH': '/host_pq/loan/input/woff03.txt',
+            'WOFFACCT': '/dwh/ftp/drr/HPTXT1x.txt',
+            'WOFFACC2': '/dwh/ftp/drr/HPTXT2x.txt',
         },
     }
 
@@ -427,6 +428,10 @@ class Context:
         return p if p.is_absolute() else self.base / p
 
     def assert_output_path(self, path):
+        report_root = Path(self.cfg.get('reports', '/dwh/ftp/drr')).resolve()
+        report_target = Path(path).resolve()
+        if report_root in report_target.parents:
+            return
         if not self.cfg.get('output_root'): return
         root = self.holding().resolve()
         target = Path(path).resolve()
@@ -459,7 +464,7 @@ class Context:
             return self.original_table(lib, name)
         if name.upper() in self.cfg.get('seed_inputs', []) and name.upper() not in self._written_outputs:
             # Explicit initial dataset for this job, copied unchanged by job 01.
-            directory = Path(self.cfg['input_root']) / 'pas'
+            directory = Path(self.cfg['backup_root'])
             extension = self.cfg.get('seed_extension', '.sas7bdat')
             matches = [p for p in directory.iterdir() if p.is_file() and p.name.lower() == (name + extension).lower()]
             if len(matches) != 1:
@@ -596,10 +601,12 @@ class Context:
         p = p if p.is_absolute() else self.base / p
         self.write_csv(p / (job + '.csv'), rows, columns)
 
-    def fixed(self, name, fields):
+    def fixed(self, name, fields, firstobs=1):
         rows = []
         with self.path('files', name).open(encoding=self.encoding, newline='') as f:
             for line_no, line in enumerate(f, 1):
+                if line_no < firstobs:
+                    continue
                 line = line.rstrip('\r\n')
                 if len(line) < max(start + width - 1 for _, start, width, _ in fields):
                     raise ValueError(f'{name} line {line_no}: record shorter than required fields')
@@ -649,7 +656,7 @@ import shutil
 
 def run(c):
     fields = ['ACCTNO', 'WSPPL', 'WRECOVER', 'WSPPW']
-    patch = [r for r in c.input_rows('PATCH', fields) if (num(r['ACCTNO']) or 0)>0]
+    patch = [r for r in c.fixed('PATCH', [('ACCTNO',91,10,'num'), ('WSPPL',121,13,'money'), ('WRECOVER',151,13,'money'), ('WSPPW',181,13,'money')]) if (num(r['ACCTNO']) or 0)>0]
     old = c.read('NPL','WSP2')
     rows = [r for r,flags in merge([old,patch]) if flags[0]]
     columns = list(dict.fromkeys([k for r in old for k in r] + fields))
@@ -676,12 +683,12 @@ def initialize(settings=None, run_date=None, context_type=Context):
         return (path if path.is_absolute() else context.base / path).resolve()
     try:
         input_root = local_path(context.cfg.get('input_root', '/stgsrcsys/host/uat'))
-        output_root = local_path(context.cfg.get('output_root', '/stgsrcsys/host/holding'))
+        output_root = local_path(context.cfg.get('output_root', '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'))
         context.cfg['input_root'] = str(input_root)
         context.cfg['output_root'] = str(output_root)
         libraries = context.cfg.setdefault('libraries', {})
         libraries['NPL'] = str(output_root)  # Working x datasets
-        context.cfg.setdefault('reports', str(output_root / 'reports'))
+        context.cfg.setdefault('reports', '/dwh/ftp/drr')
         context.cfg.setdefault('output_format', 'parquet')
         context.cfg.setdefault('output_suffix', 'x')
         context.reporting_date()  # 27 December run; 26 December data.

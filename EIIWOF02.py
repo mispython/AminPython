@@ -9,8 +9,8 @@ import pyarrow.parquet as pq
 
 # Job settings: edit paths here; no separate config.json is required.
 INPUT_ROOT = Path('/stgsrcsys/host/uat')
-WOFF_FILE = INPUT_ROOT / 'RBP2.B033.LN.WRI2.OFF.MIS'
-OUTPUT_ROOT = Path('/stgsrcsys/host/holding')
+WOFF_FILE = Path('/host_pq/loan/input/WRI2OFF_MIS.txt')
+OUTPUT_ROOT = Path('/exdwh/host/ln/npl_hp_sasdata/pibb/woff')
 OUTPUT_SUFFIX = 'x'
 ENCODING = 'utf-8'
 BATCH_ROWS = 65536
@@ -21,7 +21,7 @@ def run(settings=None, run_date=None):
     cfg = {
         'input_root': str(INPUT_ROOT), 'output_root': str(OUTPUT_ROOT),
         'files': {'WOFF': str(WOFF_FILE)}, 'output_suffix': OUTPUT_SUFFIX,
-        'encoding': ENCODING, 'batch_rows': BATCH_ROWS,
+        'encoding': ENCODING, 'batch_rows': BATCH_ROWS, 'reports': '/dwh/ftp/drr',
     }
     if settings is not None:
         cfg.update(settings.cfg if hasattr(settings, 'cfg') else settings)
@@ -65,7 +65,8 @@ def run(settings=None, run_date=None):
     stage.replace(target)
 
     # Plain text: one ACCTNO per line, no header; missing values use a blank line.
-    text_target = holding / (member + '.txt')
+    text_target = path(cfg['reports']) / (member + '.txt')
+    text_target.parent.mkdir(parents=True, exist_ok=True)
     text_stage = text_target.with_suffix('.txt.tmp')
     with text_stage.open('w', encoding='utf-8', newline='') as handle:
         handle.writelines(('' if value is None else format(value, 'f')) + '\n' for value in accounts)

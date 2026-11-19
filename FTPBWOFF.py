@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 import subprocess
 
-HOLDING = Path('/stgsrcsys/host/holding')
+HOLDING = Path('/dwh/ftp/drr')
 FILES = [(HOLDING / 'HPTXT1x.txt', 'WOFFHP1.TXT'),
          (HOLDING / 'HPTXT2x.txt', 'WOFFHP2.TXT')]
 # DRR connection comes from the same control dataset as the supplied sample.

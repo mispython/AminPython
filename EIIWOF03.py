@@ -1,6 +1,6 @@
 # Settings for EIIWOF03; edit these paths in this file.
 INPUT_ROOT = '/stgsrcsys/host/uat'
-OUTPUT_ROOT = '/stgsrcsys/host/holding'
+OUTPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'
 SASDATA_PATHS = {
     'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
     'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
@@ -12,6 +12,7 @@ SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211', 'WIIS', 'WAQ', 'WSP2']
 def job_settings():
     return {
         '_job_name': 'EIIWOF03', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
+        'backup_root': '/exdwh/host/ln/npl_hp_sasdata/pibb/backup',
         'lnnote_root': LNNOTE_ROOT,
         'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
@@ -22,13 +23,13 @@ def job_settings():
             'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': INPUT_ROOT,
             'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
         },
-        'reports': str(Path(OUTPUT_ROOT) / 'reports'),
+        'reports': '/dwh/ftp/drr',
         'files': {
-            'WOFF': str(Path(INPUT_ROOT) / 'RBP2.B033.LN.WRI2.OFF.MIS'),
-            'WOFFC': str(Path(INPUT_ROOT) / 'woff02.sas7bdat'),
-            'PATCH': str(Path(INPUT_ROOT) / 'woff03.sas7bdat'),
-            'WOFFACCT': str(Path(OUTPUT_ROOT) / 'HPTXT1x.txt'),
-            'WOFFACC2': str(Path(OUTPUT_ROOT) / 'HPTXT2x.txt'),
+            'WOFF': '/host_pq/loan/input/WRI2OFF_MIS.txt',
+            'WOFFC': '/host_pq/loan/input/woff02.txt',
+            'PATCH': '/host_pq/loan/input/woff03.txt',
+            'WOFFACCT': '/dwh/ftp/drr/HPTXT1x.txt',
+            'WOFFACC2': '/dwh/ftp/drr/HPTXT2x.txt',
         },
     }
 
@@ -62,13 +63,13 @@ def initialize(settings=None, run_date=None, context_type=Context):
         return (path if path.is_absolute() else context.base / path).resolve()
     try:
         input_root = local_path(context.cfg.get('input_root', '/stgsrcsys/host/uat'))
-        output_root = local_path(context.cfg.get('output_root', '/stgsrcsys/host/holding'))
+        output_root = local_path(context.cfg.get('output_root', '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'))
         context.cfg['input_root'] = str(input_root)
         context.cfg['output_root'] = str(output_root)
         libraries = context.cfg.setdefault('libraries', {})
         libraries['LOAN'] = str(local_path(context.cfg['lnnote_root']))
         libraries['NPL6'] = str(output_root)  # Working x datasets
-        context.cfg.setdefault('reports', str(output_root / 'reports'))
+        context.cfg.setdefault('reports', '/dwh/ftp/drr')
         context.cfg.setdefault('output_format', 'parquet')
         context.cfg.setdefault('output_suffix', 'x')
         context.reporting_date()  # 27 December run; 26 December data.

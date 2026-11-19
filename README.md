@@ -1,47 +1,61 @@
-# Version 1: update original NPL directory
+# 01_update_original
 
-Job 14 final outputs WIIS, WSP2, WAQ and WOFFTOT go back to the original bank directory:
-- EIIWOF14: /exdwh/host/ln/npl_hp_sasdata/pibb
-- EIAWOF14: /exdwh/host/ln/npl_hp_sasdata/pbb
+## Input paths
 
-Final filenames have NO x suffix: wiis.parquet, wsp2.parquet, waq.parquet, wofftot.parquet. Generated SAS exports replace the matching wiis.sas7bdat, wsp2.sas7bdat, waq.sas7bdat and wofftot.sas7bdat in that directory. Intermediate x files remain in holding.
+| Input | Path |
+|---|---|
+| PBB NPL source members | /exdwh/host/ln/npl_hp_sasdata/pbb |
+| PIBB NPL source members | /exdwh/host/ln/npl_hp_sasdata/pibb |
+| PBB HPWOFF | /exdwh/host/ln/npl_hp_sasdata/pbb/hpwoff.sas7bdat |
+| PIBB HPWOFF | /exdwh/host/ln/npl_hp_sasdata/pibb/hpwoff.sas7bdat |
+| MIS (jobs 02, 14, HD) | /host_pq/loan/input/WRI2OFF_MIS.txt |
+| LNNOTE (jobs 03, 07, 12) | /sas/ln/dwh/enrichment/enrh_ln_note_d26.sas7bdat |
+| Previous balance (job 07) | /dwh/ln_ln/ln11426.sas7bdat |
+| Exclusions (job 08) | /host_pq/loan/input/woff02.txt |
+| Patch (job 11) | /host_pq/loan/input/woff03.txt |
+| Success records (SFTPSUCC) | /host_pq/loan/input/WRI2OFF_LNOTES.txt |
+| DRR control | /sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat |
 
-The SAS bridge is created under the final bank directory's sas_bridge subfolder. The export_EIIWOF14.sas / export_EIAWOF14.sas driver remains in holding and includes these final export scripts. Python completion alone does not update the original SAS7BDAT files.
+Original NPL members: nplobal, wiis, waq, wsp2, iis, aq, sp2, iis11, sp211, wofftot (all .sas7bdat). Job 01 now copies HPWOFF for both banks as well. Backups use the relevant bank directory/backup. Initial working seed reads use those copies; later stages use prior-job Parquet outputs in the relevant bank directory/woff.
 
-Both folders contain all 42 Python files plus requirements.txt. Choose ONE complete folder for a deployment; do not mix job files between versions.
+LNNOTE day suffix uses scheduled run date minus one day. The previous-balance filename ln11426.sas7bdat is the explicit file supplied by the user, configured as PREVIOUS_LOAN_FILE in each job 07; update that setting for a different snapshot/year. No separate lnnote.sas7bdat input is required.
 
-EIIWOF uses PIBB input /exdwh/host/ln/npl_hp_sasdata/pibb.
-EIAWOF uses PBB input /exdwh/host/ln/npl_hp_sasdata/pbb.
-Jobs 01–13, text reports and intermediate x datasets keep their existing flow through /stgsrcsys/host/holding. Job 01 backups remain /stgsrcsys/host/uat/pas. EIIWOFHD remains unchanged because its source is the separate SAP.PIBB.NPL.WOFF library, not NPL.HP.SASDATA.
+## Text layouts restored from original SAS
 
-Run Islamic and conventional batches separately, as requested; the working and backup folders are shared. Install dependencies with python -m pip install -r requirements.txt. Run controllers in order using --run-date YYYY-12-27 for the intended year.
+- Job 08: WNAME at 61 length 30; ACCTNO at 91 length 10; first line included. Keep ACCTNO > 0, exclude matching accounts.
+- EIIWOF11: first line included; ACCTNO at 91 length 10; WSPPL at 121, WRECOVER at 151, WSPPW at 181, each COMMA13.2. Only WSP2 patch is active in original Islamic SAS.
+- EIAWOF11: FIRSTOBS=12 skips 11 report header lines. ACCTNO at 6 length 10; provision fields at 292, 317, 342, each COMMA13.2. IIS fields SUSPEND, RECOVER, RECC, IISPW, WOISUSP, WOIRECV, WOIRECC, WOIW at 92, 117, 142, 167, 192, 217, 242, 267, each COMMA13.2. Both WSP2 and WIIS patches are active. Keep ACCTNO > 0; retain only accounts already in the respective hardcode dataset.
 
-Python's default writes Parquet and generates SAS export scripts. Actual SAS7BDAT files are updated only when the generated export driver is executed on the SAS server with UTF-8 encoding and access to the destination. Run each export driver before its bridge files are overwritten by a later run.
+The same woff03.txt path is used by separate bank runs; supply the layout matching that bank. Business selection and merge rules are retained.
 
-Validation of this packaging change covers Python syntax, destination routing and generated driver paths using isolated temporary directories. No production data was read or updated, and no live SAS execution or full data-flow rerun was performed.
+## Output paths
 
+| Kind | Islamic / EIIWOF | Conventional / EIAWOF |
+|---|---|---|
+| Working datasets | /exdwh/host/ln/npl_hp_sasdata/pibb/woff | /exdwh/host/ln/npl_hp_sasdata/pbb/woff |
+| Job 01 backup | /exdwh/host/ln/npl_hp_sasdata/pibb/backup | /exdwh/host/ln/npl_hp_sasdata/pbb/backup |
+| Reports and text extracts | /dwh/ftp/drr | /dwh/ftp/drr |
 
-## Additional jobs from the supplied FTP/HD flow
+All generated CSV reports and job-02 TXT outputs go to /dwh/ftp/drr. Job-07 HPTXT1x.txt/HPTXT2x.txt and SFTPSUCC LNOTES_SUCCESSx.txt also use that directory. FTPBWOFF reads its text inputs there. Writing a report locally does not automatically upload it: only the supplied FTPBWOFF and SFTPSUCC jobs perform their specified transfers. The original job conditions and calculation rules are unchanged.
 
-- FTPBWOFF.py: run after EIAWOF07 and before another bank's job 07 overwrites shared extracts. Uploads holding/HPTXT1x.txt to HPCC/WRITTEN-OFF/WOFFHP1.TXT and HPTXT2x.txt to WOFFHP2.TXT. Only the active DRR destination is implemented; the commented CCD destination is not executed. The duplicate FTPBWOFF block is represented by one job.
-- EIAWOFHD.py: run after EIAWOF14. Reads MIS and original HD/HPWOFF; excludes cost centres 3000–3999, 4043, 4048; keeps missing cost centres per NOT IN. Appends the original history after new rows and deduplicates by ACCTNO so new rows win. Produces hpwoffx in holding, like the existing EIIWOFHD. The original HD source library is SAP.PBB.NPL.WOFF, distinct from the job-14 NPL.HP.SASDATA library.
-- SFTPSUCC.py: run after EIAWOFHD once the success source is available. Reads RBP2.B033.LN.WRI2.OFF.LNOTES as text records from this version's INPUT_ROOT. This is an additional TEXT input from the new JCL, not a SAS7BDAT table. Keeps records with byte 1 = '1' and byte 81 != 'R', preserving order and spaces. Writes holding/LNOTES_SUCCESSx.txt and uploads it as HPCC/WRITTEN-OFF/HPWOffLoansRYYYYMMDD.TXT. The date is the scheduler/run date, not the previous data date; pass --run-date YYYY-MM-DD when rerunning.
-- EIIWOFHD.py already existed and was retained.
+Shared report/extract filenames must be consumed before running the other bank's reports. Working datasets and backup files are now separated by bank. Initial seed reads use the relevant backup folder; subsequent jobs read x.parquet outputs from the relevant woff folder. Job 01 only copies original input files and does not generate working Parquet datasets.
 
-DRR transfers now follow the supplied PSFTP sample. Both jobs read /sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat and select the single row whose HOST_DESC contains Data Report Repository (DRR). HOST_IP, SFTP_ID and SFTP_PW supply the connection; no separate host/password config is required. This control path remains the sample's path in both versions, independently of the business-input directory.
+Final outputs from job 14 (WIIS, WSP2, WAQ, WOFFTOT) and HD (HPWOFF) return to /exdwh/host/ln/npl_hp_sasdata/pibb or /pbb, without x suffix. Their SAS bridge files are under the destination bank directory/sas_bridge.
 
-FTPBWOFF and SFTPSUCC each write their own batch and log under /sasdata/dwh/logs/<JOB>.txt and <JOB>_LOG.txt. Destination is HPCC/WRITTEN-OFF, as in the original JCL. Files are sent directly from holding; /dwh/ftp/drr was the sample's report output path and is not required for these existing extracts.
+Export drivers export_<JOB>.sas are written under the relevant bank's woff folder. Python writes Parquet and prepares export scripts; actual SAS7BDAT files are generated/replaced only when these drivers run on the SAS server with UTF-8 encoding. Install dependencies with python -m pip install -r requirements.txt. Run controllers in their original sequence with --run-date YYYY-12-27 for reruns.
 
-Requires pandas and installed psftp. Transfers use batch mode with the existing PuTTY host-key cache, or the optional verified HOST_KEY fingerprint. Unknown keys fail instead of automatically accepting them. Unlike the sample's -be option, a failed batch command stops the transfer. Password-bearing command lines are not printed on failure. The supplied sample's password authentication is retained.
+Each folder has 42 Python files. Copy one complete version, not a mixture. EIIWOF03/12 and EIAWOF03/12 call shared EIFMNP02 and supply their own bank settings. Shared EIFMNP02's direct defaults are PIBB, so normally invoke it through the appropriate controller. EIIWOF04/05/06/13 use EIIMNP03/06/07; EIAWOF04/05/06/13 use EIFMNP03/06/07. PBBLNFMT, PBBELF and NPLNTB are shared imports.
 
-Validate without sending:
-- python FTPBWOFF.py --dry-run
-- python SFTPSUCC.py --run-date 2026-12-27 --prepare-only
+## DRR
 
-The Linux text files are transferred byte-for-byte. The original Co:Z servercp and linerule variables were not supplied, so confirm target encoding/newline requirements before deployment. SFTPSUCC defaults to newline-delimited ASCII-compatible records. If the source is raw fixed-length records, set RECORD_LENGTH from its actual DCB; this produces LF-separated output. Do not feed raw EBCDIC or RDW-prefixed mainframe records without converting the transport format first.
+FTPBWOFF runs after EIAWOF07 and sends /dwh/ftp/drr/HPTXT1x.txt and HPTXT2x.txt as WOFFHP1.TXT/WOFFHP2.TXT. SFTPSUCC follows conventional HD once the success source exists; it retains position 1 = '1' and position 81 != 'R', then sends HPWOffLoansRYYYYMMDD.TXT using its scheduler date. Both use HPCC/WRITTEN-OFF on DRR.
 
-The supplied flow also names FTPWILNS, FTPWOLNS and FTPIWOFF, but supplies no JCL for them; no implementations for these names were invented. They remain external dependencies of the full scheduler flow.
+Connections are read from the control dataset above: unique HOST_DESC containing Data Report Repository (DRR), fields HOST_IP, SFTP_ID and SFTP_PW. Uses psftp in batch mode with cached host key or optional verified HOST_KEY. Batch/log files are /sasdata/dwh/logs/<JOB>.txt and <JOB>_LOG.txt. No passwords are printed in command errors. Use FTPBWOFF --dry-run or SFTPSUCC --prepare-only to avoid sending.
 
-New-job checks passed in isolated temporary directories: record selection, trailing-space/newline preservation, invalid-record handling, dated remote filename, transfer-plan generation, missing-configuration failure, and conventional HD selection/new-row deduplication. No real SFTP connection or live SAS execution was performed.
+Input text is assumed ASCII-compatible with newline-delimited records. SFTPSUCC also supports explicit RECORD_LENGTH for fixed records. Transport encoding/line endings and live DRR access have not been verified. FTPWILNS, FTPWOLNS and FTPIWOFF appear in the supplied flow but their source JCL has not been supplied.
 
-PSFTP revision validated with a simulated SAS control table and mocked subprocess: DRR row selection, per-job batch/log names, remote paths, CRLF batch syntax and failure handling passed. No real DRR login or transfer was performed.
+## Validation
+
+Current changes passed syntax checks, evaluated input settings, dummy fixed-width parsing and merges (including EIA FIRSTOBS=12), and isolated HD output/export-driver routing checks in both versions. No production input was read or overwritten, no SAS driver executed, and no live SFTP transfer made. Full data-flow reconciliation against SAS remains outstanding.
+
+Latest routing checks passed for 70 job configurations and eight final-output/export-driver combinations. All 84 Python files across both versions parse. Validation used temporary local paths; no live SAS or SFTP execution was performed.
