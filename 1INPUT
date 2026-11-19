@@ -1,6 +1,3 @@
-
-      attrib DP_ACQUIRE_STRATEGY length = $3; 
-      attrib LIFE_STAGE length = $1; 
 /*---- Create a new table  ----*/ 
 %if (&etls_tableExist eq 0) %then 
 %do;  /* if table does not exist  */ 
@@ -75,7 +72,8 @@
       attrib POST_IND_MAINT_DT length = 8; 
       attrib POST_IND_EXP_DT length = 8; 
       attrib OKU_IND length = $1; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -156,7 +154,8 @@
       attrib POST_IND_MAINT_DT length = 8; 
       attrib POST_IND_EXP_DT length = 8; 
       attrib OKU_IND length = $1; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -244,7 +243,8 @@
       attrib POST_IND_MAINT_DT length = 8; 
       attrib POST_IND_EXP_DT length = 8; 
       attrib OKU_IND length = $1; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -332,7 +332,8 @@
       attrib POST_IND_MAINT_DT length = 8; 
       attrib POST_IND_EXP_DT length = 8; 
       attrib OKU_IND length = $1; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -503,7 +504,8 @@
       attrib TAWIDH_EXCESS_RATE length = 8; 
       attrib TAWIDH_ACCRUE_AMT length = 8; 
       attrib YTD_TAWIDH_CHARGE_AMT length = 8; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -673,7 +675,8 @@
       attrib TAWIDH_EXCESS_RATE length = 8; 
       attrib TAWIDH_ACCRUE_AMT length = 8; 
       attrib YTD_TAWIDH_CHARGE_AMT length = 8; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -737,7 +740,8 @@
       attrib SADATE2 length = 8; 
       attrib SATYPE2 length = $1; 
       attrib TIA_TAG_DATE length = 8; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -818,7 +822,8 @@
       attrib POST_IND_MAINT_DT length = 8; 
       attrib POST_IND_EXP_DT length = 8; 
       attrib OKU_IND length = $1; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -901,7 +906,8 @@
       attrib POST_IND_MAINT_DT length = 8; 
       attrib POST_IND_EXP_DT length = 8; 
       attrib OKU_IND length = $1; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -989,7 +995,8 @@
       attrib POST_IND_MAINT_DT length = 8; 
       attrib POST_IND_EXP_DT length = 8; 
       attrib OKU_IND length = $1; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -1076,7 +1083,8 @@
       attrib CASH_DEPOSIT_AMOUNT_AGG length = 8; 
       attrib POST_IND_MAINT_DT length = 8; 
       attrib POST_IND_EXP_DT length = 8; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -1247,7 +1255,8 @@
       attrib TAWIDH_EXCESS_RATE length = 8; 
       attrib TAWIDH_ACCRUE_AMT length = 8; 
       attrib YTD_TAWIDH_CHARGE_AMT length = 8; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -1417,7 +1426,8 @@
       attrib TAWIDH_EXCESS_RATE length = 8; 
       attrib TAWIDH_ACCRUE_AMT length = 8; 
       attrib YTD_TAWIDH_CHARGE_AMT length = 8; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
@@ -1481,7 +1491,8 @@
       attrib SADATE2 length = 8; 
       attrib SATYPE2 length = $1; 
       attrib TIA_TAG_DATE length = 8; 
-      length DP_ACQUIRE_STRATEGY $3 LIFE_STAGE $1;
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
       call missing(of _all_);
       stop;
    run;
