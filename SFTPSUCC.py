@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 
-INPUT_ROOT = Path('/stgsrcsys/host/uat')
+INPUT_ROOT = Path('/host_pq/loan/input')
 SOURCE_FILE = Path('/host_pq/loan/input/WRI2OFF_LNOTES.txt')
 HOLDING = Path('/dwh/ftp/drr')
 OUTPUT_FILE = HOLDING / 'LNOTES_SUCCESSx.txt'

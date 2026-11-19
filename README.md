@@ -59,3 +59,5 @@ Input text is assumed ASCII-compatible with newline-delimited records. SFTPSUCC 
 Current changes passed syntax checks, evaluated input settings, dummy fixed-width parsing and merges (including EIA FIRSTOBS=12), and isolated HD output/export-driver routing checks in both versions. No production input was read or overwritten, no SAS driver executed, and no live SFTP transfer made. Full data-flow reconciliation against SAS remains outstanding.
 
 Latest routing checks passed for 70 job configurations and eight final-output/export-driver combinations. All 84 Python files across both versions parse. Validation used temporary local paths; no live SAS or SFTP execution was performed.
+
+Input-root cleanup: every job now uses its bank source directory as the NPL input root; job 02 and SFTPSUCC use /host_pq/loan/input. LOAN points to /sas/ln/dwh/enrichment and SASLN to /dwh/ln_ln. Explicit snapshot filenames remain unchanged. No legacy staging-system path remains in this version. Working output is allowed in the bank woff subdirectory; direct source writes remain limited to the existing final-output routes.

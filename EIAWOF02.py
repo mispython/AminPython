@@ -8,7 +8,7 @@ import pyarrow.parquet as pq
 
 
 # Job settings: edit paths here; no separate config.json is required.
-INPUT_ROOT = Path('/stgsrcsys/host/uat')
+INPUT_ROOT = Path('/host_pq/loan/input')
 WOFF_FILE = Path('/host_pq/loan/input/WRI2OFF_MIS.txt')
 OUTPUT_ROOT = Path('/exdwh/host/ln/npl_hp_sasdata/pbb/woff')
 OUTPUT_SUFFIX = 'x'

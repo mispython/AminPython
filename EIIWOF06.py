@@ -1,5 +1,5 @@
 # Settings for EIIWOF06; edit these paths in this file.
-INPUT_ROOT = '/stgsrcsys/host/uat'
+INPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb'
 OUTPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'
 SASDATA_PATHS = {
     'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
@@ -18,7 +18,7 @@ def job_settings():
         'libraries': {
             'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
             'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
-            'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': INPUT_ROOT,
+            'LOAN': '/sas/ln/dwh/enrichment', 'SASLN': '/dwh/ln_ln', 'HD': INPUT_ROOT,
             'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
         },
         'reports': '/dwh/ftp/drr',
@@ -60,7 +60,7 @@ def initialize(settings=None, run_date=None, context_type=Context):
         path = Path(value)
         return (path if path.is_absolute() else context.base / path).resolve()
     try:
-        input_root = local_path(context.cfg.get('input_root', '/stgsrcsys/host/uat'))
+        input_root = local_path(context.cfg.get('input_root', '/exdwh/host/ln/npl_hp_sasdata/pibb'))
         output_root = local_path(context.cfg.get('output_root', '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'))
         context.cfg['input_root'] = str(input_root)
         context.cfg['output_root'] = str(output_root)

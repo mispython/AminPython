@@ -1,5 +1,5 @@
 # Settings for EIIWOF01; edit these paths in this file.
-INPUT_ROOT = '/stgsrcsys/host/uat'
+INPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb'
 OUTPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'
 SASDATA_PATHS = {
     'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
@@ -18,7 +18,7 @@ def job_settings():
         'libraries': {
             'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
             'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
-            'LOAN': INPUT_ROOT, 'SASLN': INPUT_ROOT, 'HD': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
+            'LOAN': '/sas/ln/dwh/enrichment', 'SASLN': '/dwh/ln_ln', 'HD': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
             'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
         },
         'reports': '/dwh/ftp/drr',
@@ -31,7 +31,7 @@ def job_settings():
         },
     }
 
-"""EIIWOF01: copy original datasets unchanged to uat/pas. No data conversion."""
+"""EIIWOF01: copy original datasets unchanged to the bank backup folder. No data conversion."""
 import argparse
 import shutil
 from datetime import date, datetime, timedelta, timezone
@@ -54,10 +54,10 @@ def initialize(settings=None, run_date=None, context_type=None):
     def path(value):
         p = Path(value)
         return (p if p.is_absolute() else base / p).resolve()
-    input_root = path(cfg.get('input_root', '/stgsrcsys/host/uat'))
+    input_root = path(cfg.get('input_root', '/exdwh/host/ln/npl_hp_sasdata/pibb'))
     output_root = path(cfg.get('output_root', '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'))
-    if output_root == input_root or input_root in output_root.parents:
-        raise ValueError('Holding must be outside the input directory')
+    if output_root == input_root or output_root in input_root.parents:
+        raise ValueError('Working directory must not equal or contain the source directory')
     if context_type is not None:  # Test-only input adapter; production uses SAS files.
         context = context_type(cfg, run_date=scheduled)
     else:
@@ -80,7 +80,7 @@ def run(context):
     source_root = Path(context.cfg['input_root']).resolve()
     destination = Path(context.cfg['backup_root']).resolve()
     if destination.resolve() != destination:
-        raise ValueError('pas must not redirect through a symlink')
+        raise ValueError('Backup must not redirect through a symlink')
     sources = [(name, context.original_table(lib, name)) for lib, name in INPUT_DATASETS]
     destination.mkdir(parents=True, exist_ok=True)
     for member, source in sources:
@@ -96,7 +96,7 @@ def run(context):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Copy original datasets to uat/pas without conversion')
+    parser = argparse.ArgumentParser(description='Copy original datasets to the bank backup folder without conversion')
     parser.add_argument('--run-date')
     args = parser.parse_args()
     context = initialize(run_date=args.run_date)
