@@ -1,3 +1,6 @@
+
+      attrib DP_ACQUIRE_STRATEGY length = $3; 
+      attrib LIFE_STAGE length = $1; 
 /*---- Create a new table  ----*/ 
 %if (&etls_tableExist eq 0) %then 
 %do;  /* if table does not exist  */ 
