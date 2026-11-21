@@ -1,106 +1,27 @@
-# Settings for EIIWOF01; edit these paths in this file.
-INPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb'
-OUTPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'
-SASDATA_PATHS = {
-    'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
-    'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
-}
-SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211']
+#!/usr/bin/env python3
+"""EIIWOF01 — Copy fail asal PIBB ke folder BACKUP dan WOFF."""
 
-
-def job_settings():
-    return {
-        '_job_name': 'EIIWOF01', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
-        'backup_root': '/exdwh/host/ln/npl_hp_sasdata/pibb/backup',
-        'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
-        'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
-        'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
-        'libraries': {
-            'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
-            'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
-            'LOAN': '/sas/ln/dwh/enrichment', 'SASLN': '/dwh/ln_ln', 'HD': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
-            'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
-        },
-        'reports': '/dwh/ftp/drr',
-        'files': {
-            'WOFF': '/host_pq/loan/input/WRI2OFF_MIS.txt',
-            'WOFFC': '/host_pq/loan/input/woff02.txt',
-            'PATCH': '/host_pq/loan/input/woff03.txt',
-            'WOFFACCT': '/dwh/ftp/drr/HPTXT1x.txt',
-            'WOFFACC2': '/dwh/ftp/drr/HPTXT2x.txt',
-        },
-    }
-
-"""EIIWOF01: copy original datasets unchanged to the bank backup folder. No data conversion."""
-import argparse
-import shutil
-from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
+import shutil
 
-SEED_MEMBERS = ['NPLOBAL', 'WIIS', 'WAQ', 'WSP2', 'IIS', 'AQ', 'SP2', 'IIS11', 'SP211']
-INPUT_DATASETS = [('NPLA', name) for name in SEED_MEMBERS + ['WOFFTOT']] + [('HD', 'HPWOFF')]
-
-
-def initialize(settings=None, run_date=None, context_type=None):
-    from copy import deepcopy
-    cfg = job_settings()
-    if settings is not None: cfg.update(deepcopy(settings))
-    base = Path(__file__).resolve().parent
-    scheduled = run_date or datetime.now(timezone(timedelta(hours=8))).date()
-    scheduled = date.fromisoformat(scheduled) if isinstance(scheduled, str) else scheduled
-    if (scheduled.month, scheduled.day) != (12, 27):
-        raise ValueError('Run date must be 27 December; use --run-date YYYY-12-27 for reruns')
-    def path(value):
-        p = Path(value)
-        return (p if p.is_absolute() else base / p).resolve()
-    input_root = path(cfg.get('input_root', '/exdwh/host/ln/npl_hp_sasdata/pibb'))
-    output_root = path(cfg.get('output_root', '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'))
-    if output_root == input_root or output_root in input_root.parents:
-        raise ValueError('Working directory must not equal or contain the source directory')
-    if context_type is not None:  # Test-only input adapter; production uses SAS files.
-        context = context_type(cfg, run_date=scheduled)
-    else:
-        context = SimpleNamespace(cfg=cfg, base=base,
-                                  run_date=scheduled, close=lambda: None)
-        def original_table(library, member):
-            directory = path(cfg.get('libraries', {}).get(library, str(input_root)))
-            matches = [p for p in directory.iterdir() if p.is_file() and p.name.lower() == member.lower() + '.sas7bdat']
-            if len(matches) != 1:
-                raise FileNotFoundError(f'Expected one {member}.sas7bdat in {directory}')
-            return matches[0]
-        context.original_table = original_table
-    context.cfg['input_root'] = str(input_root)
-    context.cfg['output_root'] = str(output_root)
-    context.input_paths = {f'{lib}.{name}': context.original_table(lib, name) for lib, name in INPUT_DATASETS}
-    return context
+SOURCE = Path("/exdwh/host/ln/npl_hp_sasdata/pibb")
+BACKUP = SOURCE / "backup"
+WOFF = SOURCE / "woff"
 
 
-def run(context):
-    source_root = Path(context.cfg['input_root']).resolve()
-    destination = Path(context.cfg['backup_root']).resolve()
-    if destination.resolve() != destination:
-        raise ValueError('Backup must not redirect through a symlink')
-    sources = [(name, context.original_table(lib, name)) for lib, name in INPUT_DATASETS]
-    destination.mkdir(parents=True, exist_ok=True)
-    for member, source in sources:
-        target = destination / source.name  # Preserve filename; no x suffix.
-        stage = destination / ('.' + source.name + '.tmp')
-        if stage.is_symlink():
-            raise ValueError('Copy temporary path must not be a symlink')
-        try:
-            shutil.copy2(source, stage)
-            stage.replace(target)
-        finally:
-            stage.unlink(missing_ok=True)
+def main():
+    BACKUP.mkdir(exist_ok=True)
+    WOFF.mkdir(exist_ok=True)
+
+    # Copy fail sahaja; tidak termasuk subfolder.
+    for file in SOURCE.iterdir():
+        if file.is_file():
+            shutil.copy2(file, BACKUP / file.name)
+            shutil.copy2(file, WOFF / file.name)
+            print(f"Copied: {file.name}")
+
+    print("EIIWOF01 selesai.")
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Copy original datasets to the bank backup folder without conversion')
-    parser.add_argument('--run-date')
-    args = parser.parse_args()
-    context = initialize(run_date=args.run_date)
-    try:
-        run(context)
-    finally:
-        context.close()
+if __name__ == "__main__":
+    main()
