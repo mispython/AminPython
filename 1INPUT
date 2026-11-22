@@ -1,107 +1,76 @@
-data _null_;
-        infile "
-cd /sas/python/virt_edw;
-source bin/activate;
-python /stgsrcsys/host/holding/pas/EIIWOF01.py
-" pipe;
-        input;
-        put _infile_;
-run;
+1                                                          The SAS System                          16:29 Thursday, November 19, 2026
 
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='Program 2';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='';
+9          %LET _SASPROGRAMFILEHOST='';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         data _null_;
+29                 infile "
+30         cd /sas/python/virt_edw;
+31         source bin/activate;
+32         python /stgsrcsys/host/holding/pas/EIIWOF02.py
+33         " pipe;
+34                 input;
+35                 put _infile_;
+36         run;
 
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIIWOF02.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIIWOF02.py"
 
-data _null_;
-        infile "
-cd /sas/python/virt_edw;
-source bin/activate;
-
-"""EIIWOF02: WOFF text -> selected, sorted ACCTNO dataset. No deduplication."""
-import argparse
-from datetime import date, datetime, timezone, timedelta
-from decimal import Decimal
-from pathlib import Path
-import pyarrow as pa 
-import pyarrow.parquet as pq
-
-
-# Job settings: edit paths here; no separate config.json is required.
-INPUT_ROOT = Path('/host_pq/loan/input')
-WOFF_FILE = Path('/host_pq/loan/input/WRI2OFF_MIS.txt')
-OUTPUT_ROOT = Path('/exdwh/host/ln/npl_hp_sasdata/pibb/woff')
-OUTPUT_SUFFIX = 'x'
-ENCODING = 'utf-8'
-BATCH_ROWS = 65536
-
-
-def run(settings=None, run_date=None):
-    # Optional in-memory settings allow dummy tests without editing server paths.
-    cfg = {
-        'input_root': str(INPUT_ROOT), 'output_root': str(OUTPUT_ROOT),
-        'files': {'WOFF': str(WOFF_FILE)}, 'output_suffix': OUTPUT_SUFFIX,
-        'encoding': ENCODING, 'batch_rows': BATCH_ROWS, 'reports': '/dwh/ftp/drr',
-    }
-    if settings is not None:
-        cfg.update(settings.cfg if hasattr(settings, 'cfg') else settings)
-    base = getattr(settings, 'base', Path(__file__).resolve().parent)
-    scheduled = run_date or getattr(settings, 'run_date', None) or datetime.now(timezone(timedelta(hours=8))).date()
-    scheduled = date.fromisoformat(scheduled) if isinstance(scheduled, str) else scheduled
-    if (scheduled.month, scheduled.day) != (12, 27):
-        raise ValueError('Run date must be 27 December; use --run-date YYYY-12-27 for reruns')
-    def path(value):
-        p = Path(value)
-        return (p if p.is_absolute() else base / p).resolve()
-    holding = path(cfg['output_root'])
-    source_root = path(cfg['input_root'])
-    if holding == source_root or source_root in holding.parents:
-        raise ValueError('Working output must be outside the input directory')
-    if cfg.get('output_format', 'parquet') != 'parquet':
-        raise ValueError('This job outputs Parquet and TXT')
-    def number(field):
-        value = field.strip()
-        return None if not value or value == '.' or (len(value) == 2 and value[0] == '.' and (value[1].isalpha() or value[1] == '_')) else Decimal(value.replace(',', ''))
-
-    # SAS: INPUT @142 ACCTNO 10. @236 COSTCTR 4.; KEEP=ACCTNO.
-    accounts = []
-    with path(cfg['files']['WOFF']).open(encoding=cfg.get('encoding', 'utf-8')) as handle:
-        for line_number, line in enumerate(handle, 1):
-            if len(line.rstrip('\r\n')) < 239:
-                raise ValueError(f'WOFF line {line_number}: record shorter than required fields')
-            acct, cost = number(line[141:151]), number(line[235:239])
-            if cost is not None and (3000 <= cost <= 3999 or cost in (4043, 4048)):
-                accounts.append(acct)
-    accounts.sort(key=lambda value: (value is not None, value or Decimal(0)))
-    values = pa.array(accounts) if any(v is not None for v in accounts) else pa.array(accounts, type=pa.decimal128(10, 0))
-    table = pa.table({'ACCTNO': values})
-    holding.mkdir(parents=True, exist_ok=True)
-    member = 'woffhp' + cfg.get('output_suffix', 'x')
-    if not member.isidentifier() or len(member) > 32:
-        raise ValueError('Invalid output member name')
-    target = holding / (member + '.parquet')
-    stage = target.with_suffix('.parquet.tmp')
-    pq.write_table(table, stage, compression='zstd', row_group_size=int(cfg.get('batch_rows', 65536)))
-    stage.replace(target)
-
-    # Plain text: one ACCTNO per line, no header; missing values use a blank line.
-    text_target = path(cfg['reports']) / (member + '.txt')
-    text_target.parent.mkdir(parents=True, exist_ok=True)
-    text_stage = text_target.with_suffix('.txt.tmp')
-    with text_stage.open('w', encoding='utf-8', newline='') as handle:
-        handle.writelines(('' if value is None else format(value, 'f')) + '\n' for value in accounts)
-    text_stage.replace(text_target)
-
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='WOFF text to sorted WOFFHP dataset')
-    parser.add_argument('--run-date')
-    args = parser.parse_args()
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/pas/EIIWOF02.py", line 81, in <module>
     run(run_date=args.run_date)
+  File "/stgsrcsys/host/holding/pas/EIIWOF02.py", line 32, in run
+    raise ValueError('Run date must be 27 December; use --run-date YYYY-12-27 for reruns')
+ValueError: Run date must be 27 December; use --run-date YYYY-12-27 for reruns
+NOTE: 6 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/pas/EIIWOF02.py".
+      The minimum record length was 31.
+      The maximum record length was 90.
+NOTE: DATA statement used (Total process time):
+      real time           1.39 seconds
+      cpu time            0.00 seconds
+      
 
+37         
+38         
+2                                                          The SAS System                          16:29 Thursday, November 19, 2026
 
-
-
-" pipe;
-        input;
-        put _infile_;
-run;
-
+39         %LET _CLIENTTASKLABEL=;
+40         %LET _CLIENTPROCESSFLOWNAME=;
+41         %LET _CLIENTPROJECTPATH=;
+42         %LET _CLIENTPROJECTPATHHOST=;
+43         %LET _CLIENTPROJECTNAME=;
+44         %LET _SASPROGRAMFILE=;
+45         %LET _SASPROGRAMFILEHOST=;
+46         
+47         ;*';*";*/;quit;run;
+48         ODS _ALL_ CLOSE;
+49         
+50         
+51         QUIT; RUN;
+52         
