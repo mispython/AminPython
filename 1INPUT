@@ -1,76 +1,65 @@
-1                                                          The SAS System                          16:29 Thursday, November 19, 2026
+/* WOF - Input dataset field definitions */
 
-1          ;*';*";*/;quit;run;
-2          OPTIONS PAGENO=MIN;
-3          %LET _CLIENTTASKLABEL='Program 2';
-4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
-5          %LET _CLIENTPROJECTPATH='';
-6          %LET _CLIENTPROJECTPATHHOST='';
-7          %LET _CLIENTPROJECTNAME='';
-8          %LET _SASPROGRAMFILE='';
-9          %LET _SASPROGRAMFILEHOST='';
-10         
-11         ODS _ALL_ CLOSE;
-12         OPTIONS DEV=SVG;
-13         GOPTIONS XPIXELS=0 YPIXELS=0;
-14         %macro HTML5AccessibleGraphSupported;
-15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
-16         %mend;
-17         FILENAME EGHTML TEMP;
-18         ODS HTML5(ID=EGHTML) FILE=EGHTML
-19             OPTIONS(BITMAP_MODE='INLINE')
-20             %HTML5AccessibleGraphSupported
-21             ENCODING='utf-8'
-22             STYLE=HTMLBlue
-23             NOGTITLE
-24             NOGFOOTNOTE
-25             GPATH=&sasworklocation
-26         ;
-NOTE: Writing HTML5(EGHTML) Body file: EGHTML
-27         
-28         data _null_;
-29                 infile "
-30         cd /sas/python/virt_edw;
-31         source bin/activate;
-32         python /stgsrcsys/host/holding/pas/EIIWOF02.py
-33         " pipe;
-34                 input;
-35                 put _infile_;
-36         run;
+libname pibb "/exdwh/host/ln/npl_hp_sasdata/pibb"
+    access=readonly;
 
-NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIIWOF02.py" is:
-      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIIWOF02.py"
+libname pbb "/exdwh/host/ln/npl_hp_sasdata/pbb"
+    access=readonly;
 
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/pas/EIIWOF02.py", line 81, in <module>
-    run(run_date=args.run_date)
-  File "/stgsrcsys/host/holding/pas/EIIWOF02.py", line 32, in run
-    raise ValueError('Run date must be 27 December; use --run-date YYYY-12-27 for reruns')
-ValueError: Run date must be 27 December; use --run-date YYYY-12-27 for reruns
-NOTE: 6 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
-      /stgsrcsys/host/holding/pas/EIIWOF02.py".
-      The minimum record length was 31.
-      The maximum record length was 90.
-NOTE: DATA statement used (Total process time):
-      real time           1.39 seconds
-      cpu time            0.00 seconds
-      
+libname enrich "/sas/ln/dwh/enrichment"
+    access=readonly;
 
-37         
-38         
-2                                                          The SAS System                          16:29 Thursday, November 19, 2026
+libname lnbase "/dwh/ln_ln"
+    access=readonly;
 
-39         %LET _CLIENTTASKLABEL=;
-40         %LET _CLIENTPROCESSFLOWNAME=;
-41         %LET _CLIENTPROJECTPATH=;
-42         %LET _CLIENTPROJECTPATHHOST=;
-43         %LET _CLIENTPROJECTNAME=;
-44         %LET _SASPROGRAMFILE=;
-45         %LET _SASPROGRAMFILEHOST=;
-46         
-47         ;*';*";*/;quit;run;
-48         ODS _ALL_ CLOSE;
-49         
-50         
-51         QUIT; RUN;
-52         
+libname control "/sasdata/dwh/control"
+    access=readonly;
+
+
+/* Display metadata; skip missing datasets */
+%macro contents(dataset);
+    %if %sysfunc(exist(&dataset)) %then %do;
+        title "Input: &dataset";
+        proc contents data=&dataset varnum;
+        run;
+    %end;
+    %else %do;
+        %put WARNING: Input dataset &dataset does not exist.;
+    %end;
+%mend;
+
+
+/* Islamic - PIBB */
+%contents(pibb.nplobal);
+%contents(pibb.wiis);
+%contents(pibb.waq);
+%contents(pibb.wsp2);
+%contents(pibb.iis);
+%contents(pibb.aq);
+%contents(pibb.sp2);
+%contents(pibb.iis11);
+%contents(pibb.sp211);
+%contents(pibb.wofftot);
+%contents(pibb.hpwoff);
+
+
+/* Conventional - PBB */
+%contents(pbb.nplobal);
+%contents(pbb.wiis);
+%contents(pbb.waq);
+%contents(pbb.wsp2);
+%contents(pbb.iis);
+%contents(pbb.aq);
+%contents(pbb.sp2);
+%contents(pbb.iis11);
+%contents(pbb.sp211);
+%contents(pbb.wofftot);
+%contents(pbb.hpwoff);
+
+
+/* Shared external inputs */
+%contents(enrich.enrh_ln_note_d26);
+%contents(lnbase.ln11426);
+%contents(control.ctl_dwh_sftp_info);
+
+title;
