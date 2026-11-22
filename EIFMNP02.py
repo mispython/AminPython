@@ -14,9 +14,9 @@ def job_settings():
         '_job_name': 'EIFMNP02', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
         'backup_root': '/exdwh/host/ln/npl_hp_sasdata/pibb/backup',
         'lnnote_root': LNNOTE_ROOT,
-        'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
+        'output_format': 'sas7bdat', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
-        'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
+        'run_date': '2026-12-27', 'sas_export': False, 'seed_inputs': list(SEED_INPUTS),
         'libraries': {
             'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
             'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
@@ -34,14 +34,12 @@ def job_settings():
     }
 
 # Support functions are embedded; no INC folder or extra Python job is required.
-"""Bounded Arrow output batches and explicit-schema SAS export, without SASPy."""
+
 import csv
 import re
 import math
 from decimal import Decimal
 from pathlib import Path
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 
 def sas_number(value):
@@ -50,116 +48,6 @@ def sas_number(value):
     return format(value, '.17g')
 
 
-def write_dual(path, rows, columns, characters, config):
-    size = int(config.get('batch_rows', 65536))
-    if size < 1: raise ValueError('batch_rows must be positive')
-    if any(not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]{0,31}', k) for k in columns):
-        raise ValueError('Invalid SAS column name')
-    # Decimal columns preserve Python calculations across job boundaries, without
-    # introducing a float round-trip. SAS export uses its native numeric double.
-    chars = set(characters) & set(columns)
-    scales = dict.fromkeys(columns, 0)
-    integers = dict.fromkeys(columns, 1)
-    widths = dict.fromkeys(columns, 1)
-    for row in rows:
-        for k in columns:
-            v = row.get(k)
-            if v is None: continue
-            if isinstance(v, str): chars.add(k)
-            if k in chars:
-                widths[k] = max(widths[k], len(str(v).encode('utf-8')))
-            else:
-                d = v if isinstance(v, Decimal) else Decimal(str(v))
-                if not d.is_finite(): raise ValueError(f'Nonfinite numeric value in {k}')
-                scales[k] = max(scales[k], -d.as_tuple().exponent)
-                integers[k] = max(integers[k], d.adjusted() + 1)
-    # A late string value makes the entire column character; include earlier values.
-    for k in chars:
-        widths[k] = max(1, max((len(str(r[k]).encode('utf-8')) for r in rows if r.get(k) is not None), default=1))
-    fields = []
-    for k in columns:
-        precision = max(1, integers[k] + scales[k])
-        if k not in chars and precision > 76:
-            raise ValueError(f'{k}: decimal precision exceeds Arrow limit; refusing rounding')
-        fields.append(pa.field(k, pa.string() if k in chars else
-                               (pa.decimal128(max(1,precision),scales[k]) if precision <= 38 else
-                                pa.decimal256(precision,scales[k]))))
-    schema = pa.schema(fields)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    stage = path.with_suffix('.parquet.tmp')
-    export = bool(config.get('sas_export', True))
-    bridge = path.parent / 'sas_bridge'
-    data = bridge / (path.stem + '.csv')
-    script = bridge / (path.stem + '.sas')
-    data_stage = data.with_suffix('.csv.tmp')
-    script_stage = script.with_suffix('.sas.tmp')
-    try:
-        if export:
-            # HEX informats preserve leading spaces, quotes, delimiters and newlines.
-            # SAS HEX informat width is limited to 32767 characters.
-            if any(widths[k] > 16383 for k in chars):
-                raise ValueError('SAS bridge supports character values up to 16383 UTF-8 bytes')
-            if sum(widths[k]*2 if k in chars else 32 for k in columns) + len(columns) > 10485760:
-                raise ValueError('SAS bridge row exceeds configured record length')
-            bridge.mkdir(exist_ok=True)
-        with pq.ParquetWriter(stage, schema, compression='zstd', use_dictionary=True) as writer:
-            for start in range(0, len(rows), size):
-                chunk = rows[start:start+size]
-                arrays = []
-                for field in schema:
-                    k = field.name
-                    values = [(None if r.get(k) is None else str(r[k])) if k in chars else
-                              (None if r.get(k) is None else Decimal(str(r[k]))) for r in chunk]
-                    arrays.append(pa.array(values, type=field.type))
-                writer.write_table(pa.Table.from_arrays(arrays, schema=schema), row_group_size=size)
-        if export:
-            with data_stage.open('w', encoding='ascii', newline='') as handle:
-                writer = csv.writer(handle, lineterminator='\n')
-                for row in rows:
-                    writer.writerow('' if row.get(k) is None else
-                                    str(row[k]).encode('utf-8').ljust(widths[k], b' ').hex() if k in chars else sas_number(row[k])
-                                    for k in columns)
-            quote = lambda p: "'" + str(p).replace('\\', '/').replace("'", "''") + "'"
-            lengths = '\n'.join(f'length {k} ${widths[k]};' if k in chars else f'length {k} 8;' for k in columns)
-            inputs = '\n'.join(f'{k} :$hex{widths[k]*2}.' if k in chars else f'{k} :best32.' for k in columns)
-            # DATA step uses an explicit schema: no PROC IMPORT type guessing/sample.
-            code = f'''/* Generated export only: no business filters or calculations. */
-options errorabend;
-%macro export_table;
-%if %upcase(%sysfunc(getoption(encoding))) ne UTF-8 %then %do;
-  %put ERROR: Run SAS with -encoding utf-8 for the HEX character bridge.;
-  %abort abend;
-%end;
-libname hout {quote(path.parent)};
-data hout._export_tmp;
-{lengths}
-infile {quote(data)} dsd dlm=',' truncover termstr=lf lrecl=10485760;
-input
-{inputs}
-;
-if _error_ then abort abend;
-run;
-%if &syserr > 4 %then %abort abend;
-%let dsid=%sysfunc(open(hout._export_tmp));
-%let actual=%sysfunc(attrn(&dsid,nlobs));
-%let rc=%sysfunc(close(&dsid));
-%if &actual ne {len(rows)} %then %abort abend;
-proc datasets library=hout nolist;
-  delete {path.stem};
-  change _export_tmp={path.stem};
-quit;
-%if &syserr > 4 %then %abort abend;
-%put NOTE: Exported {path.stem} {len(rows)} observations.;
-%mend;
-%export_table;
-'''
-            script_stage.write_text(code, encoding='utf-8')
-            data_stage.replace(data)
-            script_stage.replace(script)
-        stage.replace(path)
-    finally:
-        for temp in (stage, data_stage, script_stage):
-            temp.unlink(missing_ok=True)
 
 
 """Write genuine SAS7BDAT through an existing SASPy connection profile.
@@ -176,79 +64,77 @@ import re
 import uuid
 
 
+
 class SASOutput:
+    """Shared-folder TXT export: SAS reads locally, without DataFrame transfer."""
     def __init__(self, config):
         self.config = config
         self.session = None
 
     def connect(self):
         if self.session is None:
-            try:
-                import saspy
-            except ImportError as exc:
-                raise RuntimeError('SAS7BDAT output requires SASPy. Install requirements.txt and configure your SASPy profile.') from exc
-            kwargs = {'cfgname': self.config.get('cfgname', 'default'), 'results': 'TEXT'}
-            if self.config.get('cfgfile'):
-                kwargs['cfgfile'] = self.config['cfgfile']
-            self.session = saspy.SASsession(**kwargs)
+            import saspy
+            self.session = saspy.SASsession(**self.config)
         return self.session
 
-    def write(self, path, rows, columns, character_columns, validate):
-        import pandas as pd
-        frame = pd.DataFrame(index=range(len(rows)))
-        lengths = {}
-        for column in columns:
-            if not re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]{0,31}', column):
-                raise ValueError(f'Unsupported SAS column name: {column!r}')
-            values = [row.get(column) for row in rows]
-            text = column in character_columns
-            if not text:
-                for value in values:
-                    if value is None or value == '': continue
-                    try: Decimal(str(value))
-                    except Exception:
-                        text = True
-                        break
-            if text:
-                values = ['' if v is None else str(v) for v in values]
-                if any(any(ch in v for ch in ('\x01', '\x02', '\x03')) for v in values):
-                    raise ValueError(f'{column}: contains reserved SASPy transfer control characters')
-                frame[column] = pd.Series(values, dtype=object)
-                lengths[column] = max([1] + [len(v.encode('utf-8')) for v in values])
-                if lengths[column] > 32767:
-                    raise ValueError(f'{column}: character value exceeds SAS length limit')
-            else:
-                values = [float('nan') if v is None or v == '' else float(v) for v in values]
-                if any(math.isinf(v) for v in values):
-                    raise ValueError(f'{column}: infinite values cannot be written to SAS')
-                frame[column] = pd.Series(values, dtype='float64')
-        session = self.connect()
-        member = '_wof_' + uuid.uuid4().hex[:20]
+    def write(self, path, rows, columns, character_columns, validate, schema):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        stage = path.with_name('.' + path.stem + '_' + uuid.uuid4().hex[:8] + '.sas7bdat')
+        bridge = path.parent / 'sas_bridge'
+        bridge.mkdir(exist_ok=True)
+        text = bridge / (path.stem + '.txt')
+        temporary = text.with_suffix('.txt.tmp')
+        # Values are hex-encoded for character fields; preserve Latin-1 byte lengths.
+        with temporary.open('w', encoding='ascii', newline='') as handle:
+            writer = csv.writer(handle, lineterminator='\n')
+            for row in rows:
+                record = []
+                for col in columns:
+                    kind, width = schema[col]
+                    value = row.get(col)
+                    if value is None:
+                        record.append('')
+                    elif kind == 'Char':
+                        encoded = str(value).encode('latin-1')
+                        if len(encoded) > width:
+                            raise ValueError(f'{path.stem}.{col}: value exceeds supplied length {width}')
+                        record.append(encoded.ljust(width, b' ').hex())
+                    else:
+                        record.append(sas_number(value))
+                writer.writerow(record)
+        temporary.replace(text)
+        quote = lambda v: "'" + str(v).replace("'", "''") + "'"
+        lengths = '\n'.join(f'length {c} {"$" if schema[c][0] == "Char" else ""}{schema[c][1]};' for c in columns)
+        formats = '\n'.join(f'format {c} {fmt};' for c, fmt in {'FDACCTNO': '10.', 'TRA_EFF_DT': 'Z6.'}.items() if c in columns)
+        inputs = '\n'.join(f'{c} :$hex{schema[c][1] * 2}.' if schema[c][0] == 'Char' else f'{c} :best32.' for c in columns)
+        member = '_w' + uuid.uuid4().hex[:20]
+        stage = path.parent / (member + '.sas7bdat')
+        session = self.connect()
+        session.submit('%let _wof_encoding=%sysfunc(getoption(encoding));', results='TEXT')
+        if session.symget('_wof_encoding').strip().upper() not in ('LATIN1', 'WLATIN1'):
+            raise RuntimeError('This export preserves Latin-1 input lengths; configure the SASPy session with encoding LATIN1 or WLATIN1')
         try:
-            dataset = session.dataframe2sasdata(frame, table=member, libref='WORK',
-                                               results='TEXT', char_lengths=lengths,
-                                               encode_errors='fail')
-            if int(session.SYSERR()) > 4:
-                raise RuntimeError('SAS returned an error while creating the output table')
-            if dataset is None or not session.exist(member, 'WORK'):
-                raise RuntimeError('SASPy did not create the output table in remote WORK')
-            join = ntpath.join if '\\' in session.workpath else posixpath.join
-            remote = join(session.workpath, member + '.sas7bdat')
-            result = session.download(str(stage), remote, overwrite=True)
-            if not result.get('Success') or not stage.is_file():
-                raise RuntimeError('SASPy could not download the SAS7BDAT output from remote WORK')
+            code = f"""
+libname wofout {quote(path.parent)};
+data wofout.{member}(encoding='latin1');
+{lengths}
+{formats}
+infile {quote(text)} dsd dlm=',' truncover termstr=lf lrecl=10485760;
+input
+{inputs}
+;
+run;
+"""
+            result = session.submit(code, results='TEXT')
+            log = result['LOG']
+            if re.search(r'^ERROR(?:\s|:)', log, re.MULTILINE) or int(session.SYSERR()) > 4:
+                raise RuntimeError('SAS export failed: ' + log)
+            if not stage.is_file():
+                raise RuntimeError('SAS server must share the output and sas_bridge folder with Python')
             validate(stage, columns, len(rows))
             stage.replace(path)
         finally:
-            if stage.exists(): stage.unlink()
-            # Only the generated UUID table in this session's WORK is removed.
-            try:
-                session.submit(f'proc datasets lib=work nolist; delete {member}; quit;', results='TEXT')
-            except Exception:
-                pass
+            stage.unlink(missing_ok=True)
 
     def close(self):
         if self.session is not None:
@@ -256,30 +142,7 @@ class SASOutput:
             self.session = None
 
 
-"""Prepare a SAS export driver for the current batch, or check completed copies."""
-import argparse
-from pathlib import Path
 
-
-def prepare(c, check=False, quiet=False):
-    """Write the SAS export driver for datasets produced by this job invocation."""
-    import pyarrow.parquet as pq
-    lines = ['/* Submit on the SAS server after this Python job completes. */']
-    for name in sorted(c._exported_members):
-        p = c.table('NPL', name)
-        if check:
-            with c._sas_reader(p.with_suffix('.sas7bdat')) as reader:
-                if reader.row_count != pq.ParquetFile(p).metadata.num_rows:
-                    raise ValueError(f'SAS output count mismatch: {p}')
-        else:
-            script = c.holding() / 'sas_bridge' / (p.stem + '.sas')
-            if not script.is_file(): raise FileNotFoundError(script)
-            lines.append("%include '" + str(script).replace('\\', '/').replace("'", "''") + "';")
-    if not check:
-        driver = c.holding() / ('export_' + c.cfg['_job_name'] + '.sas')
-        stage = driver.with_suffix('.sas.tmp')
-        stage.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-        stage.replace(driver)
 
 
 
@@ -387,6 +250,67 @@ def keep(row, columns):
     return {k: row.get(k) for k in columns.split()}
 
 
+# Confirmed input types/lengths; PBB and PIBB share this schema.
+def output_schema(context, name, columns):
+    """Inherit metadata from SAS inputs; define only new fields explicitly."""
+    cache = getattr(context, '_metadata_cache', None)
+    if cache is None:
+        cache = context._metadata_cache = {}
+    def metadata(path):
+        path = Path(path)
+        if path not in cache:
+            with context._sas_reader(path) as reader:
+                cache[path] = {
+                    str(col.name).upper(): ('Char' if col.ctype == b's' else 'Num', col.length)
+                    for col in reader.columns
+                }
+        return cache[path]
+    bank = Path(context.cfg['input_root'])
+    def source(member):
+        matches = [p for p in bank.glob('*.sas7bdat') if p.stem.upper() == member]
+        if len(matches) != 1:
+            raise FileNotFoundError(f'Expected one {member}.sas7bdat in {bank}')
+        return metadata(matches[0])
+    key = name.upper()
+    if key == 'HPWOFF':
+        schema = {k: ('Char' if k == 'WOFFDT' else 'Num', 8)
+                  for k in ('ACCTNO', 'CAPBAL', 'WOFFDT', 'IIS', 'SPALLOW')}
+    elif key == 'WOFFHP':
+        schema = {'ACCTNO': ('Num', 8), 'WNAME': ('Char', 30)}
+    elif key == 'REPTDATE' or key in ('TIIS', 'TAQ', 'TSP2'):
+        schema = dict.fromkeys(columns, ('Num', 8))
+    else:
+        base = key
+        if key in ('LOAN12', 'PLOAN12', 'WIIS', 'WAQ', 'WSP2'):
+            day = (context.run_date - timedelta(days=1)).strftime('%d')
+            note = Path(context.cfg.get('lnnote_root', '/sas/ln/dwh/enrichment')) / f'enrh_ln_note_d{day}.sas7bdat'
+            schema = dict(metadata(note))
+            if key in ('LOAN12', 'PLOAN12'):
+                opening = source('NPLOBAL')
+                for field in 'ACCTNO NOTENO NTBRCH NAME LOANTYPE LOANSTAT IISP OIP SPP1 SPP2 CURBALP NETBALP EXIST UHCP'.split():
+                    schema[field] = opening[field]
+            else:
+                schema.update(source(key))
+        else:
+            if key == 'IIS12': base = 'IIS'
+            if key == 'SP212': base = 'SP2'
+            schema = dict(source(base))
+        # Derived fields defined by the original processing steps.
+        additions = {'ISSDTE': ('Num', 8), 'BLDATE': ('Num', 8),
+                     'DAYS': ('Num', 8), 'TERMCHG': ('Num', 8),
+                     'CENSUS7': ('Char', 8), 'LOANTYP': ('Char', 20),
+                     'RISK': ('Char', 13), 'CHKNPL': ('Num', 8)}
+        for field in 'SUSPEND RECOVER RECC IISPW WOIW'.split():
+            additions[field] = ('Num', 8)
+        for field, definition in additions.items():
+            schema.setdefault(field, definition)
+    missing = set(columns) - set(schema)
+    if missing:
+        raise ValueError(f'{name}: input metadata or explicit definition needed for {sorted(missing)}')
+    return {field: schema[field] for field in columns}
+
+
+
 class Context:
     def __init__(self, settings=None, run_date=None):
         from copy import deepcopy
@@ -401,7 +325,7 @@ class Context:
         self._character_columns.update(k.upper() for k in self.cfg.get('character_columns', []))
         # Annual business date. An explicit scheduled date permits controlled reruns.
         self.run_date = (date.fromisoformat(run_date) if isinstance(run_date, str)
-                         else run_date or datetime.now(timezone(timedelta(hours=8))).date())
+                         else run_date or date.fromisoformat(self.cfg.get('run_date', '2026-12-27')))
 
     def reporting_date(self):
         if (self.run_date.month, self.run_date.day) != (12, 27):
@@ -448,11 +372,6 @@ class Context:
 
     def record_output(self, name):
         self._written_outputs.add(name.upper())
-        if self.cfg.get('output_format') == 'parquet' and self.cfg.get('sas_export', True):
-            self._exported_members.add(name.upper())
-            prepare(self, quiet=True)
-
-
 
     def original_table(self, lib, name):
         directory = self.path('libraries', lib)
@@ -476,7 +395,7 @@ class Context:
             return self.original_table(lib, name)
         if name.upper() in self.cfg.get('seed_inputs', []) and name.upper() not in self._written_outputs:
             # Explicit initial dataset for this job, copied unchanged by job 01.
-            directory = Path(self.cfg['backup_root'])
+            directory = self.holding()
             extension = self.cfg.get('seed_extension', '.sas7bdat')
             matches = [p for p in directory.iterdir() if p.is_file() and p.name.lower() == (name + extension).lower()]
             if len(matches) != 1:
@@ -576,16 +495,21 @@ class Context:
         rows = rows if isinstance(rows, list) else list(rows)
         columns = columns or list(dict.fromkeys(k for r in rows for k in r))
         if not columns: raise ValueError(f'Column schema required for {name}')
-        if path.suffix == '.parquet':
-            write_dual(path, rows, columns, self._character_columns, self.cfg)
-        elif path.suffix == '.sas7bdat':
+        if path.suffix == '.sas7bdat':
             if self._output_writer is None:
                 self._output_writer = SASOutput(self.cfg.get('saspy', {}))
             def validate(binary, expected, count):
                 with self._sas_reader(binary) as reader:
                     if [str(k).upper() for k in reader.column_names] != expected or reader.row_count != count:
                         raise RuntimeError('SAS7BDAT validation failed: output columns or row count differ')
-            self._output_writer.write(path, rows, columns, self._character_columns, validate)
+                    for col in reader.columns:
+                        key = str(col.name).upper()
+                        kind, width = schema[key]
+                        expected_type = b's' if kind == 'Char' else b'd'
+                        if col.ctype != expected_type or col.length != width:
+                            raise RuntimeError(f'{name}.{key}: SAS type/length differs from supplied metadata')
+            schema = output_schema(self, name, columns)
+            self._output_writer.write(path, rows, columns, self._character_columns, validate, schema)
         else:
             self.write_csv(path, rows, columns)
         self.record_output(name)
@@ -1054,7 +978,7 @@ def initialize(settings=None, run_date=None, context_type=Context):
         libraries['LOAN'] = str(local_path(context.cfg['lnnote_root']))
         libraries['NPL6'] = str(output_root)  # Working x datasets
         context.cfg.setdefault('reports', '/dwh/ftp/drr')
-        context.cfg.setdefault('output_format', 'parquet')
+        context.cfg.setdefault('output_format', 'sas7bdat')
         context.cfg.setdefault('output_suffix', 'x')
         context.reporting_date()  # 27 December run; 26 December data.
         context.input_paths = {
@@ -1074,7 +998,7 @@ def initialize(settings=None, run_date=None, context_type=Context):
 
 def main():
     parser = argparse.ArgumentParser(description='EIFMNP02: initialize inputs and run')
-    parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to today in Singapore')
+    parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to configured run_date')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     context = initialize(run_date=args.run_date)
