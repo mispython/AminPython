@@ -7,6 +7,7 @@ SASDATA_PATHS = {
 }
 LNNOTE_ROOT = '/sas/ln/dwh/enrichment'
 SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211', 'WIIS', 'WAQ', 'WSP2']
+"""EIFMNP02 - Processing only; paths and dates come from the calling WOF job."""
 
 
 def job_settings():
@@ -284,6 +285,7 @@ def output_schema(context, name, columns):
         if key in ('LOAN12', 'PLOAN12', 'WIIS', 'WAQ', 'WSP2'):
             day = (context.run_date - timedelta(days=1)).strftime('%d')
             note = Path(context.cfg.get('lnnote_root', '/sas/ln/dwh/enrichment')) / f'enrh_ln_note_d{day}.sas7bdat'
+            note = Path(context.cfg['lnnote_root']) / f'enrh_ln_note_d{day}.sas7bdat'
             schema = dict(metadata(note))
             if key in ('LOAN12', 'PLOAN12'):
                 opening = source('NPLOBAL')
@@ -317,6 +319,9 @@ class Context:
         self.base = Path(__file__).resolve().parent
         self.cfg = job_settings()
         if settings is not None: self.cfg.update(deepcopy(settings))
+        if settings is None:
+            raise ValueError('Run through EIIWOF03/12 or EIAWOF03/12; caller settings are required')
+        self.cfg = deepcopy(settings)
         self._written_outputs = set()
         self._exported_members = set()
         self.encoding = self.cfg.get('encoding', 'utf-8')
@@ -326,6 +331,7 @@ class Context:
         # Annual business date. An explicit scheduled date permits controlled reruns.
         self.run_date = (date.fromisoformat(run_date) if isinstance(run_date, str)
                          else run_date or date.fromisoformat(self.cfg.get('run_date', '2026-12-27')))
+                         else run_date or date.fromisoformat(self.cfg['run_date']))
 
     def reporting_date(self):
         if (self.run_date.month, self.run_date.day) != (12, 27):
@@ -355,6 +361,7 @@ class Context:
 
     def assert_output_path(self, path):
         report_root = Path(self.cfg.get('reports', '/dwh/ftp/drr')).resolve()
+        report_root = Path(self.cfg['reports']).resolve()
         report_target = Path(path).resolve()
         if report_root in report_target.parents:
             return
@@ -384,6 +391,7 @@ class Context:
         if lib == 'LOAN' and name.upper() == 'LNNOTE':
             data_date = self.run_date - timedelta(days=1)
             directory = Path(self.cfg.get('lnnote_root', LNNOTE_ROOT))
+            directory = Path(self.cfg['lnnote_root'])
             directory = directory if directory.is_absolute() else self.base / directory
             # Day-only suffix confirmed by the user; actual snapshot must be supplied.
             extension = self.cfg.get('lnnote_extension', '.sas7bdat')
@@ -587,9 +595,6 @@ from pathlib import Path
 import calendar
 import csv
 
-import PBBLNFMT
-import PBBELF
-import NPLNTB
 
 CHARACTERS = set('NAME BORSTAT EXIST USER5 VINNO CENSUS7 PAIDIND REVERSED WDOWNIND RESCHEIND HARDCODE WRITEOFF BRANCH LOANTYP RISK POSTNTRN GUAREND'.split())
 INTERNAL = set('A B AA BB _N_ REPTDATE STYR STMTH ENYR ENMTH'.split())
@@ -695,7 +700,6 @@ def substr(value,start,length):
 
 def put(value,fmt):
     fmt=str(fmt).upper();v=S(value).value
-    if fmt=='BRCHCD.':return S(PBBELF.put(v,'BRCHCD.'))
     if fmt=='LNTYP.':
         if v in (128,130,983,131,132):return S('HPD AITAB')
         if v in (700,705,380,381,993,996):return S('HPD CONVENTIONAL')
@@ -776,7 +780,6 @@ def save(c,lib,name,rows,columns=None):
     c.write(lib,name,[r.plain() for r in rows],columns)
 
 
-def apply_nplntb(row,c):return NPLNTB.apply(row)
 
 
 def parameters(c):
@@ -1010,3 +1013,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    raise SystemExit('Run EIIWOF03/12 or EIAWOF03/12; EIFMNP02 receives settings from its caller.')
