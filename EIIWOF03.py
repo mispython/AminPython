@@ -14,9 +14,9 @@ def job_settings():
         '_job_name': 'EIIWOF03', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
         'backup_root': '/exdwh/host/ln/npl_hp_sasdata/pibb/backup',
         'lnnote_root': LNNOTE_ROOT,
-        'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
+        'output_format': 'sas7bdat', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
-        'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
+        'run_date': '2026-12-27', 'sas_export': False, 'seed_inputs': list(SEED_INPUTS),
         'libraries': {
             'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
             'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
@@ -70,7 +70,7 @@ def initialize(settings=None, run_date=None, context_type=Context):
         libraries['LOAN'] = str(local_path(context.cfg['lnnote_root']))
         libraries['NPL6'] = str(output_root)  # Working x datasets
         context.cfg.setdefault('reports', '/dwh/ftp/drr')
-        context.cfg.setdefault('output_format', 'parquet')
+        context.cfg.setdefault('output_format', 'sas7bdat')
         context.cfg.setdefault('output_suffix', 'x')
         context.reporting_date()  # 27 December run; 26 December data.
         context.input_paths = {
@@ -90,7 +90,7 @@ def initialize(settings=None, run_date=None, context_type=Context):
 
 def main():
     parser = argparse.ArgumentParser(description='EIIWOF03: initialize inputs and run')
-    parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to today in Singapore')
+    parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to configured run_date')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     context = initialize(run_date=args.run_date)
