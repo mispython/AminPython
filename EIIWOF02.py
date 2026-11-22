@@ -1,98 +1,79 @@
-"""EIIWOF02: WOFF text to TXT and SAS7BDAT. No deduplication."""
-import argparse
-from datetime import date
+#!/usr/bin/env python3
+"""EIIWOF02 - Select Islamic write-off accounts; output TXT and SAS7BDAT."""
+
 from decimal import Decimal
 from pathlib import Path
+import re
 import pandas as pd
 import saspy
-import re
+
+INPUT_FILE = Path("/host_pq/loan/input/WRI2OFF_MIS.txt")
+TEXT_FILE = Path("/dwh/ftp/drr/woffhpx.txt")
+SAS_FOLDER = Path("/exdwh/host/ln/npl_hp_sasdata/pibb/woff")
+SAS_MEMBER = "woffhpx"
+SAS_CONFIG = None  # Your configured SASPy profile; None uses the default.
 
 
-# Job settings: edit paths here; no separate config.json is required.
-INPUT_ROOT = Path('/host_pq/loan/input')
-WOFF_FILE = Path('/host_pq/loan/input/WRI2OFF_MIS.txt')
-OUTPUT_ROOT = Path('/exdwh/host/ln/npl_hp_sasdata/pibb/woff')
-OUTPUT_SUFFIX = 'x'
-ENCODING = 'utf-8'
-RUN_DATE = "2026-12-27"
-SAS_CONFIG = None  # Set to your configured SASPy profile name if needed.
+def number(field):
+    value = field.strip()
+    if not value or value == "." or (
+        len(value) == 2 and value[0] == "."
+        and (value[1].isalpha() or value[1] == "_")
+    ):
+        return None
+    return Decimal(value.replace(",", ""))
 
 
+def main():
+    accounts = []
+    with INPUT_FILE.open(encoding="utf-8") as source:
+        for line_no, line in enumerate(source, 1):
+            if len(line.rstrip("\r\n")) < 239:
+                raise ValueError(f"Line {line_no}: fewer than 239 characters")
+            acctno = number(line[141:151])
+            costctr = number(line[235:239])
+            if costctr is not None and (
+                3000 <= costctr <= 3999 or costctr in (4043, 4048)
+            ):
+                accounts.append(acctno)
 
-def write_sas7bdat(accounts, output_folder, member):
-    """Write a numeric ACCTNO dataset using the configured SASPy server."""
-    frame = pd.DataFrame({
-        "ACCTNO": [float(value) if value is not None else float("nan")
-                   for value in accounts]
-    }, dtype="float64")
-    sas = (saspy.SASsession(cfgname=SAS_CONFIG)
-           if SAS_CONFIG else saspy.SASsession())
+    # Missing accounts first; ascending order; duplicates retained.
+    accounts.sort(key=lambda value: value if value is not None else Decimal("-Infinity"))
+    TEXT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = TEXT_FILE.with_suffix(".txt.tmp")
+    with temporary.open("w", encoding="utf-8", newline="") as target:
+        target.writelines(
+            (format(value, "f") if value is not None else "") + "\n"
+            for value in accounts
+        )
+    temporary.replace(TEXT_FILE)
+    print(f"TXT created: {TEXT_FILE}")
+
+    # Read the TXT output, then convert it to SAS7BDAT through SASPy.
+    del accounts
+    if TEXT_FILE.stat().st_size == 0:
+        frame = pd.DataFrame({"ACCTNO": pd.Series(dtype="float64")})
+    else:
+        frame = pd.read_csv(
+            TEXT_FILE, header=None, names=["ACCTNO"], dtype="float64",
+            skip_blank_lines=False, encoding="utf-8",
+        )
+    SAS_FOLDER.mkdir(parents=True, exist_ok=True)
+    sas = saspy.SASsession(cfgname=SAS_CONFIG) if SAS_CONFIG else saspy.SASsession()
     try:
-        sas.saslib("outlib", path=str(output_folder))
+        sas.saslib("outlib", path=str(SAS_FOLDER))
         if re.search(r"^ERROR(?:\s|:)", sas.lastlog(), re.MULTILINE):
-            raise RuntimeError("Cannot assign SAS output library. " + sas.lastlog())
-        result = sas.dataframe2sasdata(frame, table=member, libref="outlib")
-        log = sas.lastlog()
-        if result is None or re.search(r"^ERROR(?:\s|:)", log, re.MULTILINE):
-            raise RuntimeError("SAS7BDAT export failed. " + log)
-        if not sas.exist(member, libref="outlib"):
-            raise RuntimeError("SAS7BDAT output was not created.")
-        print(f"SAS7BDAT created: {output_folder / (member + '.sas7bdat')}")
+            raise RuntimeError(sas.lastlog())
+        result = sas.dataframe2sasdata(frame, table=SAS_MEMBER, libref="outlib")
+        if result is None or re.search(r"^ERROR(?:\s|:)", sas.lastlog(), re.MULTILINE):
+            raise RuntimeError("SAS export failed: " + sas.lastlog())
+        if not sas.exist(SAS_MEMBER, libref="outlib"):
+            raise RuntimeError("SAS output was not created")
     finally:
         sas.endsas()
-
-def run(settings=None, run_date=None):
-    # Optional in-memory settings allow dummy tests without editing server paths.
-    cfg = {
-        'input_root': str(INPUT_ROOT), 'output_root': str(OUTPUT_ROOT),
-        'files': {'WOFF': str(WOFF_FILE)}, 'output_suffix': OUTPUT_SUFFIX,
-        'encoding': ENCODING, 'reports': '/dwh/ftp/drr',
-    }
-    if settings is not None:
-        cfg.update(settings.cfg if hasattr(settings, 'cfg') else settings)
-    base = getattr(settings, 'base', Path(__file__).resolve().parent)
-    scheduled = date.fromisoformat(str(run_date or RUN_DATE))
-    def path(value):
-        p = Path(value)
-        return (p if p.is_absolute() else base / p).resolve()
-    holding = path(cfg['output_root'])
-    source_root = path(cfg['input_root'])
-    if holding == source_root or source_root in holding.parents:
-        raise ValueError('Working output must be outside the input directory')
-    def number(field):
-        value = field.strip()
-        return None if not value or value == '.' or (len(value) == 2 and value[0] == '.' and (value[1].isalpha() or value[1] == '_')) else Decimal(value.replace(',', ''))
-
-    # SAS: INPUT @142 ACCTNO 10. @236 COSTCTR 4.; KEEP=ACCTNO.
-    accounts = []
-    with path(cfg['files']['WOFF']).open(encoding=cfg.get('encoding', 'utf-8')) as handle:
-        for line_number, line in enumerate(handle, 1):
-            if len(line.rstrip('\r\n')) < 239:
-                raise ValueError(f'WOFF line {line_number}: record shorter than required fields')
-            acct, cost = number(line[141:151]), number(line[235:239])
-            if cost is not None and (3000 <= cost <= 3999 or cost in (4043, 4048)):
-                accounts.append(acct)
-    accounts.sort(key=lambda value: (value is not None, value or Decimal(0)))
-    holding.mkdir(parents=True, exist_ok=True)
-    member = 'woffhp' + cfg.get('output_suffix', 'x')
-    if not member.isidentifier() or len(member) > 32:
-        raise ValueError('Invalid output member name')
-    # Plain text: one ACCTNO per line, no header; missing values use a blank line.
-    text_target = path(cfg['reports']) / (member + '.txt')
-    text_target.parent.mkdir(parents=True, exist_ok=True)
-    text_stage = text_target.with_suffix('.txt.tmp')
-    with text_stage.open('w', encoding='utf-8', newline='') as handle:
-        handle.writelines(('' if value is None else format(value, 'f')) + '\n' for value in accounts)
-    text_stage.replace(text_target)
-    print(f"TXT created: {text_target}")
-    write_sas7bdat(accounts, holding, member)
-    print(f"EIIWOF02 completed. Records: {len(accounts)}")
+    print(f"SAS7BDAT created: {SAS_FOLDER / (SAS_MEMBER + '.sas7bdat')}")
+    print(f"EIIWOF02 completed. Records: {len(frame)}")
 
 
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='WOFF text to sorted WOFFHP dataset')
-    parser.add_argument('--run-date')
-    args = parser.parse_args()
-    run(run_date=args.run_date)
-
+if __name__ == "__main__":
+    main()
