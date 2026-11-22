@@ -12,9 +12,9 @@ def job_settings():
     return {
         '_job_name': 'EIIWOF04', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
         'backup_root': '/exdwh/host/ln/npl_hp_sasdata/pibb/backup',
-        'output_format': 'parquet', 'output_suffix': 'x', 'batch_rows': 65536,
+        'output_format': 'sas7bdat', 'output_suffix': 'x', 'batch_rows': 65536,
         'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
-        'sas_export': True, 'seed_inputs': list(SEED_INPUTS),
+        'run_date': '2026-12-27', 'sas_export': False, 'seed_inputs': list(SEED_INPUTS),
         'libraries': {
             'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
             'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
@@ -22,13 +22,7 @@ def job_settings():
             'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
         },
         'reports': '/dwh/ftp/drr',
-        'files': {
-            'WOFF': '/host_pq/loan/input/WRI2OFF_MIS.txt',
-            'WOFFC': '/host_pq/loan/input/woff02.txt',
-            'PATCH': '/host_pq/loan/input/woff03.txt',
-            'WOFFACCT': '/dwh/ftp/drr/HPTXT1x.txt',
-            'WOFFACC2': '/dwh/ftp/drr/HPTXT2x.txt',
-        },
+        'files': {},  # IIS processing reads SAS datasets only.
     }
 
 """EIIWOF04: initialize this job, then call the original MNP program sequence."""
@@ -67,9 +61,9 @@ def initialize(settings=None, run_date=None, context_type=Context):
         libraries = context.cfg.setdefault('libraries', {})
         libraries['NPL'] = str(output_root)  # Working x datasets
         context.cfg.setdefault('reports', '/dwh/ftp/drr')
-        context.cfg.setdefault('output_format', 'parquet')
+        context.cfg.setdefault('output_format', 'sas7bdat')
         context.cfg.setdefault('output_suffix', 'x')
-        context.reporting_date()  # 27 December run; 26 December data.
+        context.reporting_date()  # Data date comes from this main job's scheduled date.
         context.input_paths = {
             f'{library}.{member}': context.input_table(library, member)
             for library, member in INPUT_DATASETS
@@ -87,7 +81,7 @@ def initialize(settings=None, run_date=None, context_type=Context):
 
 def main():
     parser = argparse.ArgumentParser(description='EIIWOF04: initialize inputs and run')
-    parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to today in Singapore')
+    parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to configured run_date')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     context = initialize(run_date=args.run_date)
