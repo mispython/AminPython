@@ -24,13 +24,7 @@ def job_settings():
             'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
         },
         'reports': '/dwh/ftp/drr',
-        'files': {
-            'WOFF': '/host_pq/loan/input/WRI2OFF_MIS.txt',
-            'WOFFC': '/host_pq/loan/input/woff02.txt',
-            'PATCH': '/host_pq/loan/input/woff03.txt',
-            'WOFFACCT': '/dwh/ftp/drr/HPTXT1x.txt',
-            'WOFFACC2': '/dwh/ftp/drr/HPTXT2x.txt',
-        },
+        'files': {},  # This job reads SAS datasets only.
     }
 
 """EIIWOF03: initialize this job, then call the original MNP program sequence."""
