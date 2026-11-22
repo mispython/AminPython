@@ -1,38 +1,4 @@
-# Settings for EIFMNP02; edit these paths in this file.
-INPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb'
-OUTPUT_ROOT = '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'
-SASDATA_PATHS = {
-    'SAP.PBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pbb',
-    'SAP.PIBB.NPL.HP.SASDATA': '/exdwh/host/ln/npl_hp_sasdata/pibb',
-}
-LNNOTE_ROOT = '/sas/ln/dwh/enrichment'
-SEED_INPUTS = ['NPLOBAL', 'IIS11', 'SP211', 'WIIS', 'WAQ', 'WSP2']
 """EIFMNP02 - Processing only; paths and dates come from the calling WOF job."""
-
-
-def job_settings():
-    return {
-        '_job_name': 'EIFMNP02', 'input_root': INPUT_ROOT, 'output_root': OUTPUT_ROOT,
-        'backup_root': '/exdwh/host/ln/npl_hp_sasdata/pibb/backup',
-        'lnnote_root': LNNOTE_ROOT,
-        'output_format': 'sas7bdat', 'output_suffix': 'x', 'batch_rows': 65536,
-        'encoding': 'utf-8', 'output_encoding': 'utf-8', 'sas_encoding': 'infer',
-        'run_date': '2026-12-27', 'sas_export': False, 'seed_inputs': list(SEED_INPUTS),
-        'libraries': {
-            'NPLA': SASDATA_PATHS['SAP.PIBB.NPL.HP.SASDATA'],
-            'PBB': SASDATA_PATHS['SAP.PBB.NPL.HP.SASDATA'],
-            'LOAN': '/sas/ln/dwh/enrichment', 'SASLN': '/dwh/ln_ln', 'HD': INPUT_ROOT,
-            'NPL': OUTPUT_ROOT, 'NPL6': OUTPUT_ROOT,
-        },
-        'reports': '/dwh/ftp/drr',
-        'files': {
-            'WOFF': '/host_pq/loan/input/WRI2OFF_MIS.txt',
-            'WOFFC': '/host_pq/loan/input/woff02.txt',
-            'PATCH': '/host_pq/loan/input/woff03.txt',
-            'WOFFACCT': '/dwh/ftp/drr/HPTXT1x.txt',
-            'WOFFACC2': '/dwh/ftp/drr/HPTXT2x.txt',
-        },
-    }
 
 # Support functions are embedded; no INC folder or extra Python job is required.
 
@@ -284,7 +250,6 @@ def output_schema(context, name, columns):
         base = key
         if key in ('LOAN12', 'PLOAN12', 'WIIS', 'WAQ', 'WSP2'):
             day = (context.run_date - timedelta(days=1)).strftime('%d')
-            note = Path(context.cfg.get('lnnote_root', '/sas/ln/dwh/enrichment')) / f'enrh_ln_note_d{day}.sas7bdat'
             note = Path(context.cfg['lnnote_root']) / f'enrh_ln_note_d{day}.sas7bdat'
             schema = dict(metadata(note))
             if key in ('LOAN12', 'PLOAN12'):
@@ -317,8 +282,6 @@ class Context:
     def __init__(self, settings=None, run_date=None):
         from copy import deepcopy
         self.base = Path(__file__).resolve().parent
-        self.cfg = job_settings()
-        if settings is not None: self.cfg.update(deepcopy(settings))
         if settings is None:
             raise ValueError('Run through EIIWOF03/12 or EIAWOF03/12; caller settings are required')
         self.cfg = deepcopy(settings)
@@ -330,14 +293,12 @@ class Context:
         self._character_columns.update(k.upper() for k in self.cfg.get('character_columns', []))
         # Annual business date. An explicit scheduled date permits controlled reruns.
         self.run_date = (date.fromisoformat(run_date) if isinstance(run_date, str)
-                         else run_date or date.fromisoformat(self.cfg.get('run_date', '2026-12-27')))
                          else run_date or date.fromisoformat(self.cfg['run_date']))
 
     def reporting_date(self):
-        if (self.run_date.month, self.run_date.day) != (12, 27):
-            raise ValueError('Annual job runs on 27 December (Singapore time). '
-                             'For a test/rerun, pass --run-date YYYY-12-27 for the intended run year.')
-        return date(self.run_date.year, 12, 26)
+        # Use the scheduled date supplied by the calling main job.
+        return self.run_date - timedelta(days=1)
+
 
     def path(self, group, name):
         p = Path(self.cfg[group][name])
@@ -360,7 +321,6 @@ class Context:
         return p if p.is_absolute() else self.base / p
 
     def assert_output_path(self, path):
-        report_root = Path(self.cfg.get('reports', '/dwh/ftp/drr')).resolve()
         report_root = Path(self.cfg['reports']).resolve()
         report_target = Path(path).resolve()
         if report_root in report_target.parents:
@@ -390,7 +350,6 @@ class Context:
     def input_table(self, lib, name):
         if lib == 'LOAN' and name.upper() == 'LNNOTE':
             data_date = self.run_date - timedelta(days=1)
-            directory = Path(self.cfg.get('lnnote_root', LNNOTE_ROOT))
             directory = Path(self.cfg['lnnote_root'])
             directory = directory if directory.is_absolute() else self.base / directory
             # Day-only suffix confirmed by the user; actual snapshot must be supplied.
@@ -956,61 +915,5 @@ def run(c):
 
 
 
-# Input libraries and datasets for THIS job (equivalent to its JCL DD bindings).
-INPUT_DATASETS = [('LOAN', 'LNNOTE'), ('NPL6', 'NPLOBAL'), ('NPL6', 'WIIS'), ('NPL6', 'WAQ'), ('NPL6', 'WSP2')]
-INPUT_FILES = []
-
-
-def initialize(settings=None, run_date=None, context_type=Context):
-    """This job owns its paths, reporting date and input preflight."""
-    from copy import deepcopy
-    cfg = job_settings()
-    if settings is not None: cfg.update(deepcopy(settings))
-    cfg['_job_name'] = 'EIFMNP02'
-    cfg['seed_inputs'] = list(SEED_INPUTS)
-    context = context_type(cfg, run_date=run_date)
-    def local_path(value):
-        path = Path(value)
-        return (path if path.is_absolute() else context.base / path).resolve()
-    try:
-        input_root = local_path(context.cfg.get('input_root', '/exdwh/host/ln/npl_hp_sasdata/pibb'))
-        output_root = local_path(context.cfg.get('output_root', '/exdwh/host/ln/npl_hp_sasdata/pibb/woff'))
-        context.cfg['input_root'] = str(input_root)
-        context.cfg['output_root'] = str(output_root)
-        libraries = context.cfg.setdefault('libraries', {})
-        libraries['LOAN'] = str(local_path(context.cfg['lnnote_root']))
-        libraries['NPL6'] = str(output_root)  # Working x datasets
-        context.cfg.setdefault('reports', '/dwh/ftp/drr')
-        context.cfg.setdefault('output_format', 'sas7bdat')
-        context.cfg.setdefault('output_suffix', 'x')
-        context.reporting_date()  # 27 December run; 26 December data.
-        context.input_paths = {
-            f'{library}.{member}': context.input_table(library, member)
-            for library, member in INPUT_DATASETS
-        }
-        for name in INPUT_FILES:
-            path = context.path('files', name)
-            if not path.is_file():
-                raise FileNotFoundError(path)
-            context.input_paths[name] = path
-        return context
-    except Exception:
-        context.close()
-        raise
-
-
-def main():
-    parser = argparse.ArgumentParser(description='EIFMNP02: initialize inputs and run')
-    parser.add_argument('--run-date', help='Scheduled date YYYY-12-27; defaults to configured run_date')
-    args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    context = initialize(run_date=args.run_date)
-    try:
-        run(context)
-    finally:
-        context.close()
-
-
 if __name__ == '__main__':
-    main()
     raise SystemExit('Run EIIWOF03/12 or EIAWOF03/12; EIFMNP02 receives settings from its caller.')
