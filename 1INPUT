@@ -8578,6 +8578,1404 @@ EXTRA_GAIN_REFINANC_AMT Num 8
 
 
 
+Input: lnbase.ln10426 
+
+
+The CONTENTS Procedure
+
+
+
+
+
+
+
+
+
+
+Data Set Name
+LNBASE.LN10426 
+Observations
+2035224 
+
+Member Type
+DATA 
+Variables
+419 
+
+Engine
+V9 
+Indexes
+0 
+
+Created
+11/01/2026 21:01:14 
+Observation Length
+3013 
+
+Last Modified
+11/01/2026 21:01:14 
+Deleted Observations
+0 
+
+Protection
+  
+Compressed
+CHAR 
+
+Data Set Type
+  
+Reuse Space
+NO 
+
+Label
+  
+Point to Observations
+YES 
+
+Data Representation
+SOLARIS_X86_64, LINUX_X86_64, ALPHA_TRU64, LINUX_IA64 
+Sorted
+NO 
+
+Encoding
+latin1 Western (ISO) 
+ 
+  
+
+
+
+
+
+
+
+Engine/Host Dependent Information
+
+
+
+Data Set Page Size
+65536 
+
+Number of Data Set Pages
+37194 
+
+Number of Data Set Repairs
+0 
+
+Filename
+/dwh/ln_ln/ln10426.sas7bdat 
+
+Release Created
+9.0401M9 
+
+Host Created
+Linux 
+
+Inode Number
+22313662485 
+
+Access Permission
+rw-r----- 
+
+Owner Name
+sasdemo_edw 
+
+File Size
+2GB 
+
+File Size (bytes)
+2437611520 
+
+
+
+
+
+
+
+
+
+
+
+
+
+Variables in Creation Order
+
+
+#
+
+Variable
+
+Type
+
+Len
+
+Format
+
+Informat
+
+Label
+
+
+
+1
+ACCTNO Num 8 BEST10. BEST12. ACCTNO 
+
+2
+NOTENO Num 8 BEST5. BEST12. NOTENO 
+
+3
+PAYEFDT Num 8       
+
+4
+DOBCIS Num 8 5.     
+
+5
+U2RACECO Char 1       
+
+6
+EIR_ADJ Num 8       
+
+7
+EXPRDATE Num 8       
+
+8
+STATECD Char 1       
+
+9
+RISKRTE Num 4       
+
+10
+CUSTCODE Num 8       
+
+11
+PRODUCT Num 8       
+
+12
+BRANCH Num 8       
+
+13
+APPVALUE Num 8       
+
+14
+NOTETERM Num 8       
+
+15
+FLAG3 Char 1       
+
+16
+COSTCTR Num 8       
+
+17
+BILLTYPE Char 1       
+
+18
+INTRATE Num 8       
+
+19
+SPREAD Num 8       
+
+20
+INTEARN Num 8       
+
+21
+ACCRUAL Num 8       
+
+22
+SECURE Char 1       
+
+23
+LOANSTAT Num 8       
+
+24
+BORSTAT Char 1       
+
+25
+MARKETVL Num 8       
+
+26
+PAYAMT Num 8       
+
+27
+PAYFREQ Char 1       
+
+28
+BILPAY Num 8       
+
+29
+PAYTYPE Char 1       
+
+30
+ACCTYIND Num 8       
+
+31
+RESTBALC Num 8       
+
+32
+PAYIND Char 1       
+
+33
+FEEAMT Num 8       
+
+34
+NXTBIL Num 8       
+
+35
+BLDATE Num 8       
+
+36
+ISSDTE Num 8       
+
+37
+FISSPURP Char 4       
+
+38
+APPRLIMT Num 8       
+
+39
+UNDRAWN Num 8       
+
+40
+APPRLMTACCT Num 8       
+
+41
+BAL_AFT_EIR Num 8       
+
+42
+CCY Char 3       
+
+43
+FORATE Char 12       
+
+44
+FCYBAL Num 8       
+
+45
+DNBFISME Char 1       
+
+46
+DNBFI_ORI Char 1       
+
+47
+VB Char 1       
+
+48
+SIACCTNO Num 8       
+
+49
+ABM_HL Char 1       
+
+50
+IA_LRU Char 1       
+
+51
+ASCORE_PERM Char 8       
+
+52
+ASCORE_LTST Char 8       
+
+53
+UNEARNED1 Num 8       
+
+54
+UNEARNED2 Num 8       
+
+55
+UNEARNED Num 8       
+
+56
+FDCERTNO Num 8       
+
+57
+FDACCTNO Num 8 10.     
+
+58
+CCRIS_INSTLAMT Num 8       
+
+59
+INDUSTRIAL_SECTOR_CD Char 8       
+
+60
+ASCORE_COMM Char 12       
+
+61
+SCH_REPAY_TERM Num 8       
+
+62
+WRIOFF_CLOSE_FILE_TAG Char 1       
+
+63
+WRIOFF_CLOSE_FILE_TAG_DT Num 8       
+
+64
+REMMFISS Char 2       
+
+65
+REMAINMT Num 6       
+
+66
+CURBAL Num 8       
+
+67
+BALANCE Num 8       
+
+68
+APPRLIM2 Num 8       
+
+69
+CUSTFISS Char 2       
+
+70
+SECTFISS Char 4       
+
+71
+DAYARR Num 8       
+
+72
+MTDAVBAL_MIS Num 8       
+
+73
+TAXNO Char 11       
+
+74
+ORGTYPE Char 1       
+
+75
+GUAREND Char 20       
+
+76
+PURPOSE Char 1       
+
+77
+ASSMDATE Num 8       
+
+78
+LSTTRNCD Num 8       
+
+79
+INTAMT Num 8       
+
+80
+COLLDESC Char 70       
+
+81
+MAILING_ADD_IND Char 1       
+
+82
+DLIVRYDT Num 8       
+
+83
+COMMNO Num 8       
+
+84
+CORPCODE Char 1       
+
+85
+SECTOR Char 4       
+
+86
+PAIDIND Char 1       
+
+87
+ORGBAL Num 8       
+
+88
+NETPROC Num 8       
+
+89
+FEEDUE Num 8       
+
+90
+NTINT Char 1       
+
+91
+REBATE Num 8       
+
+92
+LIABCODE Char 2       
+
+93
+REFINANC Char 1       
+
+94
+DEALERNO Num 8       
+
+95
+MATUREDT Num 8       
+
+96
+COLLMAKE Char 6       
+
+97
+EARNTERM Num 8       
+
+98
+INTEARN2 Num 8       
+
+99
+INTEARN3 Num 8       
+
+100
+INTEARN4 Num 8       
+
+101
+NXDUEDT Num 8       
+
+102
+REBIND Char 1       
+
+103
+APPRDATE Num 8       
+
+104
+POSTNTRN Char 1       
+
+105
+LSTTRNAM Num 8       
+
+106
+NTAPR Num 8       
+
+107
+ORIGRATE Num 8       
+
+108
+VINNO Char 20       
+
+109
+RESTIND Char 1       
+
+110
+TOTPDEOP Num 8       
+
+111
+POSTCODE Num 8       
+
+112
+INTPDYTD Num 8       
+
+113
+ACCRUYTD Num 8       
+
+114
+ACCRUEOP Num 8       
+
+115
+NTINDEX Num 8       
+
+116
+MTDINT Num 8       
+
+117
+SCORE1 Char 4       
+
+118
+NUM_PAY_BIL_INSTL Num 8       
+
+119
+ACCOSTCT Num 8       
+
+120
+INTINYTD Num 8       
+
+121
+PREVBRNO Num 8       
+
+122
+SCORE2 Char 4       
+
+123
+CRISPURP Char 4       
+
+124
+PAIDOFF Char 2       
+
+125
+FEEYTD Num 8       
+
+126
+FEEAMT14 Num 8       
+
+127
+FEEAMT15 Num 8       
+
+128
+FEEAMT16 Num 8       
+
+129
+FEEEARN1 Num 8       
+
+130
+FEEEARN2 Num 8       
+
+131
+COLLYEAR Num 8       
+
+132
+DELQCD Char 2       
+
+133
+APPORMT Num 8       
+
+134
+COSTFUND Num 8       
+
+135
+POFFICER Num 8       
+
+136
+NPLCRR Char 4       
+
+137
+FORM2 Num 8       
+
+138
+FORM1 Num 8       
+
+139
+MODELDES Char 6       
+
+140
+YTDEARNS Num 8       
+
+141
+INTRATE2 Num 8       
+
+142
+RATELMT2 Num 8       
+
+143
+MAILCODE Char 2       
+
+144
+SITYPE Char 1       
+
+145
+VARSTDTE Num 8       
+
+146
+USMARGIN Num 8       
+
+147
+USEDIT Char 1       
+
+148
+STOPDEBIT Char 1       
+
+149
+SM_STATUS Char 1       
+
+150
+CASHPRICE Num 8       
+
+151
+REACCRUAL Char 1       
+
+152
+LATENOTICE Char 1       
+
+153
+GUARNOTICE Char 1       
+
+154
+INTBASIS Num 8       
+
+155
+MEMOACC Num 8       
+
+156
+EXCESSPAY Num 8       
+
+157
+BILLEADDAY Num 8       
+
+158
+DEATHDATE Num 8       
+
+159
+INTSTDTE Num 8       
+
+160
+CFINDEX Num 8       
+
+161
+EXRATIO Num 8       
+
+162
+NPLCRRBPA Char 1       
+
+163
+CPNSTDTE Num 8       
+
+164
+INSOLVENCY_IND Char 1       
+
+165
+NUMCPNS Num 8 Z4.     
+
+166
+RSN Char 1       
+
+167
+PTMNATE Char 11       
+
+168
+EARLY_SETTLE_FEE_CHARGE_FLG Char 1       
+
+169
+MNIAPLMT Num 8       
+
+170
+COMMNO_OLD Num 8       
+
+171
+TIMES_RENEWED Num 8       
+
+172
+STAFF_FREE_INT_LOAN_AMT Num 8       
+
+173
+MARKED_PAYMENT_IND Char 1       
+
+174
+NUM_PAY_BIL_INT Num 8       
+
+175
+NURS_TAG Char 6       
+
+176
+NUR_STARTDT Num 8       
+
+177
+NURS_TAGDT Num 8       
+
+178
+NURS_ENDDT Num 8       
+
+179
+NURS_COUNTER Num 8       
+
+180
+WRIOFF_DT Char 8       
+
+181
+WRIOFF_AMT Num 8       
+
+182
+CUM_WRIOFF Num 8       
+
+183
+RECOVER_COST Num 8       
+
+184
+DISPOSED_AMT Num 8       
+
+185
+DSR Num 8       
+
+186
+REPAY_SOURCE Num 8       
+
+187
+REPAY_TYPE_CD Char 2       
+
+188
+MTD_REPAID_AMT Num 8       
+
+189
+PROMPT_PAY_TRACKER Char 4       
+
+190
+REFINANC_LN Num 8       
+
+191
+OLD_FI Char 9       
+
+192
+OLD_MACC_NO Char 30       
+
+193
+OLD_SUBACC_NO Char 30       
+
+194
+REPO_ORDER_ISSUE_DT Num 8       
+
+195
+NUM_REPO_ORDER_ISSUE Num 8       
+
+196
+COURT_ORDER_APPLY_DT Num 8       
+
+197
+COURT_ORDER_OBTAIN_DT Num 8       
+
+198
+AUTO_REPRICE_DIFF_INSTL_AMT Num 8       
+
+199
+RISK_GRADE_CLASS Char 1       
+
+200
+REPAY_PROPOSAL_CD Char 6       
+
+201
+LTST_MGB_SCORE Char 12       
+
+202
+PCT_INDEX_INTRATE Num 8       
+
+203
+REMAIN_TERM_MATURITY Num 8       
+
+204
+BILLING_ADD_IND Char 1       
+
+205
+PROP_ADD_IND Char 1       
+
+206
+FLOOR_RT_UNDER Num 8       
+
+207
+FLOOR_RT_OVER Num 8       
+
+208
+STMT_GEN_IND Char 1       
+
+209
+AKPK_STATUS Char 9       
+
+210
+DIGITAL_RR_STATUS_CD Char 2       
+
+211
+MORA_BENCHMARK_AMT Num 8       
+
+212
+TFA_NURS_TAG Char 2       
+
+213
+TFA_NURS_TAG_DT Num 8       
+
+214
+TFA_NURS_START_DT Num 8       
+
+215
+TFA_NURS_END_DT Num 8       
+
+216
+TFA_NURS_COUNTER Num 8       
+
+217
+TFA_DIG_STATUS_CD Char 3       
+
+218
+TFA_DIG_STATUS_DT Num 8       
+
+219
+REPAY_PROPOSAL_DT Num 8       
+
+220
+MANUAL_RR_TAG Char 3       
+
+221
+MANUAL_RR_DT Num 8       
+
+222
+AUTO_EXT_TAG Char 1       
+
+223
+AUTO_EXT_TAG_DT Num 8       
+
+224
+AUTO_REPRICE_INSTL_AMT Num 8       
+
+225
+BULLET_REPAY_IND Char 1       
+
+226
+BALLOON_REPAY_IND Char 1       
+
+227
+PROP_DEVELOP_FIN_IND Char 1       
+
+228
+DIA_PAST01_MTH Char 3       
+
+229
+DIA_PAST02_MTH Char 3       
+
+230
+DIA_PAST03_MTH Char 3       
+
+231
+DIA_PAST04_MTH Char 3       
+
+232
+DIA_PAST05_MTH Char 3       
+
+233
+DIA_PAST06_MTH Char 3       
+
+234
+DIA_PAST07_MTH Char 3       
+
+235
+DIA_PAST08_MTH Char 3       
+
+236
+DIA_PAST09_MTH Char 3       
+
+237
+DIA_PAST10_MTH Char 3       
+
+238
+DIA_PAST11_MTH Char 3       
+
+239
+DIA_PAST12_MTH Char 3       
+
+240
+DIA_PAST13_MTH Char 3       
+
+241
+DIA_PAST14_MTH Char 3       
+
+242
+DIA_PAST15_MTH Char 3       
+
+243
+DIA_PAST16_MTH Char 3       
+
+244
+DIA_PAST17_MTH Char 3       
+
+245
+DIA_PAST18_MTH Char 3       
+
+246
+DIA_PAST19_MTH Char 3       
+
+247
+DIA_PAST20_MTH Char 3       
+
+248
+DIA_PAST21_MTH Char 3       
+
+249
+DIA_PAST22_MTH Char 3       
+
+250
+DIA_PAST23_MTH Char 3       
+
+251
+DIA_PAST24_MTH Char 3       
+
+252
+ORIG_RESTIND Char 2       
+
+253
+RESTIND_END_DT Num 8       
+
+254
+COM_FEE_NOTICE_IND Char 1       
+
+255
+NUM_MORA Num 8       
+
+256
+AKPK_RA_TAG Char 3       
+
+257
+AKPK_RA_TAG_DT Num 8       
+
+258
+AKPK_RA_DIG_STATUS_CD Char 3       
+
+259
+AKPK_RA_DIG_STATUS_DT Num 8       
+
+260
+AKPK_RA_START_DT Num 8       
+
+261
+AKPK_RA_END_DT Num 8       
+
+262
+AKPK_RA_ORIG_SPREAD Num 8       
+
+263
+AKPK_RA_DLY_INT_ACCRUAL Num 8       
+
+264
+AKPK_RA_MTD_INT_ACCRUAL Num 8       
+
+265
+AKPK_RA_MTH_INT_WAIVER_AMT Num 8       
+
+266
+AKPK_RA_CUMM_INT_WAIVER_AMT Num 8       
+
+267
+AKPK_RA_MTH_INT_CAP_AMT Num 8       
+
+268
+AKPK_RA_CUMM_INT_CAP_AMT Num 8       
+
+269
+AKPK_RA_ORIG_CEILING_RT Num 8       
+
+270
+TRA_RR_IND Num 8       
+
+271
+INDEX_PRICING Char 15       
+
+272
+NUM_RR Num 8       
+
+273
+DAYARR_MORA Num 8       
+
+274
+REPAY_MODE Char 1       
+
+275
+RR_EREQUEST_NUM Char 42       
+
+276
+RR_TYPE Char 13       
+
+277
+RR_APPR_DATE Num 8       
+
+278
+HI_TAG Char 3       
+
+279
+HI_TAG_DT Num 8       
+
+280
+HI_DIG_STATUS_CD Char 3       
+
+281
+HI_DIG_STATUS_DT Num 8       
+
+282
+REPO_ORDER_EXPIRY_DT Num 8       
+
+283
+FLOOD_MO_TAG Char 5       
+
+284
+FLOOD_MO_DT Num 8       
+
+285
+IMPAIRED_HP_TAG Char 1       
+
+286
+LEGAL_NOTICE_INSTRUCT_DT Num 8       
+
+287
+LEGAL_NOTICE_ISSUE_DT Num 8       
+
+288
+PARAS_TAG Char 7       
+
+289
+PARAS_TAG_DT Num 8       
+
+290
+JUDGE_AMT Num 8       
+
+291
+JUDGE_DT Num 8       
+
+292
+JUDGE_MAINT_DT Num 8       
+
+293
+PRE_BKRUPT_NOTICE_DT Num 8       
+
+294
+COURT_ORDER_PERPETUAL_IND Char 1       
+
+295
+HP_STAGE_TRSF_IND Char 1       
+
+296
+CUMM_PAID_BILL_AMT Num 8       
+
+297
+CUMM_PAID_BILL_PCT Num 8       
+
+298
+AKPK_MATRIX_TYPE Char 9       
+
+299
+AKPK_MATRIX_DATE Num 8       
+
+300
+DEVIATION_CD Char 2       
+
+301
+INT_ADVICE_IND Char 1       
+
+302
+FLOOD_MO_PACKAGE_CD Char 7       
+
+303
+FDB_TAG Char 1       
+
+304
+FDB_TAG_DT Num 8       
+
+305
+FDB_SCORING_DT Num 8       
+
+306
+MARKED_PAYMENT_AMT Num 8       
+
+307
+E_INVOICE_IND Char 1       
+
+308
+LEGAL_MATURITY_DT Num 8       
+
+309
+CLIMATE_PRIN_TAXONOMY_CLASS Char 3       
+
+310
+RR_IL_RECLASS_DT Num 8       
+
+311
+CLIMATE_MITIGATE_GP1_FLG Char 1       
+
+312
+CLIMATE_ADAPT_GP2_FLG Char 1       
+
+313
+CLIMATE_ENVIRONMT_GP3_FLG Char 1       
+
+314
+CLIMATE_TRANSITION_GP4_FLG Char 1       
+
+315
+CLIMATE_PROHIBIT_GP5_FLG Char 1       
+
+316
+WOS_RECEIVED_DT Num 8       
+
+317
+WOS_SETTLED_DT Num 8       
+
+318
+WOS_TAG Char 1       
+
+319
+COURT_ORDER_UPDATE_DT Num 8       
+
+320
+FRAUD_TAG Char 1       
+
+321
+FRAUD_TAG_DT Num 8       
+
+322
+SOURCE_INCOME_CURRENCY_CD Char 3       
+
+323
+VEHI_MAKE_CATEGORY Char 2       
+
+324
+INT_JAN_TO_JUN_AMT Num 8       
+
+325
+INT_JUL_TO_DEC_AMT Num 8       
+
+326
+RR_UNTAG_REPAY_CNT Num 8       
+
+327
+RR_UNTAG_DATE Num 8       
+
+328
+AGING_FAST_TRACKER Char 4       
+
+329
+EARMARK_NOTICE_DT Num 8       
+
+330
+EARMARK_AMT Num 8       
+
+331
+MULTI_CURRENCY_TAG Char 1       
+
+332
+GOODWILL_IND Char 1       
+
+333
+GOODWILL_CURR_RATE Num 8       
+
+334
+GOODWILL_CURR_AMT Num 8       
+
+335
+RRSTG1 Char 1       
+
+336
+REFINANC_EVENT_TYPE Char 3       
+
+337
+EXTRA_GAIN_REFINANC_AMT Num 8       
+
+338
+TRA_EFF_DT Num 8 Z6.     
+
+339
+DIGITAL_RR_STATUS_DT Num 8       
+
+340
+LMOSTDATE Num 8       
+
+341
+LMOENDDATE Num 8       
+
+342
+TRA_RR_ACCEPT_DT Num 8       
+
+343
+RR_APPL_DATE Num 8       
+
+344
+NACOSPADT Num 8       
+
+345
+LOCK_IN_END_DT Num 8       
+
+346
+SCHBIL_INSTL_DT Num 8       
+
+347
+SCHBIL_INT_DT Num 8       
+
+348
+LASTBIL_INSTL_DT Num 8       
+
+349
+LASTBIL_INT_DT Num 8       
+
+350
+FDB Char 1       
+
+351
+CP Char 11       
+
+352
+SM_DATE Num 8       
+
+353
+STAFF_FREE_INT_IND Char 1       
+
+354
+OMNIBUS_FACILITY_IND Char 1       
+
+355
+SYNRATIO Num 8       
+
+356
+CJFEE Num 8       
+
+357
+MO_INSTL_ARR Num 8       
+
+358
+MNIAPDTE Num 8       
+
+359
+USLIMIT Num 8       
+
+360
+OLDNOTEBLDATE Num 8       
+
+361
+OLDNOTEDAYARR Num 8       
+
+362
+MO_TAG Char 6       
+
+363
+MOSTDTE Num 8       
+
+364
+MOENDDTE Num 8       
+
+365
+MO_MAIN_DT Num 8       
+
+366
+USERID Char 8       
+
+367
+POSTDATE Num 8       
+
+368
+TIMELATE Char 15       
+
+369
+NONACCRUAL Char 1       
+
+370
+SENDBILL Char 1       
+
+371
+LNUSER2 Char 1       
+
+372
+USINDEX Num 8       
+
+373
+REFNOTENO Num 8       
+
+374
+SCORE1MI Char 1       
+
+375
+SCORE2CT Char 2       
+
+376
+FULLREL_DT Num 8       
+
+377
+RRCOUNTDTE Num 8       
+
+378
+VALUATION_DT Num 8       
+
+379
+COMMTYPE Char 3       
+
+380
+ESCROWRBAL Num 8       
+
+381
+LN_UTILISE_LOCAT_CD Char 6       
+
+382
+INTERDUE Num 8       
+
+383
+NPLIND Char 1       
+
+384
+TOTBNP Num 8       
+
+385
+CAGATAG Num 8       
+
+386
+U1CLASSI Char 1       
+
+387
+U3MYCODE Char 1       
+
+388
+U4RESIDE Char 1       
+
+389
+F1RELMOD Char 1       
+
+390
+F5ACCONV Char 1       
+
+391
+DOBMNI Num 8       
+
+392
+FRELEAS Num 8       
+
+393
+TOT_MIGR Num 8       
+
+394
+LASTTRAN Num 8       
+
+395
+PAYEFDTO Char 8       
+
+396
+NEWBAL Num 8       
+
+397
+CENSUS0 Num 8       
+
+398
+CENSUS1 Char 7       
+
+399
+CENSUS3 Char 7       
+
+400
+CENSUS4 Char 7       
+
+401
+CENSUS5 Char 7       
+
+402
+MAKE Char 70       
+
+403
+MODEL Char 70       
+
+404
+REGNO Char 70       
+
+405
+EXREGNO Char 70       
+
+406
+COLLAGE Num 8       
+
+407
+MTHARR Num 8       
+
+408
+MTHARR_CCRIS Num 8       
+
+409
+DATEREGV Char 8       
+
+410
+VEHI_CHASSIS_NUM Char 40       
+
+411
+VEHI_ENGINE_NUM Char 40       
+
+412
+POINTAMT Num 8       
+
+413
+CEILINGO Num 8       
+
+414
+CEILINGU Num 8       
+
+415
+USER5 Char 1       
+
+416
+PRIMOFHP Char 5       
+
+417
+CANO Num 8       
+
+418
+CURAVMTH Num 8       
+
+419
+CUBALYTD Num 8       
+
+
+
+
 Input: control.ctl_dwh_sftp_info 
 
 
