@@ -1,3 +1,137 @@
+#!/usr/bin/env python3
+"""EIBDFDHQ - Daily RM and FCY FD maturity HQ text reports."""
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import argparse
+import math
+import pandas as pd
+
+ACCOUNT_FOLDER = Path('/stgsrcsys/host/holding/pas')
+CERTIFICATE_FOLDER = Path('/stgsrcsys/host/holding/pas')
+OUTPUT_FOLDER = Path('/stgsrcsys/host/holding/pas')
+ENCODING = 'latin-1'
+CHUNK_ROWS = 100000
+KEYS = ['ACCTNO', 'BRANCH']
+ACCOUNT_COLUMNS = ['ACCTNO', 'BRANCH', 'SECOND', 'NAME']
+CERTIFICATE_COLUMNS = ['ACCTNO', 'BRANCH', 'CDNO', 'MATDATE', 'TERM', 'RATE', 'CURR_BAL']
+CERTIFICATE_RENAME = {
+    'ACCT_NUM': 'ACCTNO', 'BRANCH_CD': 'BRANCH',
+    'CERT_NUM': 'CDNO', 'MATURE_DT': 'MATDATE', 'RT': 'RATE',
+}
+REPORT_COLUMNS = ['BRANCH', 'SECOND2', 'NAME', 'ACCTNO', 'CURBAL', 'CDNO', 'MATDATE', 'RATE', 'TERM']
+HEADER = 'BRANCH,PBB/PIBB,NAME,ACCTNO,PRINCIPAL AM(RM),CDNO,MATDATE,PREVIOUS RATE(% P.A),PREVIOUS TERM (MONTH),'
+
+
+def find_input(folder, stem):
+    matches = [p for p in folder.iterdir() if p.name.lower() == stem.lower() + '.sas7bdat']
+    if len(matches) != 1:
+        raise FileNotFoundError(f'Expected one {folder / (stem + ".sas7bdat")}')
+    return matches[0]
+
+
+def read_selected(path, columns, account=False):
+    parts = []
+    with pd.read_sas(path, format='sas7bdat', encoding=ENCODING,
+                     chunksize=CHUNK_ROWS, iterator=True) as reader:
+        for chunk in reader:
+            chunk.columns = chunk.columns.str.upper()
+            if not account:
+                chunk.rename(columns=CERTIFICATE_RENAME, inplace=True)
+            missing = set(columns) - set(chunk.columns)
+            if missing:
+                raise ValueError(f'{path}: missing required fields {sorted(missing)}')
+            selected = chunk.loc[:, columns]
+            mask = selected['SECOND'].isin([99991, 99992]) if account else selected['CURR_BAL'].gt(0)
+            parts.append(selected.loc[mask].copy())
+    frame = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=columns)
+    if account:
+        frame['SECOND2'] = frame.pop('SECOND').map({99991: 'PBB', 99992: 'PIBB'})
+    else:
+        frame.rename(columns={'CURR_BAL': 'CURBAL'}, inplace=True)
+    return frame
+
+
+def sas_match_merge(accounts, certificates):
+    """SAS BY merge: pair by position and repeat the shorter group's final row.
+    This deliberately avoids a Cartesian join for duplicate keys.
+    Missing key values match as in SAS; input order within keys is retained.
+    """
+    a = accounts.copy()
+    b = certificates.copy()
+    a['_position'] = a.groupby(KEYS, dropna=False, sort=False).cumcount()
+    b['_position'] = b.groupby(KEYS, dropna=False, sort=False).cumcount()
+    ac = a.groupby(KEYS, dropna=False, sort=False).size().rename('_na')
+    bc = b.groupby(KEYS, dropna=False, sort=False).size().rename('_nb')
+    common = ac.to_frame().join(bc, how='inner').reset_index()
+    if common.empty:
+        return pd.DataFrame(columns=REPORT_COLUMNS)
+    common['_count'] = common[['_na', '_nb']].max(axis=1).astype(int)
+    grid = common.loc[common.index.repeat(common['_count'])].copy()
+    grid['_position'] = grid.groupby(KEYS, dropna=False, sort=False).cumcount()
+    grid['_a'] = grid['_position'].clip(upper=grid['_na'] - 1).astype(int)
+    grid['_b'] = grid['_position'].clip(upper=grid['_nb'] - 1).astype(int)
+    merged = grid.merge(a.rename(columns={'_position': '_a'}), on=KEYS + ['_a'], how='left', validate='many_to_one')
+    merged = merged.merge(b.rename(columns={'_position': '_b'}), on=KEYS + ['_b'], how='left', validate='many_to_one')
+    merged.sort_values(KEYS + ['_position'], kind='stable', na_position='first', inplace=True)
+    return merged[REPORT_COLUMNS].sort_values('MATDATE', kind='stable', na_position='first')
+
+
+def render(value):
+    if pd.isna(value):
+        return '.'
+    if isinstance(value, str):
+        return value.rstrip()
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return value.strftime('%d/%m/%Y')
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError('Non-finite numeric value in report')
+    return str(int(value)) if value.is_integer() else format(value, '.15g')
+
+
+def write_report(path, frame, title, data_date):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix('.txt.tmp')
+    try:
+        with temporary.open('w', encoding=ENCODING, newline='') as output:
+            # Original SAS writes no header when there are no observations.
+            if not frame.empty:
+                output.write(f'{title}{data_date:%d/%m/%y}\n{HEADER}\n')
+                for row in frame[REPORT_COLUMNS].itertuples(index=False, name=None):
+                    # Original PUT uses literal commas, without CSV quoting.
+                    output.write(','.join(render(value) for value in row) + ',\n')
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(f'{path}: {len(frame):,} records', flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--certificate-folder', type=Path, default=CERTIFICATE_FOLDER)
+    parser.add_argument('--data-date', type=lambda s: datetime.strptime(s, '%Y-%m-%d').date(),
+                        default=(datetime.now(timezone(timedelta(hours=8))) - timedelta(days=1)).date())
+    args = parser.parse_args()
+    if args.certificate_folder is None:
+        parser.error('Set CERTIFICATE_FOLDER or provide --certificate-folder /actual/folder')
+    suffix = args.data_date.strftime('%d')
+    account_path = find_input(ACCOUNT_FOLDER, f'INTG_DP_ACCT_FD_D{suffix}')
+    certificate_path = find_input(args.certificate_folder, f'ENRH_DP_FD_CERT_D{suffix}')
+    print(f'Data date: {args.data_date}; inputs: {account_path}, {certificate_path}', flush=True)
+    # Each replacement dataset contains both banks: read each once.
+    accounts = read_selected(account_path, ACCOUNT_COLUMNS, account=True)
+    certificates = read_selected(certificate_path, CERTIFICATE_COLUMNS)
+    merged = sas_match_merge(accounts, certificates)
+    acct = merged['ACCTNO']
+    foreign = (acct.between(1590000000, 1599999999) |
+               acct.between(1689999999, 1699999999) |
+               acct.between(1789999999, 1799999999))
+    write_report(OUTPUT_FOLDER / 'FDTXT.txt', merged.loc[~foreign], 'DAILY RM FD MATURITY HQ AS AT ', args.data_date)
+    write_report(OUTPUT_FOLDER / 'FDTXT1.txt', merged.loc[foreign], 'DAILY FCYFD MATURITY HQ AS AT ', args.data_date)
+
+
+if __name__ == '__main__':
+    main()
 
 
 The CONTENTS Procedure
