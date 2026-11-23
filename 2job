@@ -1,3 +1,17 @@
+libname fdsrc '/stgsrcsys/host/holding/pas';
+
+proc contents data=fdsrc.enrh_dp_fd_cert_d22 varnum;
+run;
+
+
+
+
+
+
+
+
+
+
 1                                                          The SAS System                            18:11 Sunday, November 22, 2026
 
 1          ;*';*";*/;quit;run;
