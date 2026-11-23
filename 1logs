@@ -32,34 +32,37 @@ NOTE: Writing HTML5(EGHTML) Body file: EGHTML
 29                 infile "
 30         cd /sas/python/virt_edw;
 31         source bin/activate;
-32         python /stgsrcsys/host/holding/pas/test03y.py
+32         python /stgsrcsys/host/holding/pas/EIIWOF03y.py
 33         " pipe;
 34                 input;
 35                 put _infile_;
 36         run;
 
-NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/test03y.py" is:
-      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/test03y.py"
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIIWOF03y.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIIWOF03y.py"
 
-  File "/stgsrcsys/host/holding/pas/test03y.py", line 50
-    ')
-      ^
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/pas/EIIWOF03y.py", line 6, in <module>
+    import EIFMNP02y
+  File "/stgsrcsys/host/holding/pas/EIFMNP02y.py", line 859
+    raise SystemExit('Run EIIWOF03y; EIFMNP02y receives settings from its caller.
+                                                                                 ^
 SyntaxError: EOL while scanning string literal
-NOTE: 4 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
-      /stgsrcsys/host/holding/pas/test03y.py".
-      The minimum record length was 6.
-      The maximum record length was 56.
+NOTE: 7 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/pas/EIIWOF03y.py".
+      The minimum record length was 20.
+      The maximum record length was 82.
 NOTE: DATA statement used (Total process time):
-      real time           1.38 seconds
-      cpu time            0.01 seconds
+      real time           1.52 seconds
+      cpu time            0.00 seconds
       
 
 37         
+2                                                          The SAS System                            11:09 Monday, November 23, 2026
+
 38         
 39         %LET _CLIENTTASKLABEL=;
 40         %LET _CLIENTPROCESSFLOWNAME=;
-2                                                          The SAS System                            11:09 Monday, November 23, 2026
-
 41         %LET _CLIENTPROJECTPATH=;
 42         %LET _CLIENTPROJECTPATHHOST=;
 43         %LET _CLIENTPROJECTNAME=;
