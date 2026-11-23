@@ -1,3 +1,133 @@
+1                                                          The SAS System                            18:11 Sunday, November 22, 2026
+
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='ADHOC_SAS.sas';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='C:\Users\pas68728\AppData\Local\Temp\scp58404\stgsrcsys\host\holding\ADHOC_SAS.sas';
+9          %LET _SASPROGRAMFILEHOST='ITDNBVPN065';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         data _null_;
+29                 infile "
+30         cd /sas/python/virt_edw;
+31         source bin/activate;
+32         python /stgsrcsys/host/holding/pas/EIBDFDHQ.py
+33         " pipe;
+34                 input;
+35                 put _infile_;
+36         run;
+
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIBDFDHQ.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pas/EIBDFDHQ.py"
+
+Data date: 2026-11-22; inputs: /stgsrcsys/host/holding/pas/intg_dp_acct_fd_d22.sas7bdat, /stgsrcsys/host/holding/pas/enrh_dp_fd_cert
+_d22.sas7bdat
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/pas/EIBDFDHQ.py", line 125, in <module>
+    main()
+  File "/stgsrcsys/host/holding/pas/EIBDFDHQ.py", line 114, in main
+    certificates = read_selected(certificate_path, CERTIFICATE_COLUMNS)
+  File "/stgsrcsys/host/holding/pas/EIBDFDHQ.py", line 34, in read_selected
+    selected = chunk.loc[:, columns]
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexing.py", line 1185, in __getitem__
+    return self._getitem_tuple(key)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexing.py", line 1378, in _getitem_tuple
+    return self._getitem_tuple_same_dim(tup)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexing.py", line 1021, in _getitem_tuple_same_dim
+    retval = getattr(retval, self.name)._getitem_axis(key, axis=i)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexing.py", line 1421, in _getitem_axis
+    return self._getitem_iterable(key, axis=axis)
+2                                                          The SAS System                            18:11 Sunday, November 22, 2026
+
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexing.py", line 1361, in _getitem_iterable
+    keyarr, indexer = self._get_listlike_indexer(key, axis)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexing.py", line 1559, in _get_listlike_indexer
+    keyarr, indexer = ax._get_indexer_strict(key, axis_name)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 6212, in _get_indexer_strict
+    self._raise_if_missing(keyarr, indexer, axis_name)
+  File "/sas/python/virt_edw/lib64/python3.9/site-packages/pandas/core/indexes/base.py", line 6264, in _raise_if_missing
+    raise KeyError(f"{not_found} not in index")
+KeyError: "['ACCTNO', 'BRANCH', 'CDNO', 'MATDATE', 'RATE'] not in index"
+NOTE: 25 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/pas/EIBDFDHQ.py".
+      The minimum record length was 10.
+      The maximum record length was 145.
+NOTE: DATA statement used (Total process time):
+      real time           3.69 seconds
+      cpu time            0.00 seconds
+      
+
+37         
+38         
+39         %LET _CLIENTTASKLABEL=;
+40         %LET _CLIENTPROCESSFLOWNAME=;
+41         %LET _CLIENTPROJECTPATH=;
+42         %LET _CLIENTPROJECTPATHHOST=;
+43         %LET _CLIENTPROJECTNAME=;
+44         %LET _SASPROGRAMFILE=;
+45         %LET _SASPROGRAMFILEHOST=;
+46         
+47         ;*';*";*/;quit;run;
+48         ODS _ALL_ CLOSE;
+49         
+50         
+51         QUIT; RUN;
+52         
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #!/usr/bin/env python3
 """EIBDFDHQ - Daily RM and FCY FD maturity HQ text reports."""
