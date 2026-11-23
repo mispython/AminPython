@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EIIWOF03x - Test original loan processing with Parquet LNNOTE input."""
+"""EIIWOF03x - Test original loan processing with Parquet inputs and outputs."""
 import argparse
 from time import perf_counter
 from pathlib import Path
@@ -7,16 +7,16 @@ import EIFMNP02x
 
 RUN_DATE = "2026-12-27"
 LNNOTE_ROOT = "/stgsrcsys/host/holding/pas"
-SEED_ROOT = "/exdwh/host/ln/npl_hp_sasdata/pibb/woff"
+SEED_ROOT = "/stgsrcsys/host/holding/pas"
 OUTPUT_ROOT = "/stgsrcsys/host/holding/pas/test_eiiwof03x"
 
 
 def job_settings():
     return {
         'run_date': RUN_DATE,
-        'input_root': SEED_ROOT, 'seed_root': SEED_ROOT,
+        'input_root': SEED_ROOT, 'seed_root': SEED_ROOT, 'seed_extension': '.parquet',
         'lnnote_root': LNNOTE_ROOT, 'lnnote_extension': '.parquet',
-        'output_root': OUTPUT_ROOT, 'output_format': 'sas7bdat',
+        'output_root': OUTPUT_ROOT, 'output_format': 'parquet',
         'output_suffix': 'x', 'sas_encoding': 'infer', 'batch_rows': 50000,
         'seed_inputs': ['NPLOBAL', 'WIIS', 'WAQ', 'WSP2'],
         'libraries': {'LOAN': LNNOTE_ROOT, 'NPL6': OUTPUT_ROOT},

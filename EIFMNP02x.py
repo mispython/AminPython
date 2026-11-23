@@ -9,110 +9,6 @@ from decimal import Decimal
 from pathlib import Path
 
 
-def sas_number(value):
-    value = float(value)
-    if not math.isfinite(value): raise ValueError('Numeric value exceeds SAS double range')
-    return format(value, '.17g')
-
-
-
-
-"""Write genuine SAS7BDAT through an existing SASPy connection profile.
-
-SAS builds a unique table in remote WORK. Download it to a local staging file,
-validate the binary, then atomically publish it in the Python host's holding dir.
-"""
-from pathlib import Path
-from decimal import Decimal
-import math
-import ntpath
-import posixpath
-import re
-import uuid
-
-
-
-class SASOutput:
-    """Shared-folder TXT export: SAS reads locally, without DataFrame transfer."""
-    def __init__(self, config):
-        self.config = config
-        self.session = None
-
-    def connect(self):
-        if self.session is None:
-            import saspy
-            self.session = saspy.SASsession(**self.config)
-        return self.session
-
-    def write(self, path, rows, columns, character_columns, validate, schema):
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        bridge = path.parent / 'sas_bridge'
-        bridge.mkdir(exist_ok=True)
-        text = bridge / (path.stem + '.txt')
-        temporary = text.with_suffix('.txt.tmp')
-        # Values are hex-encoded for character fields; preserve Latin-1 byte lengths.
-        with temporary.open('w', encoding='ascii', newline='') as handle:
-            writer = csv.writer(handle, lineterminator='\n')
-            for row in rows:
-                record = []
-                for col in columns:
-                    kind, width = schema[col]
-                    value = row.get(col)
-                    if value is None:
-                        record.append('')
-                    elif kind == 'Char':
-                        encoded = str(value).encode('latin-1')
-                        if len(encoded) > width:
-                            raise ValueError(f'{path.stem}.{col}: value exceeds supplied length {width}')
-                        record.append(encoded.ljust(width, b' ').hex())
-                    else:
-                        record.append(sas_number(value))
-                writer.writerow(record)
-        temporary.replace(text)
-        quote = lambda v: "'" + str(v).replace("'", "''") + "'"
-        lengths = '\n'.join(f'length {c} {"$" if schema[c][0] == "Char" else ""}{schema[c][1]};' for c in columns)
-        formats = '\n'.join(f'format {c} {fmt};' for c, fmt in {'FDACCTNO': '10.', 'TRA_EFF_DT': 'Z6.'}.items() if c in columns)
-        inputs = '\n'.join(f'{c} :$hex{schema[c][1] * 2}.' if schema[c][0] == 'Char' else f'{c} :best32.' for c in columns)
-        member = '_w' + uuid.uuid4().hex[:20]
-        stage = path.parent / (member + '.sas7bdat')
-        session = self.connect()
-        session.submit('%let _wof_encoding=%sysfunc(getoption(encoding));', results='TEXT')
-        if session.symget('_wof_encoding').strip().upper() not in ('LATIN1', 'WLATIN1'):
-            raise RuntimeError('This export preserves Latin-1 input lengths; configure the SASPy session with encoding LATIN1 or WLATIN1')
-        try:
-            code = f"""
-libname wofout {quote(path.parent)};
-data wofout.{member}(encoding='latin1');
-{lengths}
-{formats}
-infile {quote(text)} dsd dlm=',' truncover termstr=lf lrecl=10485760;
-input
-{inputs}
-;
-run;
-"""
-            result = session.submit(code, results='TEXT')
-            log = result['LOG']
-            if re.search(r'^ERROR(?:\s|:)', log, re.MULTILINE) or int(session.SYSERR()) > 4:
-                raise RuntimeError('SAS export failed: ' + log)
-            if not stage.is_file():
-                raise RuntimeError('SAS server must share the output and sas_bridge folder with Python')
-            validate(stage, columns, len(rows))
-            stage.replace(path)
-        finally:
-            stage.unlink(missing_ok=True)
-
-    def close(self):
-        if self.session is not None:
-            self.session.endsas()
-            self.session = None
-
-
-
-
-
-
 """Shared utilities for SAS7BDAT inputs and CSV working outputs.
 
 CSV tables use uppercase columns, blank missing values and SAS numeric dates.
@@ -246,9 +142,9 @@ def output_schema(context, name, columns):
         return cache[path]
     bank = Path(context.cfg['seed_root'])
     def source(member):
-        matches = [p for p in bank.glob('*.sas7bdat') if p.stem.upper() == member]
+        matches = [p for p in bank.glob('*.parquet') if p.stem.upper() == member]
         if len(matches) != 1:
-            raise FileNotFoundError(f'Expected one {member}.sas7bdat in {bank}')
+            raise FileNotFoundError(f'Expected one {member}.parquet in {bank}')
         return metadata(matches[0])
     key = name.upper()
     if key == 'HPWOFF':
@@ -475,28 +371,54 @@ class Context:
         rows = rows if isinstance(rows, list) else list(rows)
         columns = columns or list(dict.fromkeys(k for r in rows for k in r))
         if not columns: raise ValueError(f'Column schema required for {name}')
-        if path.suffix == '.sas7bdat':
-            if self._output_writer is None:
-                self._output_writer = SASOutput(self.cfg.get('saspy', {}))
-            def validate(binary, expected, count):
-                with self._sas_reader(binary) as reader:
-                    if [str(k).upper() for k in reader.column_names] != expected or reader.row_count != count:
-                        raise RuntimeError('SAS7BDAT validation failed: output columns or row count differ')
-                    for col in reader.columns:
-                        key = str(col.name).upper()
-                        kind, width = schema[key]
-                        expected_type = b's' if kind == 'Char' else b'd'
-                        if col.ctype != expected_type or col.length != width:
-                            raise RuntimeError(f'{name}.{key}: SAS type/length differs from supplied metadata')
-            schema = output_schema(self, name, columns)
-            self._output_writer.write(path, rows, columns, self._character_columns, validate, schema)
-        else:
-            self.write_csv(path, rows, columns)
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        if path.suffix != '.parquet':
+            raise ValueError('This testing job writes Parquet only')
+        definitions = output_schema(self, name, columns)
+        # Preserve original attributes with the same precedence as output_schema.
+        attributes = {}
+        if name.upper() != 'REPTDATE':
+            sources = [self.input_table('LOAN', 'LNNOTE')]
+            seed = 'NPLOBAL' if name.upper() in ('LOAN12', 'PLOAN12') else name.upper()
+            sources.append(Path(self.cfg['seed_root']) / (seed.lower() + '.parquet'))
+            opening = set('ACCTNO NOTENO NTBRCH NAME LOANTYPE LOANSTAT IISP OIP SPP1 SPP2 CURBALP NETBALP EXIST UHCP'.split())
+            for index, source in enumerate(sources):
+                for field in pq.read_schema(source):
+                    key = field.name.upper()
+                    if index == 0 or seed != 'NPLOBAL' or key in opening:
+                        attributes[key] = dict(field.metadata or {})
+        fields = []
+        for col in columns:
+            kind, width = definitions[col]
+            attrs = attributes.get(col, {})
+            attrs.update({b'sas_type': b'Character' if kind == 'Char' else b'Numeric',
+                          b'sas_length': str(width).encode()})
+            if col == 'REPTDATE':
+                attrs[b'sas_format'] = b'DATE9.'
+            fields.append(pa.field(col, pa.string() if kind == 'Char' else pa.float64(), metadata=attrs))
+        schema = pa.schema(fields)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix('.parquet.tmp')
+        batch_size = int(self.cfg.get('batch_rows', 50000))
+        try:
+            with pq.ParquetWriter(temporary, schema, compression='snappy') as writer:
+                for start in range(0, len(rows), batch_size):
+                    batch = rows[start:start + batch_size]
+                    arrays = [pa.array([None if row.get(col) is None else
+                                        str(row[col]) if definitions[col][0] == 'Char' else float(row[col])
+                                        for row in batch], type=field.type)
+                              for col, field in zip(columns, schema)]
+                    writer.write_table(pa.Table.from_arrays(arrays, schema=schema))
+            if pq.read_metadata(temporary).num_rows != len(rows):
+                raise RuntimeError('Parquet output row count differs')
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
         self.record_output(name)
 
     def close(self):
-        if self._output_writer is not None:
-            self._output_writer.close()
+        pass
 
     def write_csv(self, path, rows, columns=None, delimiter=','):
         self.assert_output_path(path)
