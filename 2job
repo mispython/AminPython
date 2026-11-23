@@ -1,3 +1,677 @@
+
+
+The CONTENTS Procedure
+
+
+
+
+
+
+
+
+
+
+Data Set Name
+FDSRC.ENRH_DP_FD_CERT_D22 
+Observations
+2981070 
+
+Member Type
+DATA 
+Variables
+45 
+
+Engine
+V9 
+Indexes
+0 
+
+Created
+11/23/2026 16:16:23 
+Observation Length
+364 
+
+Last Modified
+11/23/2026 16:16:23 
+Deleted Observations
+0 
+
+Protection
+  
+Compressed
+CHAR 
+
+Data Set Type
+  
+Reuse Space
+NO 
+
+Label
+  
+Point to Observations
+YES 
+
+Data Representation
+SOLARIS_X86_64, LINUX_X86_64, ALPHA_TRU64, LINUX_IA64 
+Sorted
+NO 
+
+Encoding
+latin1 Western (ISO) 
+ 
+  
+
+
+
+
+
+
+
+Engine/Host Dependent Information
+
+
+
+Data Set Page Size
+65536 
+
+Number of Data Set Pages
+8622 
+
+Number of Data Set Repairs
+0 
+
+Filename
+/stgsrcsys/host/holding/pas/enrh_dp_fd_cert_d22.sas7bdat 
+
+Release Created
+9.0401M9 
+
+Host Created
+Linux 
+
+Inode Number
+19242744 
+
+Access Permission
+rw-rw-r-- 
+
+Owner Name
+sasdemo_edw 
+
+File Size
+539MB 
+
+File Size (bytes)
+565116928 
+
+
+
+
+
+
+
+
+
+
+
+
+Variables in Creation Order
+
+
+#
+
+Variable
+
+Type
+
+Len
+
+Format
+
+Informat
+
+
+
+1
+BANK_NO Num 8     
+
+2
+REPT_NO Num 8     
+
+3
+FORMAT_CODE Num 8     
+
+4
+BRANCH_CD Num 8     
+
+5
+ACCT_NUM Num 8     
+
+6
+PURPOSE_CD Char 1     
+
+7
+CUSTOMER_CD Num 8     
+
+8
+DEPOSIT_DT Num 8 DATETIME20. DATETIME20. 
+
+9
+CERT_NUM Num 8     
+
+10
+OPEN_IND Char 1     
+
+11
+CURR_BAL Num 8     
+
+12
+ORIG_AMT Num 8     
+
+13
+ORIG_DT Num 8 DATETIME20. DATETIME20. 
+
+14
+MATURE_DT Num 8 DATETIME20. DATETIME20. 
+
+15
+RT Num 8     
+
+16
+ACCOUNT_TYPE_CD Num 8     
+
+17
+TERM Num 8     
+
+18
+MATUREITY_TERM_CD Char 1     
+
+19
+INT_PLAN Num 8     
+
+20
+PAYMENT_IND Char 1     
+
+21
+RENEWAL_IND Char 1     
+
+22
+INT_PAID_YTD Num 8     
+
+23
+INT_PAYABLE Num 8     
+
+24
+INT_DT Num 8 DATETIME20. DATETIME20. 
+
+25
+LAST_ACTIVE_DT Num 8 DATETIME20. DATETIME20. 
+
+26
+INT_FREQ Num 8     
+
+27
+INT_FREQ_CD Char 1     
+
+28
+PENDING_INT Num 8     
+
+29
+CURRENCY_CD Char 3     
+
+30
+LAST_MATURE_DT Num 8 DATETIME20. DATETIME20. 
+
+31
+PRO_RATIO Num 8     
+
+32
+CERT_HOLD_IND Char 1     
+
+33
+COST_CENTRE Num 8     
+
+34
+COLL_NUM Num 8     
+
+35
+INT_TRANSFER_ACCT_NUM Num 8     
+
+36
+NEW_RT Num 8     
+
+37
+OLD_RT Num 8     
+
+38
+EFFECTIVE_DT Num 8 DATETIME20. DATETIME20. 
+
+39
+DEALERS_NAME Char 24     
+
+40
+USER_ID Char 8     
+
+41
+STATUS Char 2     
+
+42
+SPECIAL_RT_DTTM Char 26     
+
+43
+STATUS_DTTM Char 26     
+
+44
+CURR_DEALER_NAME_ID Char 24     
+
+45
+ENTITY_CD Char 4     
+
+
+
+
+The CONTENTS Procedure
+
+
+
+
+
+
+
+
+
+
+Data Set Name
+FDSRC.INTG_DP_ACCT_FD_D22 
+Observations
+365 
+
+Member Type
+DATA 
+Variables
+74 
+
+Engine
+V9 
+Indexes
+0 
+
+Created
+11/23/2026 16:16:20 
+Observation Length
+513 
+
+Last Modified
+11/23/2026 16:16:20 
+Deleted Observations
+0 
+
+Protection
+  
+Compressed
+CHAR 
+
+Data Set Type
+  
+Reuse Space
+NO 
+
+Label
+  
+Point to Observations
+YES 
+
+Data Representation
+SOLARIS_X86_64, LINUX_X86_64, ALPHA_TRU64, LINUX_IA64 
+Sorted
+NO 
+
+Encoding
+latin1 Western (ISO) 
+ 
+  
+
+
+
+
+
+
+
+Engine/Host Dependent Information
+
+
+
+Data Set Page Size
+65536 
+
+Number of Data Set Pages
+3 
+
+Number of Data Set Repairs
+0 
+
+Filename
+/stgsrcsys/host/holding/pas/intg_dp_acct_fd_d22.sas7bdat 
+
+Release Created
+9.0401M9 
+
+Host Created
+Linux 
+
+Inode Number
+19242746 
+
+Access Permission
+rw-rw-r-- 
+
+Owner Name
+sasdemo_edw 
+
+File Size
+256KB 
+
+File Size (bytes)
+262144 
+
+
+
+
+
+
+
+
+
+
+Variables in Creation Order
+
+
+#
+
+Variable
+
+Type
+
+Len
+
+
+
+1
+BRANCH Num 8 
+
+2
+ACCTNO Num 8 
+
+3
+NAME Char 15 
+
+4
+TAXNO Char 11 
+
+5
+DEBIT Num 8 
+
+6
+CREDIT Num 8 
+
+7
+CLOSEDT Num 8 
+
+8
+REOPENDT Num 8 
+
+9
+CUSTCODE Num 8 
+
+10
+ORGCODE Char 3 
+
+11
+ORGTYPE Char 1 
+
+12
+INTYTD Num 8 
+
+13
+FEEPD Num 8 
+
+14
+PURPOSE Char 1 
+
+15
+SECTOR Num 8 
+
+16
+USER2 Char 1 
+
+17
+USER3 Char 1 
+
+18
+RISKCODE Char 1 
+
+19
+LEDGBAL Num 8 
+
+20
+OPENIND Char 1 
+
+21
+STATCD Char 10 
+
+22
+LASTTRAN Num 8 
+
+23
+AVGAMT Num 8 
+
+24
+PRODUCT Num 8 
+
+25
+RACE Char 1 
+
+26
+DEPTYPE Char 1 
+
+27
+INT1 Num 8 
+
+28
+INTPD Num 8 
+
+29
+INTPLAN Num 8 
+
+30
+CURBAL Num 8 
+
+31
+STATE Char 2 
+
+32
+INTCYCODE Char 3 
+
+33
+CURCODE Char 3 
+
+34
+INTRATE Num 8 
+
+35
+YTDAVAMT Num 8 
+
+36
+BDATE Num 8 
+
+37
+INACTIVE Char 1 
+
+38
+SECOND Num 8 
+
+39
+ODXSAMT Num 8 
+
+40
+BONUTYPE Num 8 
+
+41
+SERVICE Num 8 
+
+42
+BONUSANO Num 8 
+
+43
+USER5 Char 1 
+
+44
+TRACKCD Char 12 
+
+45
+PREVBRNO Num 8 
+
+46
+AVGBAL Num 8 
+
+47
+COSTCTR Num 8 
+
+48
+POST_IND Char 1 
+
+49
+INTRSTPD Num 8 
+
+50
+MTDAVBAL Num 8 
+
+51
+DTLSTCUST Num 8 
+
+52
+INTPDPYR Num 8 
+
+53
+OPENDT Num 8 
+
+54
+MAILCODE Char 1 
+
+55
+DSR Num 8 
+
+56
+PSREASON Char 20 
+
+57
+INSTRUCTIONS Char 30 
+
+58
+NXT_STMT_CYCLE_DT Num 8 
+
+59
+DPMTDBAL Num 8 
+
+60
+INTPAYBL Num 8 
+
+61
+OPENMH Num 8 
+
+62
+CLOSEMH Num 8 
+
+63
+ACCYTD Num 8 
+
+64
+DNBFISME Char 1 
+
+65
+FORATE Char 12 
+
+66
+FORBAL Num 8 
+
+67
+CURBALUS Num 8 
+
+68
+PRIN_ACCT Num 8 
+
+69
+STMT_CYCLE Char 3 
+
+70
+ENTITY_CD Char 4 
+
+71
+E_INVOICE_IND Char 1 
+
+72
+POST_IND_MAINT_DT Num 8 
+
+73
+POST_IND_EXP_DT Num 8 
+
+74
+SECOND2 Char 3 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 libname fdsrc '/stgsrcsys/host/holding/pas';
 
 proc contents data=fdsrc.enrh_dp_fd_cert_d22 varnum;
