@@ -1,4 +1,284 @@
 #!/usr/bin/env python3
+"""TEST - Convert NPLOBAL, WIIS, WAQ and WSP2 to Parquet."""
+from pathlib import Path
+from time import perf_counter
+from pandas.io.sas.sas7bdat import SAS7BDATReader
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+INPUT_FOLDER = Path("/exdwh/host/ln/npl_hp_sasdata/pibb/woff")
+OUTPUT_FOLDER = Path("/stgsrcsys/host/holding/pas")
+DATASETS = ("nplobal", "wiis", "waq", "wsp2")
+CHUNK_ROWS = 50_000
+ENCODING = "latin-1"
+
+
+def text(value):
+    if value is None:
+        return ""
+    return value.decode(ENCODING) if isinstance(value, bytes) else str(value)
+
+
+def convert(source, destination):
+    started = perf_counter()
+    temporary = destination.with_suffix(".parquet.tmp")
+    count = 0
+    try:
+        with SAS7BDATReader(source, encoding=ENCODING, convert_dates=False) as reader:
+            expected = reader.row_count
+            schema = pa.schema([
+                pa.field(text(col.name), pa.string() if col.ctype == b"s" else pa.float64(),
+                         metadata={"sas_type": "Character" if col.ctype == b"s" else "Numeric",
+                                   "sas_length": str(col.length),
+                                   "sas_format": text(col.format),
+                                   "sas_label": text(col.label)})
+                for col in reader.columns
+            ])
+            with pq.ParquetWriter(temporary, schema, compression="snappy") as writer:
+                while True:
+                    frame = reader.read(CHUNK_ROWS)
+                    if frame is None or frame.empty:
+                        break
+                    table = pa.Table.from_pandas(frame, schema=schema, preserve_index=False)
+                    writer.write_table(table)
+                    count += len(frame)
+                    print(f"{source.name}: {count:,} / {expected:,}", flush=True)
+                    del table, frame
+        actual = pq.ParquetFile(temporary).metadata.num_rows
+        if count != expected or actual != expected:
+            raise RuntimeError(f"{source.name}: record count mismatch")
+        temporary.replace(destination)
+        print(f"Completed: {destination} ({perf_counter() - started:.1f} seconds)", flush=True)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def main():
+    # Check all inputs before starting conversion.
+    for name in DATASETS:
+        source = INPUT_FOLDER / (name + ".sas7bdat")
+        if not source.is_file():
+            raise FileNotFoundError(source)
+    OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+    for name in DATASETS:
+        convert(INPUT_FOLDER / (name + ".sas7bdat"),
+                OUTPUT_FOLDER / (name + ".parquet"))
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+=============================================================================================
+
+
+#!/usr/bin/env python3
+"""TEST: four Parquet inputs back to SAS7BDAT, preserving SAS field lengths.
+Requires a SASPy Latin-1 session and folders shared with the SAS server.
+"""
+import csv
+import re
+import math
+from pathlib import Path
+import pyarrow.parquet as pq
+from pandas.io.sas.sas7bdat import SAS7BDATReader
+
+INPUT_FOLDER = Path('/stgsrcsys/host/holding/pas')
+OUTPUT_FOLDER = INPUT_FOLDER / 'sas7bdat'
+DATASETS = ('nplobal', 'wiis', 'waq', 'wsp2')
+SASPY_SETTINGS = {}  # Use the existing SASPy connection profile.
+BATCH_ROWS = 50000
+
+def sas_number(value):
+    value = float(value)
+    if not math.isfinite(value): raise ValueError('Numeric value exceeds SAS double range')
+    return format(value, '.17g')
+
+
+
+
+"""Write genuine SAS7BDAT through an existing SASPy connection profile.
+
+SAS builds a unique table in remote WORK. Download it to a local staging file,
+validate the binary, then atomically publish it in the Python host's holding dir.
+"""
+from pathlib import Path
+from decimal import Decimal
+import math
+import ntpath
+import posixpath
+import re
+import uuid
+
+
+
+class SASOutput:
+    """Shared-folder TXT export: SAS reads locally, without DataFrame transfer."""
+    def __init__(self, config):
+        self.config = config
+        self.session = None
+
+    def connect(self):
+        if self.session is None:
+            import saspy
+            self.session = saspy.SASsession(**self.config)
+        return self.session
+
+    def write(self, path, rows, columns, character_columns, validate, schema):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        bridge = path.parent / 'sas_bridge'
+        bridge.mkdir(exist_ok=True)
+        text = bridge / (path.stem + '.txt')
+        temporary = text.with_suffix('.txt.tmp')
+        # Values are hex-encoded for character fields; preserve Latin-1 byte lengths.
+        with temporary.open('w', encoding='ascii', newline='') as handle:
+            writer = csv.writer(handle, lineterminator='\n')
+            for row in rows:
+                record = []
+                for col in columns:
+                    kind, width = schema[col]
+                    value = row.get(col)
+                    if value is None:
+                        record.append('')
+                    elif kind == 'Char':
+                        encoded = str(value).encode('latin-1')
+                        if len(encoded) > width:
+                            raise ValueError(f'{path.stem}.{col}: value exceeds supplied length {width}')
+                        record.append(encoded.ljust(width, b' ').hex())
+                    else:
+                        record.append(sas_number(value))
+                writer.writerow(record)
+        temporary.replace(text)
+        quote = lambda v: "'" + str(v).replace("'", "''") + "'"
+        lengths = '\n'.join(f'length {c} {"$" if schema[c][0] == "Char" else ""}{schema[c][1]};' for c in columns)
+        formats = []
+        for c in columns:
+            attrs = self.attributes[c]
+            fmt = attrs.get(b'sas_format', b'').decode('utf-8')
+            label = attrs.get(b'sas_label', b'').decode('utf-8')
+            if fmt:
+                if not re.fullmatch(r'\$?[A-Za-z0-9_]*\d*\.\d*', fmt):
+                    raise ValueError(f'Unsupported SAS format: {fmt}')
+                formats.append(f'format {c} {fmt};')
+            if label:
+                formats.append(f'label {c} {quote(label)};')
+        formats = '\n'.join(formats)
+        inputs = '\n'.join(f'{c} :$hex{schema[c][1] * 2}.' if schema[c][0] == 'Char' else f'{c} :best32.' for c in columns)
+        member = '_w' + uuid.uuid4().hex[:20]
+        stage = path.parent / (member + '.sas7bdat')
+        session = self.connect()
+        session.submit('%let _wof_encoding=%sysfunc(getoption(encoding));', results='TEXT')
+        if session.symget('_wof_encoding').strip().upper() not in ('LATIN1', 'WLATIN1'):
+            raise RuntimeError('This export preserves Latin-1 input lengths; configure the SASPy session with encoding LATIN1 or WLATIN1')
+        try:
+            code = f"""
+libname wofout {quote(path.parent)};
+data wofout.{member}(encoding='latin1');
+{lengths}
+{formats}
+infile {quote(text)} dsd dlm=',' truncover termstr=lf lrecl=10485760;
+input
+{inputs}
+;
+run;
+"""
+            result = session.submit(code, results='TEXT')
+            log = result['LOG']
+            if re.search(r'^ERROR(?:\s|:)', log, re.MULTILINE) or int(session.SYSERR()) > 4:
+                raise RuntimeError('SAS export failed: ' + log)
+            if not stage.is_file():
+                raise RuntimeError('SAS server must share the output and sas_bridge folder with Python')
+            validate(stage, columns, len(rows))
+            stage.replace(path)
+        finally:
+            stage.unlink(missing_ok=True)
+
+    def close(self):
+        if self.session is not None:
+            self.session.endsas()
+            self.session = None
+
+
+
+
+
+
+
+class ParquetRows:
+    def __init__(self, parquet):
+        self.parquet = parquet
+    def __len__(self):
+        return self.parquet.metadata.num_rows
+    def __iter__(self):
+        for batch in self.parquet.iter_batches(batch_size=BATCH_ROWS):
+            yield from batch.to_pylist()
+
+
+def convert(source, destination, writer):
+    parquet = pq.ParquetFile(source)
+    try:
+        columns = parquet.schema_arrow.names
+        schema = {}
+        for field in parquet.schema_arrow:
+            if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,31}', field.name):
+                raise ValueError(f'Unsupported SAS column name: {field.name}')
+            attrs = field.metadata or {}
+            if attrs.get(b'sas_type') not in (b'Character', b'Numeric') or b'sas_length' not in attrs:
+                raise ValueError(f'{source}: SAS type/length metadata missing for {field.name}')
+            kind = 'Char' if attrs[b'sas_type'] == b'Character' else 'Num'
+            width = int(attrs[b'sas_length'])
+            if not (1 <= width <= 32767 if kind == 'Char' else 3 <= width <= 8):
+                raise ValueError(f'Invalid SAS length: {field.name}')
+            schema[field.name] = (kind, width)
+        def validate(path, expected, count):
+            with SAS7BDATReader(path, encoding='latin-1', convert_dates=False) as reader:
+                if reader.column_names != expected or reader.row_count != count:
+                    raise RuntimeError('SAS row count or columns differ')
+                for col in reader.columns:
+                    kind, width = schema[col.name]
+                    if col.length != width or col.ctype != (b's' if kind == 'Char' else b'd'):
+                        raise RuntimeError(f'SAS type/length mismatch: {col.name}')
+        writer.attributes = {f.name: f.metadata or {} for f in parquet.schema_arrow}
+        writer.write(destination, ParquetRows(parquet), columns, set(), validate, schema)
+        print(f'{destination}: {parquet.metadata.num_rows:,} rows', flush=True)
+    finally:
+        parquet.close()
+
+
+def main():
+    writer = SASOutput(SASPY_SETTINGS)
+    try:
+        for member in DATASETS:
+            convert(INPUT_FOLDER / (member + '.parquet'), OUTPUT_FOLDER / (member + '.sas7bdat'), writer)
+    finally:
+        writer.close()
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+==============================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#!/usr/bin/env python3
 """TEST - Convert LNNOTE SAS7BDAT to Parquet."""
 
 from pathlib import Path
