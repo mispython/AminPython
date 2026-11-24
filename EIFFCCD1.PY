@@ -1,3 +1,18 @@
+
+EIFFCCD1 (PBB) — %INCLUDE ikut turutan
+1. LNCCD001
+2. LNCCD002
+3. LNCCD004
+4. LNCCDQ10 (16hb sahaja)
+
+EIIFCCD1 (PIBB) — %INCLUDE ikut turutan
+1. LNCCD001
+2. LNCCDI02
+3. LNCCDI04
+4. LNCCDI10 (16hb sahaja)
+
+
+
 DD name	EIFFCCD1 — PBB	EIIFCCD1 — PIBB	Purpose
 LOAN	SAP.PBB.MNILN.DAILY(0)	SAP.PIBB.MNILN.DAILY(0)	Current loan extract generation at allocation. The job reads the first observation of LOAN.REPTDATE to check the extract date.
 LN	SAP.PBB.SASDATA.DAILY(0)	SAP.PIBB.SASDATA.DAILY(0)	Current SAS data generation supplied to the main reporting step.
