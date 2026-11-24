@@ -1,3 +1,8 @@
+2524449 wmk69917  20   0 2202388 132844  67320 S  99.4   0.0  19:58.71 /sasapp/sashomeEDW/SASFoundation/9.4/sasexe/sas -noterminal -netencryptalgorithm AES -metaserver svdwh002 -metaport 8565 -metarepository Foundation -locale en_US -o+
+2539129 sasdemo+  20   0 9942040 821060  89508 R  99.4   0.1   7:20.37 python /stgsrcsys/host/holding/pas/EIFFCCD1.py
+2526910 sasdemo+  20   0  105.6g  96.0g  88700 R  98.7   9.5  25:39.85 python /stgsrcsys/host/holding/pas/EIFFCCD1.py
+
+
 #!/usr/bin/env python3
 """TEST - Convert NPLOBAL, WIIS, WAQ and WSP2 to Parquet."""
 from pathlib import Path
