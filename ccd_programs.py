@@ -1,10 +1,15 @@
 """Python subprograms called by the CCD job, matching the SAS member names."""
 
 import re
+import pickle
+import sqlite3
 from collections import defaultdict
+from contextlib import ExitStack, closing
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from itertools import groupby
+from itertools import chain, groupby, islice
+from pathlib import Path
+from tempfile import TemporaryDirectory, TemporaryFile
 
 from bisect import bisect_right
 
@@ -186,18 +191,44 @@ def sort_branch(row):
 
 
 
-def summary_report(rows, layout, report_date, short, encoding):
+def disk_sort(rows, key, key_count, scratch, batch_size):
+    """Stable external sort with an on-disk index and bounded insert batches."""
+    columns = ", ".join(f"k{index}" for index in range(key_count))
+    placeholders = ", ".join("?" for _ in range(key_count + 1))
+    with TemporaryDirectory(dir=scratch) as directory:
+        with closing(sqlite3.connect(Path(directory) / "sort.sqlite")) as db:
+            db.execute("PRAGMA journal_mode=OFF")
+            db.execute("PRAGMA synchronous=OFF")
+            db.execute("PRAGMA cache_size=-8192")
+            db.execute(f"CREATE TABLE rows (seq INTEGER PRIMARY KEY, {columns}, payload BLOB)")
+            db.execute(f"CREATE INDEX sort_order ON rows ({columns}, seq)")
+            records = iter(rows)
+            with db:
+                while True:
+                    batch = islice(records, batch_size)
+                    first = next(batch, None)
+                    if first is None:
+                        break
+                    db.executemany(
+                        f"INSERT INTO rows ({columns}, payload) VALUES ({placeholders})",
+                        ((*key(row), pickle.dumps(row, protocol=pickle.HIGHEST_PROTOCOL))
+                         for row in chain((first,), batch)),
+                    )
+            for (payload,) in db.execute(f"SELECT payload FROM rows ORDER BY {columns}, seq"):
+                yield pickle.loads(payload)
+
+
+def summary_report(loans, rows, layout, report_date, short, encoding):
     bins = 15 if short else 17
     field = "ARREAR2" if short else "ARREAR"
-    ordered = sorted(rows, key=lambda row: (row["CAT"], sort_branch(row), row[field]))
+    ordered = loans.sort(rows, lambda row: (row["CAT"], sort_branch(row), row[field]), 3)
     for _, category in groupby(ordered, key=lambda row: row["CAT"]):
-        category = list(category)
-        context = {**category[0], "RDATE": report_date.strftime("%d/%m/%y"), "PAGECNT": 1}
+        first = next(category)
+        context = {**first, "RDATE": report_date.strftime("%d/%m/%y"), "PAGECNT": 1}
         for index, line in enumerate(layout["header"]):
             yield (b"1" if index == 0 else b" ") + put(line, context, 132, encoding)
         all_counts, all_amounts = [0] * bins, [Decimal(0)] * bins
-        for _, group in groupby(category, key=lambda row: row["BRANCH"]):
-            group = list(group)
+        for _, group in groupby(chain((first,), category), key=lambda row: row["BRANCH"]):
             counts, amounts = [0] * bins, [Decimal(0)] * bins
             for row in group:
                 index = row[field] - 1
@@ -205,7 +236,7 @@ def summary_report(rows, layout, report_date, short, encoding):
                 amounts[index] += number(row, "BALANCE")
             all_counts = [left + right for left, right in zip(all_counts, counts)]
             all_amounts = [left + right for left, right in zip(all_amounts, amounts)]
-            context.update(group[-1])
+            context.update(row)
             context.update(totals(counts, amounts, False))
             yield from (b" " + put(line, context, 132, encoding) for line in layout["branch"])
         context.update(totals(all_counts, all_amounts, True))
@@ -213,8 +244,10 @@ def summary_report(rows, layout, report_date, short, encoding):
 
 
 
-def detail_report(rows, layout, report_date, encoding):
-    ordered = sorted(rows, key=lambda row: (row["CAT"], sort_branch(row), row["ARREAR2"], row["DAYDIFF"]))
+def detail_report(loans, rows, layout, report_date, encoding):
+    ordered = loans.sort(
+        rows, lambda row: (row["CAT"], sort_branch(row), row["ARREAR2"], float(row["DAYDIFF"])), 4
+    )
     body = layout["body"]
     total_cap = Decimal(0)
     for _, category in groupby(ordered, key=lambda row: row["CAT"]):
@@ -267,21 +300,20 @@ def write_records(path, records):
 def arrears_report(loans, entity, report_date, branches, encoding):
     layout = LAYOUTS[entity]["summary"]
     rows = categorise(loans, entity, "arrears", report_date, branches)
+    yield from summary_report(loans, rows, layout[0], report_date, False, encoding)
     if report_date.day == 15:
-        rows = list(rows)
-    yield from summary_report(rows, layout[0], report_date, False, encoding)
-    if report_date.day == 15:
-        yield from summary_report(rows, layout[1], report_date, True, encoding)
+        rows = categorise(loans, entity, "arrears", report_date, branches)
+        yield from summary_report(loans, rows, layout[1], report_date, True, encoding)
 
 
 def npl_report(loans, entity, report_date, branches, encoding):
     rows = categorise(loans, entity, "npl", report_date, branches)
-    yield from summary_report(rows, LAYOUTS[entity]["summary"][2], report_date, False, encoding)
+    yield from summary_report(loans, rows, LAYOUTS[entity]["summary"][2], report_date, False, encoding)
 
 
 def rps_report(loans, entity, report_date, branches, encoding):
     rows = categorise(loans, entity, "rps", report_date, branches)
-    yield from detail_report(rows, LAYOUTS[entity]["detail"], report_date, encoding)
+    yield from detail_report(loans, rows, LAYOUTS[entity]["detail"], report_date, encoding)
 
 
 def lnccd001(notes, commitments, snapshots, report_date):
@@ -348,11 +380,12 @@ def lnccdi10(loans, report_date, branches, encoding):
     return rps_report(loans, "pibb", report_date, branches, encoding)
 
 
-def eifmnpp5(rps):
-    groups = {code: [] for code in ("911", "912", "916", "915", "914", "913")}
+def eifmnpp5(rps, scratch):
+    codes = ("911", "912", "916", "915", "914", "913")
     title = b"P000REPORT NO :  SANPLRPS REPORTS"
     code = "000"
-    with rps.open("rb") as handle:
+    with ExitStack() as stack, rps.open("rb") as handle:
+        groups = {code: stack.enter_context(TemporaryFile(dir=scratch)) for code in codes}
         for record in handle:
             record = record.rstrip(b"\r\n")
             if len(record) != 134:
@@ -361,12 +394,16 @@ def eifmnpp5(rps):
                 branch = record[33:36].strip()
                 code = CACBRCH.get(str(int(branch)), "000") if branch.isdigit() else "000"
                 if code in groups:
-                    groups[code].extend((b"E255", title))
+                    groups[code].write(b"E255\n" + title + b"\n")
             if code in groups:
-                groups[code].append(b"P001" + record)
-    for code, records in groups.items():
-        if records:
+                groups[code].write(b"P001" + record + b"\n")
+        for code, records in groups.items():
+            if not records.tell():
+                continue
             yield b"E255".ljust(138)
             yield b"P000PBBEDPPBBEDP".ljust(132) + ("B" + code).encode("ascii").ljust(6)
             yield title.ljust(138)
-            yield from (record.ljust(138) for record in records[2:])
+            records.seek(0)
+            records.readline()
+            records.readline()
+            yield from (record.rstrip(b"\n").ljust(138) for record in records)
