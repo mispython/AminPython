@@ -1,3 +1,16 @@
+DD name	EIFFCCD1 — PBB	EIIFCCD1 — PIBB	Purpose
+LOAN	SAP.PBB.MNILN.DAILY(0)	SAP.PIBB.MNILN.DAILY(0)	Current loan extract generation at allocation. The job reads the first observation of LOAN.REPTDATE to check the extract date.
+LN	SAP.PBB.SASDATA.DAILY(0)	SAP.PIBB.SASDATA.DAILY(0)	Current SAS data generation supplied to the main reporting step.
+BRHFILE	RBP2.B033.PBB.BRANCH	RBP2.B033.PBB.BRANCH	Shared branch reference file.
+PGM	SAP.BNM.PROGRAM	SAP.BNM.PROGRAM	Shared SAS source library. The jobs load the members listed below.
+CAP / ICAP	SAP.PBB.NPL.HP.SASDATA via CAP	SAP.PIBB.NPL.HP.SASDATA via ICAP	Additional SAS input for the scheduler-day-15 RPS step.
+
+
+
+
+
+
+
 //EIFFCCD1  JOB MSGCLASS=X,MSGLEVEL=(1,1),REGION=8M                     JOB02042
 /*JOBPARM S=S1M1
 //*
