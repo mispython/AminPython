@@ -1,3 +1,21 @@
+data _null_;
+        infile "
+cd /sas/python/virt_edw;
+source bin/activate;
+python /stgsrcsys/host/holding/pythonpas/EIFFCCD1.py --test
+" pipe;
+        input;
+        put _infile_;
+run;
+
+2026-11-26T16:03:17+08:00 START entity=both run_date=2026-11-26 data_date=2026-11-25
+2026-11-26T16:03:17+08:00 TEST row_limit_per_input=100000 output=/exdwh/host/mis/ccd/testing
+2026-11-26T16:03:17+08:00 PBB 0% Started
+2026-11-26T16:04:22+08:00 FAILED ValueError: time data '00000024' does not match format '%m%d%Y'
+
+
+
+
 """Main CCD job for PBB (EIFFCCD1) and PIBB (EIIFCCD1)."""
 
 import argparse
