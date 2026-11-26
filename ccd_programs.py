@@ -6,7 +6,7 @@ import sqlite3
 from collections import defaultdict
 from contextlib import ExitStack, closing
 from datetime import date, datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from itertools import chain, groupby, islice
 from pathlib import Path
 from tempfile import TemporaryDirectory, TemporaryFile
@@ -53,10 +53,14 @@ def sas_date(value):
 def encoded_date(value):
     if value in (None, "", ".", 0, "0"):
         return None
-    if isinstance(value, date) or "-" in str(value)[1:]:
-        return sas_date(value)
-    digits = f"{int(Decimal(str(value))):011d}"
-    return datetime.strptime(digits[:8], "%m%d%Y").date()
+    try:
+        if isinstance(value, date) or "-" in str(value)[1:]:
+            return sas_date(value)
+        digits = f"{int(Decimal(str(value))):011d}"
+        return date(int(digits[4:8]), int(digits[:2]), int(digits[2:4]))
+    except (InvalidOperation, OverflowError, ValueError):
+        # SAS INPUT with MMDDYY8. leaves invalid values missing.
+        return None
 
 
 
