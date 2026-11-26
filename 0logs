@@ -1,0 +1,87 @@
+
+1          ;*';*";*/;quit;run;
+2          OPTIONS PAGENO=MIN;
+3          %LET _CLIENTTASKLABEL='ADHOC_SAS2.sas';
+4          %LET _CLIENTPROCESSFLOWNAME='Standalone Not In Project';
+5          %LET _CLIENTPROJECTPATH='';
+6          %LET _CLIENTPROJECTPATHHOST='';
+7          %LET _CLIENTPROJECTNAME='';
+8          %LET _SASPROGRAMFILE='C:\Users\pas68728\AppData\Local\Temp\scp18944\stgsrcsys\host\holding\ADHOC_SAS2.sas';
+9          %LET _SASPROGRAMFILEHOST='ITDNBVPN065';
+10         
+11         ODS _ALL_ CLOSE;
+12         OPTIONS DEV=SVG;
+13         GOPTIONS XPIXELS=0 YPIXELS=0;
+14         %macro HTML5AccessibleGraphSupported;
+15             %if %_SAS_VERCOMP_FV(9,4,4, 0,0,0) >= 0 %then ACCESSIBLE_GRAPH;
+16         %mend;
+17         FILENAME EGHTML TEMP;
+18         ODS HTML5(ID=EGHTML) FILE=EGHTML
+19             OPTIONS(BITMAP_MODE='INLINE')
+20             %HTML5AccessibleGraphSupported
+21             ENCODING='utf-8'
+22             STYLE=HTMLBlue
+23             NOGTITLE
+24             NOGFOOTNOTE
+25             GPATH=&sasworklocation
+26         ;
+NOTE: Writing HTML5(EGHTML) Body file: EGHTML
+27         
+28         data _null_;
+29                 infile "
+30         cd /sas/python/virt_edw;
+31         source bin/activate;
+32         python /stgsrcsys/host/holding/pythonpas/EIFFCCD1.py
+33         " pipe;
+34                 input;
+35                 put _infile_;
+36         run;
+
+NOTE: The infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pythonpas/EIFFCCD1.py" is:
+      Pipe command="cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pythonpas/EIFFCCD1.py"
+
+Checkpoint log: /stgsrcsys/host/holding/pas/eiffccd1_20261126_20261126T142105_5251e6b8.log
+Traceback (most recent call last):
+  File "/stgsrcsys/host/holding/pythonpas/EIFFCCD1.py", line 251, in <module>
+    main()
+  File "/stgsrcsys/host/holding/pythonpas/EIFFCCD1.py", line 240, in main
+    run_entity(args, entity, args.run_date, report_date, branches, log)
+  File "/stgsrcsys/host/holding/pythonpas/EIFFCCD1.py", line 165, in run_entity
+    loans.build(prepare, (notes, commitments, snapshots), report_date)
+  File "/stgsrcsys/host/holding/pythonpas/EIFFCCD1.py", line 110, in build
+    for _, account in groupby(ordered, key=lambda item: item[0]):
+  File "/stgsrcsys/host/holding/pythonpas/ccd_programs.py", line 209, in disk_sort
+    first = next(batch, None)
+  File "/stgsrcsys/host/holding/pythonpas/EIFFCCD1.py", line 105, in tagged_rows
+    for row in rows:
+  File "/stgsrcsys/host/holding/pythonpas/EIFFCCD1.py", line 83, in read_table
+    frame, _ = reader(str(path), usecols=columns, row_offset=offset, row_limit=size, output_format="polars")
+  File "pyreadstat/pyreadstat.pyx", line 129, in pyreadstat.pyreadstat.read_sas7bdat
+2                                                          The SAS System                          14:21 Thursday, November 26, 2026
+
+  File "pyreadstat/_readstat_parser.pyx", line 1110, in pyreadstat._readstat_parser.run_conversion
+pyreadstat._readstat_parser.PyreadstatError: output format must be one of {'dict', 'pandas'}, 'polars' was given
+NOTE: 19 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python 
+      /stgsrcsys/host/holding/pythonpas/EIFFCCD1.py".
+      The minimum record length was 10.
+      The maximum record length was 112.
+NOTE: DATA statement used (Total process time):
+      real time           58.50 seconds
+      cpu time            0.00 seconds
+      
+
+37         
+38         %LET _CLIENTTASKLABEL=;
+39         %LET _CLIENTPROCESSFLOWNAME=;
+40         %LET _CLIENTPROJECTPATH=;
+41         %LET _CLIENTPROJECTPATHHOST=;
+42         %LET _CLIENTPROJECTNAME=;
+43         %LET _SASPROGRAMFILE=;
+44         %LET _SASPROGRAMFILEHOST=;
+45         
+46         ;*';*";*/;quit;run;
+47         ODS _ALL_ CLOSE;
+48         
+49         
+50         QUIT; RUN;
+51         
