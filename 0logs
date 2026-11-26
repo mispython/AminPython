@@ -1,3 +1,5 @@
+eiffccd1_20261124_20261124T174234_b20326ac
+
 """Main CCD job for PBB (EIFFCCD1) and PIBB (EIIFCCD1)."""
 
 import argparse
