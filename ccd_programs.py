@@ -230,17 +230,36 @@ def summary_report(loans, rows, layout, report_date, short, encoding):
         all_counts, all_amounts = [0] * bins, [Decimal(0)] * bins
         for _, group in groupby(chain((first,), category), key=lambda row: row["BRANCH"]):
             counts, amounts = [0] * bins, [Decimal(0)] * bins
-            for row in group:
-                index = row[field] - 1
-                counts[index] += 1
-                amounts[index] += number(row, "BALANCE")
+            for batch in iter(lambda: list(islice(group, 8192)), []):
+                summarize_batch(batch, field, counts, amounts)
             all_counts = [left + right for left, right in zip(all_counts, counts)]
             all_amounts = [left + right for left, right in zip(all_amounts, amounts)]
-            context.update(row)
+            context.update(batch[-1])
             context.update(totals(counts, amounts, False))
             yield from (b" " + put(line, context, 132, encoding) for line in layout["branch"])
         context.update(totals(all_counts, all_amounts, True))
         yield from (b" " + put(line, context, 132, encoding) for line in layout["total"])
+
+
+def summarize_batch(batch, field, counts, amounts):
+    """Group exact cent balances in Polars; preserve higher precision if present."""
+    import polars as pl
+
+    bands = [row[field] - 1 for row in batch]
+    balances = [number(row, "BALANCE") for row in batch]
+    cents = [balance * 100 for balance in balances]
+    integer_limit = (2**63 - 1) // len(batch)
+    if all(value == value.to_integral_value() and abs(value) <= integer_limit for value in cents):
+        groups = pl.DataFrame({"band": bands, "cents": [int(value) for value in cents]}).group_by("band").agg(
+            pl.len().alias("count"), pl.col("cents").sum()
+        )
+        for index, count, total in groups.iter_rows():
+            counts[index] += count
+            amounts[index] += Decimal(total).scaleb(-2)
+    else:
+        for index, balance in zip(bands, balances):
+            counts[index] += 1
+            amounts[index] += balance
 
 
 
