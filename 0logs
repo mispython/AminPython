@@ -1,8 +1,3 @@
-/dwh/lnd_ln/ln261126'
-
-
-eiffccd1_20261124_20261124T174234_b20326ac
-
 """Main CCD job for PBB (EIFFCCD1) and PIBB (EIIFCCD1)."""
 
 import argparse
@@ -142,7 +137,7 @@ def read_branches(path, encoding):
 
 
 
-def run_entity(args, entity, run_date, report_date, branches, log):
+def run_entity(args, entity, report_date, branches, log):
     def checkpoint(percent, message):
         log(f"{entity.upper()} {percent}% {message}")
 
@@ -154,9 +149,8 @@ def run_entity(args, entity, run_date, report_date, branches, log):
     commitments = read_table(
         args.enrichment, f"ENRH_LN_COMM_D{suffix}", ("ACCTNO", "COMMNO"), *limits, entity=entity
     )
-    year_month_day = run_date.strftime("%y%m%d")
-    ln_folder = args.pbb_ln / f"ln{year_month_day}" if entity == "pbb" else args.pibb_ln / f"iln{year_month_day}"
-    snapshots = read_table(ln_folder, f"LOAN{report_date:%m%d}",
+    ln_folder, ln_prefix = (args.pbb_ln, "ln") if entity == "pbb" else (args.pibb_ln, "iln")
+    snapshots = read_table(ln_folder, f"{ln_prefix}{report_date:%y%m%d}",
                            ("ACCTNO", "NOTENO", "BALANCE", "PRODUCT"), *limits)
     prepare, arrears, npl, rps, cac = JOB_PROGRAMS[entity]
     target = args.output / entity
@@ -218,8 +212,6 @@ def main():
     parser.add_argument("--log-dir", type=Path, default=Path("/stgsrcsys/host/holding/pas"),
                         help="Directory for a new checkpoint log for each invocation")
     args = parser.parse_args()
-    if args.run_date.day not in {11, 16, 21}:
-        parser.error("CCD jobs run only on the 11th, 16th and 21st")
     if "BRANCH :".encode(args.encoding) != b"BRANCH :":
         parser.error("--encoding must be ASCII-compatible")
     if args.batch_size < 1:
@@ -242,10 +234,14 @@ def main():
             log(f"START entity={args.entity} run_date={args.run_date} data_date={report_date}")
             if args.row_limit is not None:
                 log(f"TEST row_limit_per_input={args.row_limit} output={args.output}")
+            if args.run_date.day not in {11, 16, 21}:
+                message = "CCD jobs run only on the 11th, 16th and 21st"
+                log(f"FAILED {message}")
+                parser.error(message)
             try:
                 branches = read_branches(args.branch_file, args.encoding)
                 for entity in ("pbb", "pibb") if args.entity == "both" else (args.entity,):
-                    run_entity(args, entity, args.run_date, report_date, branches, log)
+                    run_entity(args, entity, report_date, branches, log)
             except Exception as error:
                 log(f"FAILED {type(error).__name__}: {error}")
                 raise
