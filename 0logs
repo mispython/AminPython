@@ -1,16 +1,167 @@
-Traceback (most recent call last):
-  File "/stgsrcsys/host/holding/pythonpas/ADHOC.py", line 263, in <module>
+#!/usr/bin/env python3
+"""Test copy of EIBDFDHQ conversion; DRR SFTP upload is disabled.
+
+Requires:
+    pip install polars pyreadstat
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import polars as pl
+import pyreadstat
+
+
+DEFAULT_OUTPUT_DIR = Path("/stgsrcsys/host/uat")
+DEPO_SOURCE_DIRS = {
+    "fd": Path("/dwh/dpd_fd"),
+    "ifd": Path("/dwh/idpd_fd"),
+    "ifcy": Path("/dwh/idp_fcy"),
+    "fcy": Path("/dwh/dp_fcy"),
+}
+NAME_SOURCE_DIR = Path("/sas/deposit/dwh/integration")
+ENRICHMENT_SOURCE_DIR = Path("/sas/deposit/dwh/enrichment")
+
+OUTPUT_COLUMNS = [
+    "BRANCH", "SECOND2", "NAME", "ACCTNO", "CURBAL", "CDNO", "MATDATE", "RT", "TERM"
+]
+OUTPUT_HEADERS = [
+    "BRANCH", "PBB/PIBB", "NAME", "ACCTNO", "PRINCIPAL AM(RM)", "CDNO",
+    "MATDATE", "PREVIOUS RATE(% P.A)", "PREVIOUS TERM (MONTH)"
+]
+
+
+def read_sas(path: Path) -> pl.DataFrame:
+    # Polars does not expose read_sas in the installed runtime. pyreadstat
+    # decodes SAS7BDAT; convert immediately to Polars for all processing.
+    frame, _metadata = pyreadstat.read_sas7bdat(str(path), encoding="utf-8")
+    frame.columns = [str(column).upper() for column in frame.columns]
+    return pl.from_pandas(frame, include_index=False)
+
+
+def require_file(path: Path) -> Path:
+    if not path.is_file():
+        raise FileNotFoundError(f"Required SAS7BDAT input not found: {path}")
+    return path
+
+
+def require_columns(frame: pl.DataFrame, columns: list[str], source: str) -> None:
+    missing = sorted(set(columns) - set(frame.columns))
+    if missing:
+        raise ValueError(f"{source} is missing columns: {', '.join(missing)}")
+
+
+def format_value(value: object, column: str) -> str:
+    if value is None:
+        return ""
+    if column == "MATDATE" and isinstance(value, (datetime, date)):
+        return value.strftime("%d/%m/%Y")
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def write_report(frame: pl.DataFrame, path: Path, title: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(title + "\n")
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(OUTPUT_HEADERS)
+        for row in frame.select(OUTPUT_COLUMNS).iter_rows():
+            writer.writerow(format_value(value, column) for column, value in zip(OUTPUT_COLUMNS, row))
+
+
+def convert(args: argparse.Namespace) -> None:
+    run_date = date.fromisoformat(args.run_date) if args.run_date else date.today()
+    suffix = (run_date - timedelta(days=1)).strftime("%y%m%d")
+
+    sources = [
+        ("fd", f"fd{suffix}.sas7bdat", False),
+        ("ifd", f"ifd{suffix}.sas7bdat", False),
+        ("ifcy", f"ifcy{suffix}.sas7bdat", True),
+        ("fcy", f"fcy{suffix}.sas7bdat", True),
+    ]
+    depo_frames = []
+    for source, filename, drop_purpose in sources:
+        frame = read_sas(require_file(DEPO_SOURCE_DIRS[source] / filename))
+        if drop_purpose and "PURPOSE" in frame.columns:
+            frame = frame.drop("PURPOSE")
+        depo_frames.append(frame)
+
+    depo = pl.concat(depo_frames, how="diagonal_relaxed")
+    require_columns(depo, ["ACCTNO", "BRANCH", "SECOND"], "four deposit source files")
+    depo = (
+        depo.filter(pl.col("SECOND").is_in([99991, 99992]))
+        .with_columns(
+            pl.when(pl.col("SECOND") == 99991).then(pl.lit("PBB"))
+            .otherwise(pl.lit("PIBB")).alias("SECOND2")
+        )
+        .select("ACCTNO", "BRANCH", "SECOND2")
+        .sort(["ACCTNO", "BRANCH"], maintain_order=True)
+    )
+
+    fdname = read_sas(require_file(NAME_SOURCE_DIR / "INTG_DP_ACCT_FD_D27.sas7bdat"))
+    require_columns(fdname, ["ACCTNO", "BRANCH", "NAME"], "INTG_DP_ACCT_FD_D27")
+    depo1 = depo.join(
+        fdname.select("ACCTNO", "BRANCH", "NAME"),
+        on=["ACCTNO", "BRANCH"], how="left"
+    )
+
+    enrichment = read_sas(require_file(ENRICHMENT_SOURCE_DIR / "ENRH_DP_FD_CERT_D27.sas7bdat"))
+    require_columns(
+        enrichment,
+        ["ACCT_NUM", "BRANCH_CD", "CERT_NUM", "MATURE_DT", "TERM", "RT", "CURR_BAL"],
+        "ENRH_DP_FD_CERT_D27",
+    )
+    mature_dtype = enrichment.schema["MATURE_DT"]
+    mature_expr = (
+        pl.col("MATURE_DT").dt.date()
+        if mature_dtype.is_temporal()
+        else pl.from_epoch(pl.col("MATURE_DT").cast(pl.Int64), time_unit="s").dt.date()
+    )
+    depo2 = enrichment.with_columns(
+        pl.col("ACCT_NUM").alias("ACCTNO"),
+        pl.col("BRANCH_CD").alias("BRANCH"),
+        pl.col("CERT_NUM").alias("CDNO"),
+        mature_expr.alias("MATDATE"),
+        pl.col("CURR_BAL").alias("CURBAL"),
+    ).filter(pl.col("CURBAL") > 0).select(
+        "ACCTNO", "BRANCH", "CDNO", "MATDATE", "TERM", "RT", "CURBAL"
+    )
+
+    combined = depo1.join(depo2, on=["ACCTNO", "BRANCH"], how="inner").sort(
+        "MATDATE", maintain_order=True
+    )
+    acctno = pl.col("ACCTNO").cast(pl.Int64, strict=False)
+    is_fcy = (
+        acctno.is_between(1_590_000_000, 1_599_999_999)
+        | acctno.is_between(1_689_999_999, 1_699_999_999)
+        | acctno.is_between(1_789_999_999, 1_799_999_999)
+    )
+    fcyfd = combined.filter(is_fcy)
+    fd = combined.filter(~is_fcy.fill_null(False))
+
+    report_date = run_date.strftime("%d/%m/%y")
+    write_report(fd, args.fd_output, f"DAILY RM FD MATURITY HQ AS AT {report_date}")
+    write_report(fcyfd, args.fcyfd_output, f"DAILY FCYFD MATURITY HQ AS AT {report_date}")
+
+    # TEST COPY: DRR SFTP is disabled. No connection or upload is attempted.
+    print(f"Wrote {fd.height:,} RM FD rows to {args.fd_output}")
+    print(f"Wrote {fcyfd.height:,} FCYFD rows to {args.fcyfd_output}")
+    print("TEST MODE: DRR SFTP upload is disabled")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--run-date", help="Job date YYYY-MM-DD; defaults to today")
+    parser.add_argument("--fd-output", type=Path, default=DEFAULT_OUTPUT_DIR / "FDTXT.csv")
+    parser.add_argument("--fcyfd-output", type=Path, default=DEFAULT_OUTPUT_DIR / "FDTXT1.csv")
+    return parser
+
+
+if __name__ == "__main__":
     convert(build_parser().parse_args())
-  File "/stgsrcsys/host/holding/pythonpas/ADHOC.py", line 165, in convert
-    frame = read_sas(require_file(DEPO_SOURCE_DIRS[source] / filename))
-  File "/stgsrcsys/host/holding/pythonpas/ADHOC.py", line 66, in read_sas
-    frame = pl.read_sas(path)
-  File "/sas/python/virt_edw/lib/python3.9/site-packages/polars/__init__.py", line 545, in __getattr__
-    raise AttributeError(msg)
-AttributeError: module 'polars' has no attribute 'read_sas'
-NOTE: 10 records were read from the infile "cd /sas/python/virt_edw;source bin/activate;python /stgsrcsys/host/holding/pythonpas/ADHOC.py".
-      The minimum record length was 29.
-      The maximum record length was 102.
-NOTE: DATA statement used (Total process time):
-      real time           1.21 seconds
-      cpu time            0.00 seconds
