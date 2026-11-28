@@ -1,3 +1,43 @@
+//FTPFDHQ1 JOB MSGCLASS=X,MSGLEVEL=(2,1)                                JOB33688
+/*JOBPARM S=S1M1
+//*
+//*%OPC SCAN
+//******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+CD TD/CORPORATE
+PUT //SAP.PBB.FD.FDTXT RMFDMAT_%ODD.%OMM.%OYY..CSV
+PUT //SAP.PBB.FD.FDTXT1 FCYFDMAT_%ODD.%OMM.%OYY..CSV
+EOB
+/*
+
+
+
+//FTPFDHQ1 JOB MSGCLASS=X,MSGLEVEL=(2,1)                                JOB33688
+/*JOBPARM S=S1M1
+//*
+//*%OPC SCAN
+//******************************************************************
+//* FTP HOST DATASETS TO DATA REPORT REPOSITORY SYSTEM (DRR)
+//******************************************************************
+//RUNSFTP  EXEC COZBATCH
+//CMD.SYSUT1 DD DISP=SHR,DSN=OPER.PBB.PARMLIB(DRR#SFTP)
+//           DD *
+lzopts servercp=$servercp,notrim,overflow=trunc,mode=text
+lzopts linerule=$lr
+CD TD/CORPORATE
+PUT //SAP.PBB.FD.FDTXT RMFDMAT_%ODD.%OMM.%OYY..CSV
+PUT //SAP.PBB.FD.FDTXT1 FCYFDMAT_%ODD.%OMM.%OYY..CSV
+EOB
+/*
+
+
+
 #!/usr/bin/env python3
 """Convert the EIBDFDHQ SAS job to Python using Polars.
 
