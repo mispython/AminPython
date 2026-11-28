@@ -1,31 +1,21 @@
 #!/usr/bin/env python3
-"""Convert the EIBDFDHQ SAS job to Python using Polars.
+"""Test copy of EIBDFDHQ conversion; DRR SFTP upload is disabled.
 
 Requires:
     pip install polars
-
-DRR upload also requires the site's `psftp` executable and control dataset.
-
-The SAS7BDAT inputs are read from the four source directories below. Reports
-are written to /dwh/ftp/drr by default and uploaded to DRR.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
-import subprocess
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import polars as pl
 
 
-DEFAULT_OUTPUT_DIR = Path("/dwh/ftp/drr")
-DRR_CONTROL = Path("/sasdata/dwh/control/ctl_dwh_sftp_info.sas7bdat")
-DRR_BATCH = Path("/sasdata/dwh/logs/EIBDFDHQ.txt")
-DRR_LOG = Path("/sasdata/dwh/logs/EIBDFDHQ_LOG.txt")
-DRR_REMOTE_DIR = "/TD/CORPORATE"
+DEFAULT_OUTPUT_DIR = Path("/stgsrcsys/host/uat")
 DEPO_SOURCE_DIRS = {
     "fd": Path("/dwh/dpd_fd"),
     "ifd": Path("/dwh/idpd_fd"),
@@ -35,34 +25,16 @@ DEPO_SOURCE_DIRS = {
 NAME_SOURCE_DIR = Path("/sas/deposit/dwh/integration")
 ENRICHMENT_SOURCE_DIR = Path("/sas/deposit/dwh/enrichment")
 
-
 OUTPUT_COLUMNS = [
-    "BRANCH",
-    "SECOND2",
-    "NAME",
-    "ACCTNO",
-    "CURBAL",
-    "CDNO",
-    "MATDATE",
-    "RT",
-    "TERM",
+    "BRANCH", "SECOND2", "NAME", "ACCTNO", "CURBAL", "CDNO", "MATDATE", "RT", "TERM"
 ]
-
 OUTPUT_HEADERS = [
-    "BRANCH",
-    "PBB/PIBB",
-    "NAME",
-    "ACCTNO",
-    "PRINCIPAL AM(RM)",
-    "CDNO",
-    "MATDATE",
-    "PREVIOUS RATE(% P.A)",
-    "PREVIOUS TERM (MONTH)",
+    "BRANCH", "PBB/PIBB", "NAME", "ACCTNO", "PRINCIPAL AM(RM)", "CDNO",
+    "MATDATE", "PREVIOUS RATE(% P.A)", "PREVIOUS TERM (MONTH)"
 ]
 
 
 def read_sas(path: Path) -> pl.DataFrame:
-    """Read a SAS7BDAT file and normalize column names to uppercase."""
     frame = pl.read_sas(path)
     return frame.rename({column: str(column).upper() for column in frame.columns})
 
@@ -79,121 +51,63 @@ def require_columns(frame: pl.DataFrame, columns: list[str], source: str) -> Non
         raise ValueError(f"{source} is missing columns: {', '.join(missing)}")
 
 
-def format_sas_value(value: object, column: str) -> str:
-    """Produce readable text close to SAS list PUT output."""
+def format_value(value: object, column: str) -> str:
     if value is None:
         return ""
-    if column == "MATDATE":
-        if isinstance(value, (datetime, date)):
-            return value.strftime("%d/%m/%Y")
+    if column == "MATDATE" and isinstance(value, (datetime, date)):
+        return value.strftime("%d/%m/%Y")
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     return str(value).strip()
 
 
 def write_report(frame: pl.DataFrame, path: Path, title: str) -> None:
-    """Write the title, header, and data rows used by the original SAS job."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         handle.write(title + "\n")
         writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(OUTPUT_HEADERS)
         for row in frame.select(OUTPUT_COLUMNS).iter_rows():
-            writer.writerow(
-                format_sas_value(value, column)
-                for column, value in zip(OUTPUT_COLUMNS, row)
-            )
-
-
-def clean_control_value(value: object) -> str:
-    return "" if value is None else "".join(str(value).split())
-
-
-def upload_to_drr(files: list[tuple[Path, str]]) -> None:
-    for local_path, _ in files:
-        require_file(local_path)
-    require_file(DRR_CONTROL)
-
-    control = read_sas(DRR_CONTROL)
-    require_columns(control, ["HOST_DESC", "SFTP_PW", "SFTP_ID", "HOST_IP"], "DRR SFTP control")
-    drr_rows = control.filter(
-        pl.col("HOST_DESC").cast(pl.String).fill_null("").str.contains(
-            "Data Report Repository (DRR)", literal=True
-        )
-    )
-    if drr_rows.height != 1:
-        raise RuntimeError(
-            f"Expected exactly one DRR SFTP control row; found {drr_rows.height}"
-        )
-    row = drr_rows.row(0, named=True)
-
-    DRR_BATCH.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f'cd "{DRR_REMOTE_DIR}"']
-    lines.extend(
-        f'put "{local_path.resolve()}" "{remote_name}"'
-        for local_path, remote_name in files
-    )
-    DRR_BATCH.write_bytes(("\r\n".join(lines) + "\r\n").encode())
-
-    command = [
-        "psftp", "-pw", clean_control_value(row["SFTP_PW"]),
-        f"{clean_control_value(row['SFTP_ID'])}@{clean_control_value(row['HOST_IP'])}",
-        "-b", str(DRR_BATCH), "-be",
-    ]
-    with DRR_LOG.open("w", encoding="utf-8") as log:
-        subprocess.run(
-            command, input="y\n", text=True, stdout=log,
-            stderr=subprocess.STDOUT, check=True,
-        )
+            writer.writerow(format_value(value, column) for column, value in zip(OUTPUT_COLUMNS, row))
 
 
 def convert(args: argparse.Namespace) -> None:
     run_date = date.fromisoformat(args.run_date) if args.run_date else date.today()
-    input_date = run_date - timedelta(days=1)
-    suffix = input_date.strftime("%y%m%d")
+    suffix = (run_date - timedelta(days=1)).strftime("%y%m%d")
 
-    # SAS LIBNAME A lists four directories; each dataset contributes its own
-    # columns. PURPOSE is intentionally dropped from both FCY inputs.
-    depo_sources = [
+    sources = [
         ("fd", f"fd{suffix}.sas7bdat", False),
         ("ifd", f"ifd{suffix}.sas7bdat", False),
         ("ifcy", f"ifcy{suffix}.sas7bdat", True),
         ("fcy", f"fcy{suffix}.sas7bdat", True),
     ]
     depo_frames = []
-    for source, filename, drop_purpose in depo_sources:
+    for source, filename, drop_purpose in sources:
         frame = read_sas(require_file(DEPO_SOURCE_DIRS[source] / filename))
         if drop_purpose and "PURPOSE" in frame.columns:
             frame = frame.drop("PURPOSE")
         depo_frames.append(frame)
 
-    depo = pl.concat(depo_frames, how="diagonal_relaxed").sort(
-        ["ACCTNO", "BRANCH"], maintain_order=True
-    )
+    depo = pl.concat(depo_frames, how="diagonal_relaxed")
     require_columns(depo, ["ACCTNO", "BRANCH", "SECOND"], "four deposit source files")
     depo = (
         depo.filter(pl.col("SECOND").is_in([99991, 99992]))
         .with_columns(
-            pl.when(pl.col("SECOND") == 99991)
-            .then(pl.lit("PBB"))
-            .otherwise(pl.lit("PIBB"))
-            .alias("SECOND2")
+            pl.when(pl.col("SECOND") == 99991).then(pl.lit("PBB"))
+            .otherwise(pl.lit("PIBB")).alias("SECOND2")
         )
         .select("ACCTNO", "BRANCH", "SECOND2")
+        .sort(["ACCTNO", "BRANCH"], maintain_order=True)
     )
 
-    fdname_path = require_file(NAME_SOURCE_DIR / "INTG_DP_ACCT_FD_D27.sas7bdat")
-    fdname = read_sas(fdname_path)
+    fdname = read_sas(require_file(NAME_SOURCE_DIR / "INTG_DP_ACCT_FD_D27.sas7bdat"))
     require_columns(fdname, ["ACCTNO", "BRANCH", "NAME"], "INTG_DP_ACCT_FD_D27")
-    fdname = fdname.sort(["ACCTNO", "BRANCH"], maintain_order=True)
     depo1 = depo.join(
         fdname.select("ACCTNO", "BRANCH", "NAME"),
-        on=["ACCTNO", "BRANCH"],
-        how="left",
+        on=["ACCTNO", "BRANCH"], how="left"
     )
 
-    enrichment_path = require_file(ENRICHMENT_SOURCE_DIR / "ENRH_DP_FD_CERT_D27.sas7bdat")
-    enrichment = read_sas(enrichment_path)
+    enrichment = read_sas(require_file(ENRICHMENT_SOURCE_DIR / "ENRH_DP_FD_CERT_D27.sas7bdat"))
     require_columns(
         enrichment,
         ["ACCT_NUM", "BRANCH_CD", "CERT_NUM", "MATURE_DT", "TERM", "RT", "CURR_BAL"],
@@ -215,47 +129,33 @@ def convert(args: argparse.Namespace) -> None:
         "ACCTNO", "BRANCH", "CDNO", "MATDATE", "TERM", "RT", "CURBAL"
     )
 
-    # SAS `MERGE ...; BY ...; IF A AND B;` is an inner match on these keys.
     combined = depo1.join(depo2, on=["ACCTNO", "BRANCH"], how="inner").sort(
         "MATDATE", maintain_order=True
     )
-
-    account_number = pl.col("ACCTNO").cast(pl.Int64, strict=False)
-    is_foreign_currency = (
-        account_number.is_between(1_590_000_000, 1_599_999_999)
-        | account_number.is_between(1_689_999_999, 1_699_999_999)
-        | account_number.is_between(1_789_999_999, 1_799_999_999)
+    acctno = pl.col("ACCTNO").cast(pl.Int64, strict=False)
+    is_fcy = (
+        acctno.is_between(1_590_000_000, 1_599_999_999)
+        | acctno.is_between(1_689_999_999, 1_699_999_999)
+        | acctno.is_between(1_789_999_999, 1_799_999_999)
     )
-    fcyfd = combined.filter(is_foreign_currency)
-    fd = combined.filter(~is_foreign_currency.fill_null(False))
+    fcyfd = combined.filter(is_fcy)
+    fd = combined.filter(~is_fcy.fill_null(False))
 
-    report_text = run_date.strftime("%d/%m/%y")
-    write_report(fd, args.fd_output, f"DAILY RM FD MATURITY HQ AS AT {report_text}")
-    write_report(fcyfd, args.fcyfd_output, f"DAILY FCYFD MATURITY HQ AS AT {report_text}")
+    report_date = run_date.strftime("%d/%m/%y")
+    write_report(fd, args.fd_output, f"DAILY RM FD MATURITY HQ AS AT {report_date}")
+    write_report(fcyfd, args.fcyfd_output, f"DAILY FCYFD MATURITY HQ AS AT {report_date}")
 
-    file_date = run_date.strftime("%d.%m.%y")
-    upload_to_drr([
-        (args.fd_output, f"RMFDMAT_{file_date}.CSV"),
-        (args.fcyfd_output, f"FCYFDMAT_{file_date}.CSV"),
-    ])
-
-    print(f"Wrote {len(fd):,} RM FD rows to {args.fd_output}")
-    print(f"Wrote {len(fcyfd):,} FCYFD rows to {args.fcyfd_output}")
-    print(f"Uploaded both reports to DRR {DRR_REMOTE_DIR}")
+    # TEST COPY: DRR SFTP is disabled. No connection or upload is attempted.
+    print(f"Wrote {fd.height:,} RM FD rows to {args.fd_output}")
+    print(f"Wrote {fcyfd.height:,} FCYFD rows to {args.fcyfd_output}")
+    print("TEST MODE: DRR SFTP upload is disabled")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--run-date",
-        help="Job date in YYYY-MM-DD format; defaults to today's system date",
-    )
-    parser.add_argument(
-        "--fd-output", type=Path, default=DEFAULT_OUTPUT_DIR / "FDTXT.csv"
-    )
-    parser.add_argument(
-        "--fcyfd-output", type=Path, default=DEFAULT_OUTPUT_DIR / "FDTXT1.csv"
-    )
+    parser.add_argument("--run-date", help="Job date YYYY-MM-DD; defaults to today")
+    parser.add_argument("--fd-output", type=Path, default=DEFAULT_OUTPUT_DIR / "FDTXT.csv")
+    parser.add_argument("--fcyfd-output", type=Path, default=DEFAULT_OUTPUT_DIR / "FDTXT1.csv")
     return parser
 
 
